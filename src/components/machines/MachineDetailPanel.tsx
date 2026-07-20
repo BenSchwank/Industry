@@ -7,6 +7,7 @@ import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
+import { useQuickCompleteMaintenance } from '../../hooks/useQuickCompleteMaintenance'
 import {
   useMachinesWithStats,
   type MachineWithStats,
@@ -473,6 +474,7 @@ function MachineStammdatenForm({
   maintenanceSoon: boolean
 }) {
   const updateMachine = useUpdateMachine()
+  const quickComplete = useQuickCompleteMaintenance()
   const { data: allMachines } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const [name, setName] = useState(machine.name)
@@ -483,6 +485,7 @@ function MachineStammdatenForm({
   const [warrantyUntil, setWarrantyUntil] = useState(toDateInput(machine.warranty_until))
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [completing, setCompleting] = useState(false)
 
   const categorySuggestions = useMemo(
     () =>
@@ -550,6 +553,29 @@ function MachineStammdatenForm({
     }
   }
 
+  async function completeMaintenanceNow() {
+    if (
+      !window.confirm(
+        `Wartung für „${machine.name}“ jetzt als erledigt markieren?`,
+      )
+    ) {
+      return
+    }
+    setCompleting(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const result = await quickComplete.mutateAsync({ machineId: machine.id })
+      setMessage(
+        `Wartung erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   const uptimeValue = healthLoading
     ? '…'
     : compact
@@ -600,6 +626,18 @@ function MachineStammdatenForm({
           value={formatDate(machine.last_repair_at)}
           compact={compact}
         />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={completing || quickComplete.isPending}
+          onClick={() => void completeMaintenanceNow()}
+          className="kwd-btn kwd-btn-primary min-h-[40px]"
+          title="Wartung sofort abschließen – ohne Wartungsplaner"
+        >
+          {completing ? 'Speichern…' : 'Wartung erledigt'}
+        </button>
       </div>
 
       <form

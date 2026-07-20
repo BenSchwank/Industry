@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
+import { useQuickCompleteMaintenance } from '../hooks/useQuickCompleteMaintenance'
 import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
 import { supabase } from '../lib/supabase'
 
@@ -16,6 +17,9 @@ interface ActiveTask {
 
 export default function MaintenancePage() {
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const quickComplete = useQuickCompleteMaintenance()
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['maintenance-tasks'],
@@ -29,6 +33,36 @@ export default function MaintenancePage() {
     },
   })
 
+  function flash(msg: string) {
+    setToast(msg)
+    window.setTimeout(() => setToast(null), 3500)
+  }
+
+  async function handleQuickDone(task: {
+    id: string
+    machine_id: string
+    title: string
+    frequency_days: number
+    machines: { name: string; barcode: string } | null
+  }) {
+    setBusyId(task.id)
+    try {
+      const result = await quickComplete.mutateAsync({
+        machineId: task.machine_id,
+        taskId: task.id,
+        taskTitle: task.title,
+        frequencyDays: task.frequency_days,
+      })
+      flash(
+        `Erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+      )
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (isLoading) {
     return <p className="text-kwd-muted p-4">Lade Wartungsplan…</p>
   }
@@ -39,16 +73,23 @@ export default function MaintenancePage() {
         <header>
           <h2 className="text-xl font-bold">Wartungsplaner</h2>
           <p className="text-kwd-muted mt-1 text-sm">
-            Gelb = innerhalb 3 Monate · Rot = überfällig · Abschluss setzt die nächste Fälligkeit.
+            <strong>Erledigt</strong> = sofort abschließen · <strong>Details</strong> = Checkliste /
+            Notizen. Gelb ≤ 3 Monate · Rot = überfällig.
           </p>
         </header>
+
+        {toast && (
+          <p className="bg-kwd-success/15 text-kwd-success border-kwd-success/30 border px-3 py-2 text-sm font-medium">
+            {toast}
+          </p>
+        )}
 
         {tasks?.length === 0 && (
           <div className="bg-kwd-surface rounded-xl p-6 text-center">
             <p className="text-kwd-muted">Keine Wartungsaufgaben geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
               In der Maschinenakte unter Lebenszyklus „+ Wartung“ mit Dauer anlegen – dann erscheint
-              die Aufgabe hier.
+              die Aufgabe hier. Oder in der Maschinenliste bei „Nächste Wartung“ auf ✓ tippen.
             </p>
           </div>
         )}
@@ -57,6 +98,7 @@ export default function MaintenancePage() {
           const machine = task.machines as { name: string; barcode: string } | null
           const tone = maintenanceDueTone(task.next_due_date)
           const dueDate = new Date(task.next_due_date)
+          const busy = busyId === task.id
 
           return (
             <article
@@ -88,23 +130,41 @@ export default function MaintenancePage() {
                 </span>
                 <span className="text-kwd-muted">Dauer: {formatDurationDays(task.frequency_days)}</span>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setActiveTask({
-                    id: task.id,
-                    machineId: task.machine_id,
-                    title: task.title,
-                    frequency_days: task.frequency_days,
-                    next_due_date: task.next_due_date,
-                    machineName: machine?.name ?? 'Unbekannt',
-                    machineBarcode: machine?.barcode ?? '',
-                  })
-                }
-                className="kwd-btn kwd-btn-primary mt-3 min-h-[44px] w-full"
-              >
-                Wartung öffnen
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy || quickComplete.isPending}
+                  onClick={() =>
+                    void handleQuickDone({
+                      id: task.id,
+                      machine_id: task.machine_id,
+                      title: task.title,
+                      frequency_days: task.frequency_days,
+                      machines: machine,
+                    })
+                  }
+                  className="kwd-btn kwd-btn-primary min-h-[44px] flex-1"
+                >
+                  {busy ? 'Speichern…' : 'Erledigt'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveTask({
+                      id: task.id,
+                      machineId: task.machine_id,
+                      title: task.title,
+                      frequency_days: task.frequency_days,
+                      next_due_date: task.next_due_date,
+                      machineName: machine?.name ?? 'Unbekannt',
+                      machineBarcode: machine?.barcode ?? '',
+                    })
+                  }
+                  className="kwd-btn min-h-[44px] flex-1"
+                >
+                  Details
+                </button>
+              </div>
             </article>
           )
         })}

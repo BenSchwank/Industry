@@ -26,6 +26,7 @@ import {
   type MachineSortBy,
 } from '../../hooks/useMachinesWithStats'
 import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useUpdateMachine } from '../../hooks/useMachines'
+import { useQuickCompleteMaintenance } from '../../hooks/useQuickCompleteMaintenance'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
 import { Tip } from '../ui/Tip'
@@ -241,9 +242,11 @@ function MachineRow({
   checked,
   searchQuery,
   dragOver,
+  completing,
   onSelect,
   onToggleCheck,
   onOpenFullscreen,
+  onQuickComplete,
   onDragStart,
   onDragOver,
   onDrop,
@@ -254,15 +257,21 @@ function MachineRow({
   checked: boolean
   searchQuery?: string
   dragOver: boolean
+  completing?: boolean
   onSelect: (id: string) => void
   onToggleCheck: (id: string, shiftKey: boolean) => void
   onOpenFullscreen?: (id: string) => void
+  onQuickComplete?: (machine: MachineWithStats) => void
   onDragStart: (id: string) => void
   onDragOver: (id: string) => void
   onDrop: (id: string) => void
   onDragEnd: () => void
 }) {
   const problemHit = searchQuery ? matchProblemSnippet(m, searchQuery) : null
+  const dueTone = maintenanceDueTone(m.next_maintenance_at)
+  const showQuick =
+    Boolean(onQuickComplete && m.next_maintenance_at) &&
+    (dueTone === 'overdue' || dueTone === 'soon' || Boolean(m.next_maintenance_at))
 
   return (
     <tr
@@ -344,14 +353,31 @@ function MachineRow({
         <DocsCell machine={m} />
       </td>
       <td>{formatDate(m.last_maintenance_at)}</td>
-      <td className={dateCellClass(m.next_maintenance_at, true)} title={
-        maintenanceDueTone(m.next_maintenance_at) === 'overdue'
-          ? 'Überfällig'
-          : maintenanceDueTone(m.next_maintenance_at) === 'soon'
-            ? 'Fällig innerhalb von 3 Monaten'
-            : undefined
-      }>
-        {formatDate(m.next_maintenance_at)}
+      <td
+        className={dateCellClass(m.next_maintenance_at, true)}
+        title={
+          dueTone === 'overdue'
+            ? 'Überfällig'
+            : dueTone === 'soon'
+              ? 'Fällig innerhalb von 3 Monaten'
+              : undefined
+        }
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5">
+          <span>{formatDate(m.next_maintenance_at)}</span>
+          {showQuick && (
+            <button
+              type="button"
+              disabled={completing}
+              onClick={() => onQuickComplete?.(m)}
+              className="kwd-btn kwd-btn-primary px-1.5 py-0.5 text-[10px] font-bold"
+              title="Wartung sofort als erledigt markieren"
+            >
+              {completing ? '…' : '✓'}
+            </button>
+          )}
+        </div>
       </td>
       <td>{formatDate(m.last_repair_at)}</td>
       <td className={dateCellClass(m.warranty_until)}>
@@ -427,6 +453,8 @@ export function MachineTable({
   const deleteMachines = useDeleteMachines()
   const duplicateMachines = useDuplicateMachines()
   const updateMachine = useUpdateMachine()
+  const quickComplete = useQuickCompleteMaintenance()
+  const [completingId, setCompletingId] = useState<string | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const lastCheckedId = useRef<string | null>(null)
 
@@ -498,6 +526,27 @@ export function MachineTable({
       else next.add(key)
       return next
     })
+  }
+
+  async function handleQuickComplete(m: MachineWithStats) {
+    if (
+      !window.confirm(
+        `Wartung für „${m.name}“ jetzt als erledigt markieren?\n\nNächste Fälligkeit wird aus dem Intervall berechnet.`,
+      )
+    ) {
+      return
+    }
+    setCompletingId(m.id)
+    try {
+      const result = await quickComplete.mutateAsync({ machineId: m.id })
+      flash(
+        `Wartung erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+      )
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')
+    } finally {
+      setCompletingId(null)
+    }
   }
 
   async function rememberCategory(value: string) {
@@ -1306,9 +1355,11 @@ export function MachineTable({
                         checked={checkedIds.has(m.id)}
                         searchQuery={searchQuery}
                         dragOver={dragOverId === m.id && dragId !== m.id}
+                        completing={completingId === m.id}
                         onSelect={onSelect}
                         onToggleCheck={toggleCheck}
                         onOpenFullscreen={onOpenFullscreen}
+                        onQuickComplete={(machine) => void handleQuickComplete(machine)}
                         onDragStart={(id) => {
                           setDragId(id)
                           if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
