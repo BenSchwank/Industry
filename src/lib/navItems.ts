@@ -1,0 +1,28 @@
+export type AppView =
+  | 'overview'
+  | 'scanner'
+  | 'machines'
+  | 'inventory'
+  | 'tickets'
+  | 'maintenance'
+  | 'messages'
+  | 'import'
+  | 'users'
+  | 'settings'
+  | 'more'
+
+export const DESKTOP_NAV: { view: AppView; label: string }[] = [
+  { view: 'overview', label: 'Übersicht' },
+  { view: 'scanner', label: 'Scanner' },
+  { view: 'machines', label: 'Maschinen' },
+  { view: 'inventory', label: 'Lager' },
+  { view: 'tickets', label: 'Störungen' },
+  { view: 'maintenance', label: 'Wartung' },
+  { view: 'messages', label: 'Nachrichten' },
+  { view: 'import', label: 'QS1 Import' },
+]
+
+/** Nur sichtbar für aktive Admins */
+export const ADMIN_NAV: { view: AppView; label: string }[] = [
+  { view: 'users', label: 'Nutzer' },
+]

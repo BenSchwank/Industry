@@ -1,0 +1,4 @@
+# Inventarnummer;Bezeichnung;Standort;Wartung;Intervall_Tage;Naechster_Termin;Checkliste
+# Beispiel-Zeile (Semikolon-getrennt, wie QS1/Excel-Export üblich):
+M-100234;Hydraulikpresse 500t;Halle 3;Monatliche Inspektion;30;2026-08-01;Sichtprüfung|Schmierung|Sicherheit testen
+M-100235;CNC-Fräsmaschine;Halle 1;Jährliche Wartung;365;2026-12-15;Geometrie prüfen|Spindelöl wechseln|Software-Backup

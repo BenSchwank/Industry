@@ -1,0 +1,985 @@
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import {
+  copyToClipboard,
+  machinesToTsv,
+  mapPasteRowToMachine,
+  parseExcelPaste,
+  type ParsedMachinePaste,
+} from '../../lib/excelClipboard'
+import { normalizeBarcode, suggestMachineBarcode } from '../../lib/barcode'
+import { printMachineLabels } from '../../lib/printLabels'
+import { matchProblemSnippet } from '../../hooks/useMachinesWithStats'
+import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useUpdateMachine } from '../../hooks/useMachines'
+import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
+import type { MachineStatus } from '../../types/database'
+import { Tip } from '../ui/Tip'
+import { usePreferencesStore } from '../../stores/preferencesStore'
+import {
+  draftToInput,
+  EMPTY_DRAFT,
+  MachineAddRow,
+  validateDraft,
+  type DraftField,
+  type MachineAddRowHandle,
+  type MachineDraftValues,
+} from './MachineAddRow'
+
+const INITIAL_BLANK_ROWS = 48
+const BLANK_PAD = 24
+
+const STATUS_LABEL: Record<MachineStatus, string> = {
+  active: 'Aktiv',
+  maintenance: 'In Wartung',
+  offline: 'Offline',
+  decommissioned: 'Außer Betrieb',
+}
+
+const STATUS_CLS: Record<MachineStatus, string> = {
+  active: 'bg-kwd-success/20 text-kwd-success',
+  maintenance: 'bg-kwd-warning/20 text-kwd-warning',
+  offline: 'bg-kwd-muted/20 text-kwd-muted',
+  decommissioned: 'bg-kwd-danger/20 text-kwd-danger',
+}
+
+function formatDate(d: string | null) {
+  if (!d) return '–'
+  return new Date(d).toLocaleDateString('de-DE')
+}
+
+function dateCellClass(d: string | null, overdue = false) {
+  if (!d) return ''
+  if (overdue || new Date(d) < new Date()) return 'text-kwd-danger font-semibold'
+  return ''
+}
+
+function isOverdue(d: string | null) {
+  if (!d) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return new Date(d) < today
+}
+
+function makeBlankGrid(count: number): MachineDraftValues[] {
+  return Array.from({ length: count }, () => ({ ...EMPTY_DRAFT }))
+}
+
+function isBlankDraft(d: MachineDraftValues) {
+  return !d.name.trim() && !d.location.trim() && !d.barcode.trim()
+}
+
+interface MachineTableProps {
+  machines: MachineWithStats[]
+  selectedId: string | null
+  showAddRow: boolean
+  searchQuery?: string
+  fillHeight?: boolean
+  onSelect: (id: string) => void
+  onOpenFullscreen?: (id: string) => void
+  onAddCancel: () => void
+  onAddSaved: (id: string) => void
+}
+
+function DocsCell({ machine: m }: { machine: MachineWithStats }) {
+  if (m.document_count === 0) {
+    return <span className="text-kwd-muted">–</span>
+  }
+
+  const planCls: Record<MachineWithStats['plan_status'], string> = {
+    none: 'bg-kwd-surface-light text-kwd-muted',
+    processing: 'bg-kwd-warning/20 text-kwd-warning',
+    ready: 'bg-kwd-success/20 text-kwd-success',
+    draft: 'bg-kwd-primary/15 text-kwd-primary',
+    failed: 'bg-kwd-danger/15 text-kwd-danger',
+    analyzed: 'bg-kwd-success/15 text-kwd-success',
+  }
+
+  const planShort: Record<MachineWithStats['plan_status'], string | null> = {
+    none: null,
+    processing: 'Analyse…',
+    ready: 'Plan OK',
+    draft: 'Entwurf',
+    failed: 'Fehler',
+    analyzed: 'Analysiert',
+  }
+
+  return (
+    <div className="flex min-w-[7rem] flex-col gap-1">
+      <span className="font-semibold tabular-nums">
+        {m.document_count} Doc{m.document_count === 1 ? '' : 's'}
+        {m.documents_analyzed > 0 && (
+          <span className="text-kwd-muted font-normal"> · {m.documents_analyzed} ✓</span>
+        )}
+      </span>
+      {planShort[m.plan_status] && (
+        <span
+          className={`inline-block max-w-[9rem] truncate px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase ${planCls[m.plan_status]}`}
+          title={m.plan_label ?? undefined}
+        >
+          {planShort[m.plan_status]}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function MachineRow({
+  machine: m,
+  selected,
+  checked,
+  rowIndex,
+  searchQuery,
+  dragOver,
+  onSelect,
+  onToggleCheck,
+  onOpenFullscreen,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  machine: MachineWithStats
+  selected: boolean
+  checked: boolean
+  rowIndex: number
+  searchQuery?: string
+  dragOver: boolean
+  onSelect: (id: string) => void
+  onToggleCheck: (id: string, shiftKey: boolean) => void
+  onOpenFullscreen?: (id: string) => void
+  onDragStart: (id: string) => void
+  onDragOver: (id: string) => void
+  onDrop: (id: string) => void
+  onDragEnd: () => void
+}) {
+  const problemHit = searchQuery ? matchProblemSnippet(m, searchQuery) : null
+
+  return (
+    <tr
+      className={`cursor-pointer transition-colors ${
+        dragOver
+          ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
+          : checked || selected
+            ? 'bg-kwd-primary/15'
+            : 'hover:bg-kwd-surface-light'
+      }`}
+      onClick={() => onSelect(m.id)}
+      onDoubleClick={() => {
+        if (onOpenFullscreen) onOpenFullscreen(m.id)
+        else onSelect(m.id)
+      }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        onDragOver(m.id)
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDrop(m.id)
+      }}
+    >
+      <td
+        className="w-12 px-1"
+        onClick={(e) => e.stopPropagation()}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          onDragStart(m.id)
+        }}
+        onDragEnd={onDragEnd}
+      >
+        <div className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={checked}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              onToggleCheck(m.id, e.shiftKey)
+            }}
+            className="accent-kwd-primary h-4 w-4 cursor-pointer"
+            aria-label={`${m.name} markieren`}
+            title="Markieren zum Verschieben"
+            readOnly
+          />
+          <span
+            className="text-kwd-muted cursor-grab text-xs select-none active:cursor-grabbing"
+            title="Ziehen zum Verschieben"
+            aria-hidden
+          >
+            ⋮⋮
+          </span>
+        </div>
+      </td>
+      <td className="font-mono text-xs font-semibold text-kwd-primary">{m.barcode}</td>
+      <td className="font-medium">
+        <div className="flex flex-col gap-0.5">
+          <span>{m.name}</span>
+          {m.open_ticket_count > 0 && (
+            <span className="text-kwd-danger text-[11px] font-semibold">
+              {m.open_ticket_count} offene Störung{m.open_ticket_count === 1 ? '' : 'en'}
+            </span>
+          )}
+          {problemHit && (
+            <span className="text-kwd-muted text-[11px]">Treffer: {problemHit}</span>
+          )}
+        </div>
+      </td>
+      <td className="text-kwd-muted">{m.location || '–'}</td>
+      <td>
+        <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
+          {STATUS_LABEL[m.status]}
+        </span>
+      </td>
+      <td>
+        <DocsCell machine={m} />
+      </td>
+      <td>{formatDate(m.last_maintenance_at)}</td>
+      <td className={dateCellClass(m.next_maintenance_at, isOverdue(m.next_maintenance_at))}>
+        {formatDate(m.next_maintenance_at)}
+      </td>
+      <td>{formatDate(m.last_repair_at)}</td>
+      <td className={dateCellClass(m.warranty_until, isOverdue(m.warranty_until))}>
+        {formatDate(m.warranty_until)}
+      </td>
+      <td className="text-right">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (onOpenFullscreen) onOpenFullscreen(m.id)
+            else onSelect(m.id)
+          }}
+          className="text-kwd-primary text-xs font-semibold hover:underline"
+        >
+          Vollbild
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+export function MachineTable({
+  machines,
+  selectedId,
+  showAddRow,
+  searchQuery = '',
+  fillHeight = false,
+  onSelect,
+  onOpenFullscreen,
+  onAddCancel,
+  onAddSaved,
+}: MachineTableProps) {
+  const addRowRef = useRef<MachineAddRowHandle | null>(null)
+  const tableFocusRef = useRef<HTMLDivElement>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [bulkPending, setBulkPending] = useState<{
+    count: number
+    rows: ParsedMachinePaste[]
+  } | null>(null)
+  const tableListMode = usePreferencesStore((s) => s.tableListMode)
+  const setTableListMode = usePreferencesStore((s) => s.setTableListMode)
+  const machineOrder = usePreferencesStore((s) => s.machineOrder)
+  const setMachineOrder = usePreferencesStore((s) => s.setMachineOrder)
+  const infinite = tableListMode === 'infinite'
+
+  /** Viele leere Canvas-Zeilen (nur Endlos-Modus) */
+  const [gridRows, setGridRows] = useState<MachineDraftValues[]>(() =>
+    makeBlankGrid(INITIAL_BLANK_ROWS),
+  )
+  /** Fortlaufend: nur Zeilen nach der letzten */
+  const [continuousRows, setContinuousRows] = useState<MachineDraftValues[]>([
+    { ...EMPTY_DRAFT },
+  ])
+  const [selectedCell, setSelectedCell] = useState<{
+    row: number
+    field: DraftField
+  } | null>(null)
+  const [draftError, setDraftError] = useState<string | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [printingLabels, setPrintingLabels] = useState(false)
+  const moreMenuRef = useRef<HTMLDivElement>(null)
+  const bulkCreate = useBulkCreateMachines()
+  const createMachine = useCreateMachine()
+  const deleteMachines = useDeleteMachines()
+  const duplicateMachines = useDuplicateMachines()
+  const updateMachine = useUpdateMachine()
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const lastCheckedId = useRef<string | null>(null)
+
+  const orderedMachines = useMemo(() => {
+    if (machineOrder.length === 0) return machines
+    const map = new Map(machines.map((m) => [m.id, m]))
+    const sorted: MachineWithStats[] = []
+    for (const id of machineOrder) {
+      const m = map.get(id)
+      if (m) {
+        sorted.push(m)
+        map.delete(id)
+      }
+    }
+    for (const m of map.values()) sorted.push(m)
+    return sorted
+  }, [machines, machineOrder])
+
+  const activeDrafts = infinite ? gridRows : continuousRows
+  const setActiveDrafts = infinite ? setGridRows : setContinuousRows
+
+  const flatIds = useMemo(() => orderedMachines.map((m) => m.id), [orderedMachines])
+  const allChecked =
+    orderedMachines.length > 0 && orderedMachines.every((m) => checkedIds.has(m.id))
+  const checkedList = useMemo(
+    () => orderedMachines.filter((m) => checkedIds.has(m.id)),
+    [orderedMachines, checkedIds],
+  )
+  const filledDrafts = useMemo(
+    () => activeDrafts.filter((d) => !isBlankDraft(d)),
+    [activeDrafts],
+  )
+
+  useEffect(() => {
+    if (!showAddRow) {
+      setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
+      setContinuousRows([{ ...EMPTY_DRAFT }])
+      setSelectedCell(null)
+      setDraftError(null)
+    }
+  }, [showAddRow])
+
+  useEffect(() => {
+    const idSet = new Set(machines.map((m) => m.id))
+    const pruned = machineOrder.filter((id) => idSet.has(id))
+    const known = new Set(pruned)
+    const missing = machines.map((m) => m.id).filter((id) => !known.has(id))
+    if (missing.length === 0 && pruned.length === machineOrder.length) return
+    setMachineOrder([...pruned, ...missing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machines])
+
+  useEffect(() => {
+    setCheckedIds((prev) => {
+      const next = new Set([...prev].filter((id) => flatIds.includes(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [flatIds])
+
+  // Endlos: am Ende nachfüllen
+  useEffect(() => {
+    if (!infinite) return
+    const tail = gridRows.slice(-8)
+    if (tail.some((d) => !isBlankDraft(d))) {
+      setGridRows((prev) => [...prev, ...makeBlankGrid(BLANK_PAD)])
+    }
+  }, [gridRows, infinite])
+
+  // Fortlaufend: genau eine leere Zeile nach der letzten
+  useEffect(() => {
+    if (infinite) return
+    const last = continuousRows[continuousRows.length - 1]
+    if (!last || !isBlankDraft(last)) {
+      setContinuousRows((prev) => [...prev, { ...EMPTY_DRAFT }])
+      return
+    }
+    // Extra-Leerzeilen am Ende entfernen (nur eine behalten)
+    let cut = continuousRows.length
+    while (cut > 1 && isBlankDraft(continuousRows[cut - 1]) && isBlankDraft(continuousRows[cut - 2])) {
+      cut -= 1
+    }
+    if (cut !== continuousRows.length) {
+      setContinuousRows((prev) => prev.slice(0, cut))
+    }
+  }, [continuousRows, infinite])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    function onDoc(e: MouseEvent) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMoreOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
+
+  function flash(msg: string) {
+    setToast(msg)
+    window.setTimeout(() => setToast(null), 3000)
+  }
+
+  async function moveMachinesOnto(targetId: string, sourceId: string) {
+    const movingIds =
+      checkedIds.has(sourceId) && checkedIds.size > 0
+        ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+        : [sourceId]
+
+    if (movingIds.includes(targetId)) return
+
+    const target = orderedMachines.find((m) => m.id === targetId)
+    if (!target) return
+
+    const remaining = flatIds.filter((id) => !movingIds.includes(id))
+    const targetIdx = remaining.indexOf(targetId)
+    const nextOrder = [
+      ...remaining.slice(0, targetIdx + 1),
+      ...movingIds,
+      ...remaining.slice(targetIdx + 1),
+    ]
+    setMachineOrder(nextOrder)
+
+    const newLocation = target.location?.trim() || ''
+    try {
+      await Promise.all(
+        movingIds.map((id) => {
+          const m = orderedMachines.find((x) => x.id === id)
+          if (!m || (m.location ?? '') === newLocation) return Promise.resolve()
+          return updateMachine.mutateAsync({ id, location: newLocation })
+        }),
+      )
+      flash(
+        movingIds.length === 1
+          ? newLocation
+            ? `Standort → ${newLocation}`
+            : 'Reihenfolge geändert'
+          : `${movingIds.length} verschoben` + (newLocation ? ` · Standort → ${newLocation}` : ''),
+      )
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Standort-Update fehlgeschlagen')
+    }
+  }
+
+  async function handlePrintLabels() {
+    setMoreOpen(false)
+    const rows = checkedList.length > 0 ? checkedList : orderedMachines
+    if (rows.length === 0) {
+      flash('Keine Maschinen zum Drucken')
+      return
+    }
+    const missing = rows.filter((m) => !normalizeBarcode(m.barcode))
+    if (missing.length > 0) {
+      flash(`${missing.length} Maschine(n) ohne Scan-Code – bitte zuerst Code setzen`)
+      return
+    }
+    setPrintingLabels(true)
+    try {
+      await printMachineLabels(
+        rows.map((m) => ({
+          code: m.barcode,
+          title: m.name,
+          subtitle: m.location || undefined,
+        })),
+      )
+      flash(`${rows.length} Label${rows.length === 1 ? '' : 's'} auf einem Blatt`)
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Label-Druck fehlgeschlagen')
+    } finally {
+      setPrintingLabels(false)
+    }
+  }
+
+  function toggleCheck(id: string, shiftKey: boolean) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (shiftKey && lastCheckedId.current) {
+        const a = flatIds.indexOf(lastCheckedId.current)
+        const b = flatIds.indexOf(id)
+        if (a >= 0 && b >= 0) {
+          const [from, to] = a < b ? [a, b] : [b, a]
+          for (let i = from; i <= to; i++) next.add(flatIds[i])
+          lastCheckedId.current = id
+          return next
+        }
+      }
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      lastCheckedId.current = id
+      return next
+    })
+  }
+
+  function toggleCheckAll() {
+    if (allChecked) setCheckedIds(new Set())
+    else setCheckedIds(new Set(flatIds))
+  }
+
+  async function handleCopySelection() {
+    const rows = checkedList.length > 0 ? checkedList : orderedMachines
+    const tsv = machinesToTsv(rows)
+    const ok = await copyToClipboard(tsv)
+    flash(ok ? `${rows.length} Zeile(n) kopiert` : 'Kopieren fehlgeschlagen')
+  }
+
+  async function handleDuplicateSelection() {
+    if (checkedList.length === 0) {
+      flash('Bitte zuerst Zeilen markieren')
+      return
+    }
+    const { results, errors } = await duplicateMachines.mutateAsync(checkedList)
+    setCheckedIds(new Set())
+    flash(`${results.length} dupliziert` + (errors.length ? ` · ${errors.length} Fehler` : ''))
+  }
+
+  async function handleDeleteSelection() {
+    if (checkedList.length === 0) {
+      flash('Bitte zuerst Zeilen markieren')
+      return
+    }
+    if (
+      !confirm(
+        `${checkedList.length} Maschine(n) endgültig löschen? Zugehörige Daten können verloren gehen.`,
+      )
+    ) {
+      return
+    }
+    try {
+      await deleteMachines.mutateAsync(checkedList.map((m) => m.id))
+      setCheckedIds(new Set())
+      flash(`${checkedList.length} gelöscht`)
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Löschen fehlgeschlagen')
+    }
+  }
+
+  function handleFillDown(sourceRow: number, field: DraftField, rowCount: number) {
+    if (rowCount <= 0) return
+    setActiveDrafts((prev) => {
+      const next = [...prev]
+      while (next.length <= sourceRow + rowCount) next.push({ ...EMPTY_DRAFT })
+      const source = next[sourceRow] ?? EMPTY_DRAFT
+      const value = source[field]
+      for (let i = 1; i <= rowCount; i++) {
+        const cur = next[sourceRow + i] ?? { ...EMPTY_DRAFT }
+        const updated: MachineDraftValues = { ...cur, [field]: value }
+        if (field === 'barcode' && typeof value === 'string' && value.trim()) {
+          updated.barcode = suggestMachineBarcode(cur.name || source.name || 'MASCHINE')
+        }
+        next[sourceRow + i] = updated
+      }
+      return next
+    })
+    setSelectedCell({ row: sourceRow + rowCount, field })
+    flash(`${rowCount} Zelle${rowCount === 1 ? '' : 'n'} ausgefüllt`)
+  }
+
+  function resetDrafts() {
+    setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
+    setContinuousRows([{ ...EMPTY_DRAFT }])
+    setSelectedCell(null)
+  }
+
+  async function saveDrafts() {
+    setDraftError(null)
+    const rows = filledDrafts
+    if (rows.length === 0) {
+      setDraftError('Mindestens Bezeichnung und Standort in einer Zeile eingeben')
+      return
+    }
+    for (const row of rows) {
+      const err = validateDraft(row)
+      if (err) {
+        setDraftError(err)
+        return
+      }
+    }
+
+    if (rows.length === 1) {
+      try {
+        const machine = await createMachine.mutateAsync(draftToInput(rows[0]))
+        resetDrafts()
+        onAddSaved(machine.id)
+        flash('Maschine gespeichert')
+      } catch (e) {
+        setDraftError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen')
+      }
+      return
+    }
+
+    const { results, errors } = await bulkCreate.mutateAsync(rows.map(draftToInput))
+    if (results.length > 0) {
+      resetDrafts()
+      onAddSaved(results[results.length - 1].id)
+    }
+    flash(
+      `${results.length} Maschinen gespeichert` +
+        (errors.length ? ` · ${errors.length} Fehler` : ''),
+    )
+    if (errors.length && results.length === 0) {
+      setDraftError(errors[0] ?? 'Speichern fehlgeschlagen')
+    }
+  }
+
+  function handleAddCancel() {
+    resetDrafts()
+    setDraftError(null)
+    onAddCancel()
+  }
+
+  async function handleCopyAll() {
+    await handleCopySelection()
+  }
+
+  function applyPasteText(text: string) {
+    if (!text.includes('\t') && !text.includes('\n')) return false
+    const parsed = parseExcelPaste(text)
+    if (parsed.length === 0) return false
+    const mapped = parsed
+      .map(mapPasteRowToMachine)
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+    if (mapped.length === 0) {
+      flash('Keine gültigen Excel-Zeilen erkannt')
+      return true
+    }
+    if (mapped.length === 1) {
+      addRowRef.current?.fillFromPaste(parsed[0])
+      setActiveDrafts((prev) => {
+        const next = [...prev]
+        const idx = next.findIndex(isBlankDraft)
+        const i = idx >= 0 ? idx : 0
+        const mappedRow = mapPasteRowToMachine(parsed[0])
+        if (mappedRow) {
+          next[i] = {
+            ...EMPTY_DRAFT,
+            name: mappedRow.name,
+            location: mappedRow.location ?? '',
+            barcode: mappedRow.barcode
+              ? normalizeBarcode(mappedRow.barcode)
+              : suggestMachineBarcode(mappedRow.name),
+            status: (mappedRow.status as MachineStatus) ?? 'active',
+            lastMaintenance: mappedRow.last_maintenance_at ?? '',
+            nextMaintenance: mappedRow.next_maintenance_at ?? '',
+            lastRepair: mappedRow.last_repair_at ?? '',
+            warrantyUntil: mappedRow.warranty_until ?? '',
+          }
+        }
+        return next
+      })
+      flash('1 Zeile übernommen – Enter speichert')
+      return true
+    }
+    void importBulk(mapped)
+    return true
+  }
+
+  async function importBulk(rows: ParsedMachinePaste[]) {
+    const inputs = rows
+      .filter((row) => row.name.trim() && row.location?.trim())
+      .map((row) => {
+        const barcode = row.barcode
+          ? normalizeBarcode(row.barcode)
+          : suggestMachineBarcode(row.name)
+        return {
+          barcode,
+          name: row.name,
+          location: row.location!.trim(),
+          warranty_until: row.warranty_until ?? null,
+          status: (row.status as MachineStatus) ?? 'active',
+          last_maintenance_at: row.last_maintenance_at ?? null,
+          next_maintenance_at: row.next_maintenance_at ?? null,
+          last_repair_at: row.last_repair_at ?? null,
+        }
+      })
+    const skipped = rows.length - inputs.length
+    if (inputs.length === 0) {
+      flash('Import abgebrochen – Bezeichnung und Standort sind Pflicht')
+      return
+    }
+    setBulkPending({ count: inputs.length, rows })
+    const { results, errors } = await bulkCreate.mutateAsync(inputs)
+    setBulkPending(null)
+    flash(
+      `${results.length} aus Excel übernommen` +
+        (skipped ? ` · ${skipped} übersprungen` : '') +
+        (errors.length ? ` · ${errors.length} Fehler` : ''),
+    )
+    if (results.length > 0) onAddSaved(results[results.length - 1].id)
+  }
+
+  function handlePaste(e: ClipboardEvent) {
+    const text = e.clipboardData.getData('text/plain')
+    if (applyPasteText(text)) e.preventDefault()
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.ctrlKey || e.metaKey
+      const target = e.target as HTMLElement | null
+      const inField =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+
+      if (mod && e.key.toLowerCase() === 'c' && !inField) {
+        e.preventDefault()
+        void handleCopyAll()
+      }
+      if (mod && e.key.toLowerCase() === 'v' && !inField) {
+        tableFocusRef.current?.focus()
+      }
+      if (mod && e.key.toLowerCase() === 's' && showAddRow) {
+        e.preventDefault()
+        void saveDrafts()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machines, showAddRow, filledDrafts])
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="kwd-toolbar justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-kwd-muted text-xs font-semibold tracking-wide uppercase">
+            Bearbeiten
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleCopySelection()}
+            disabled={machines.length === 0 || bulkCreate.isPending}
+            className="kwd-btn"
+          >
+            Kopieren
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDuplicateSelection()}
+            disabled={checkedList.length === 0 || duplicateMachines.isPending}
+            className="kwd-btn"
+          >
+            Duplizieren{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDeleteSelection()}
+            disabled={checkedList.length === 0 || deleteMachines.isPending}
+            className="kwd-btn kwd-btn-danger"
+          >
+            Löschen{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
+          </button>
+          <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
+          <button
+            type="button"
+            onClick={() => setTableListMode('continuous')}
+            className={`kwd-btn text-xs ${!infinite ? 'kwd-btn-primary' : ''}`}
+            title="Nur Zeile nach der letzten"
+          >
+            Fortlaufend
+          </button>
+          <button
+            type="button"
+            onClick={() => setTableListMode('infinite')}
+            className={`kwd-btn text-xs ${infinite ? 'kwd-btn-primary' : ''}`}
+            title="Viele leere Zeilen"
+          >
+            Endlos
+          </button>
+          <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const text = await navigator.clipboard.readText()
+                if (!applyPasteText(text)) flash('Zwischenablage enthält keine Excel-Daten')
+              } catch {
+                flash('Bitte Strg+V in der Tabelle verwenden')
+                tableFocusRef.current?.focus()
+              }
+            }}
+            disabled={bulkCreate.isPending}
+            className="kwd-btn kwd-btn-primary"
+          >
+            Einfügen
+          </button>
+          {filledDrafts.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void saveDrafts()}
+              disabled={createMachine.isPending || bulkCreate.isPending}
+              className="kwd-btn kwd-btn-primary"
+            >
+              Speichern ({filledDrafts.length})
+            </button>
+          )}
+          {checkedList.length > 0 && (
+            <button type="button" onClick={() => setCheckedIds(new Set())} className="kwd-btn">
+              Auswahl aufheben
+            </button>
+          )}
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreOpen((o) => !o)}
+              className="kwd-btn px-2"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              title="Weitere Aktionen"
+            >
+              ⋮
+            </button>
+            {moreOpen && (
+              <div
+                role="menu"
+                className="border-kwd-border bg-kwd-surface absolute top-full right-0 z-30 mt-1 min-w-[14rem] border py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void handlePrintLabels()}
+                  disabled={printingLabels || orderedMachines.length === 0}
+                  className="hover:bg-kwd-surface-light disabled:text-kwd-muted w-full px-3 py-2 text-left text-sm disabled:cursor-not-allowed"
+                >
+                  {printingLabels
+                    ? 'Labels werden vorbereitet…'
+                    : checkedList.length > 0
+                      ? `Labels drucken (${checkedList.length})`
+                      : `Alle Labels drucken (${orderedMachines.length})`}
+                </button>
+                <p className="text-kwd-muted border-kwd-border border-t px-3 py-2 text-[11px] leading-snug">
+                  Markierte Maschinen → mehrere Labels auf einem A4-Blatt
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+        <Tip>
+          <p className="text-kwd-muted text-xs">
+            {infinite
+              ? 'Endlos-Liste · Häkchen + Ziehen ändert Reihenfolge & Standort'
+              : 'Fortlaufend · Häkchen + Ziehen ändert Reihenfolge & Standort'}
+          </p>
+        </Tip>
+      </div>
+
+      {bulkCreate.isPending && (
+        <p className="bg-kwd-primary/10 text-kwd-text border-kwd-primary border px-3 py-2 text-sm font-medium">
+          Excel-Import: {bulkPending?.count ?? '…'} Zeilen werden übernommen…
+        </p>
+      )}
+      {toast && (
+        <p className="bg-kwd-success/15 text-kwd-success border-kwd-success/30 border px-3 py-2 text-xs font-medium">
+          {toast}
+        </p>
+      )}
+      {draftError && (
+        <p className="bg-kwd-danger/10 text-kwd-danger border-kwd-danger border px-3 py-2 text-xs font-medium">
+          {draftError}
+        </p>
+      )}
+
+      <div
+        ref={tableFocusRef}
+        tabIndex={0}
+        className={`border-kwd-border border focus:outline focus:outline-2 focus:outline-[color-mix(in_srgb,var(--kwd-primary)_40%,transparent)] ${
+          fillHeight ? 'min-h-[70vh]' : 'max-h-[calc(100vh-280px)] min-h-[320px] overflow-auto'
+        }`}
+        onPaste={handlePaste}
+      >
+        <table className="w-full min-w-[1100px] text-sm">
+          <thead className="bg-kwd-surface sticky top-0 z-10 shadow-sm">
+            <tr>
+              <th className="w-10 px-2">
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  onChange={toggleCheckAll}
+                  className="accent-kwd-primary h-4 w-4"
+                  aria-label="Alle markieren"
+                />
+              </th>
+              <th>Scan-Code</th>
+              <th className="min-w-[160px]">Bezeichnung</th>
+              <th>Standort</th>
+              <th>Status</th>
+              <th className="min-w-[100px]">Docs / Plan</th>
+              <th>Letzte Wartung</th>
+              <th>Nächste Wartung</th>
+              <th>Letzte Reparatur</th>
+              <th>Garantie</th>
+              <th className="w-24"> </th>
+            </tr>
+          </thead>
+          <tbody>
+            {orderedMachines.map((m, idx) => (
+              <MachineRow
+                key={m.id}
+                machine={m}
+                selected={m.id === selectedId}
+                checked={checkedIds.has(m.id)}
+                rowIndex={idx}
+                searchQuery={searchQuery}
+                dragOver={dragOverId === m.id && dragId !== m.id}
+                onSelect={onSelect}
+                onToggleCheck={toggleCheck}
+                onOpenFullscreen={onOpenFullscreen}
+                onDragStart={(id) => {
+                  setDragId(id)
+                  if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
+                }}
+                onDragOver={(id) => setDragOverId(id)}
+                onDrop={(id) => {
+                  if (dragId) void moveMachinesOnto(id, dragId)
+                  setDragId(null)
+                  setDragOverId(null)
+                }}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setDragOverId(null)
+                }}
+              />
+            ))}
+            {showAddRow &&
+              activeDrafts.map((draft, i) => (
+                <MachineAddRow
+                  key={`grid-${i}`}
+                  values={draft}
+                  blank={infinite}
+                  selectedField={selectedCell?.row === i ? selectedCell.field : null}
+                  onSelectField={(field) => setSelectedCell({ row: i, field })}
+                  onChange={(v) => {
+                    setActiveDrafts((prev) => {
+                      const next = [...prev]
+                      next[i] = v
+                      return next
+                    })
+                  }}
+                  onFillDown={(field, n) => handleFillDown(i, field, n)}
+                  onSaveRequest={() => void saveDrafts()}
+                  onCancel={() => {
+                    setActiveDrafts((prev) => {
+                      const next = [...prev]
+                      next[i] = { ...EMPTY_DRAFT }
+                      return next
+                    })
+                  }}
+                  registerRef={
+                    i === 0
+                      ? (h) => {
+                          addRowRef.current = h
+                        }
+                      : undefined
+                  }
+                  error={null}
+                  saving={createMachine.isPending || bulkCreate.isPending}
+                />
+              ))}
+            {orderedMachines.length === 0 && !showAddRow && (
+              <tr>
+                <td colSpan={11} className="text-kwd-muted px-4 py-12 text-center">
+                  Keine Treffer – Suche ändern oder Strg+V aus Excel.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
