@@ -31,31 +31,6 @@ export interface MachineWithStats {
   problem_texts: string[]
 }
 
-function emptyStats(): Pick<
-  MachineWithStats,
-  | 'last_maintenance_at'
-  | 'next_maintenance_at'
-  | 'last_repair_at'
-  | 'open_ticket_count'
-  | 'document_count'
-  | 'documents_analyzed'
-  | 'plan_status'
-  | 'plan_label'
-  | 'problem_texts'
-> {
-  return {
-    last_maintenance_at: null,
-    next_maintenance_at: null,
-    last_repair_at: null,
-    open_ticket_count: 0,
-    document_count: 0,
-    documents_analyzed: 0,
-    plan_status: 'none',
-    plan_label: null,
-    problem_texts: [],
-  }
-}
-
 function buildSearchHaystack(m: MachineWithStats): string {
   return [
     m.barcode,

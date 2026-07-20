@@ -72,6 +72,9 @@ export function useCreateMachine() {
       if (error) {
         throw new Error(formatSupabaseError(error))
       }
+      if (!data) {
+        throw new Error('Maschine konnte nicht angelegt werden')
+      }
 
       try {
         await applyMachineInitialDates(data.id, input)
@@ -124,6 +127,7 @@ export function useBulkCreateMachines() {
           }
 
           if (error) throw new Error(formatSupabaseError(error))
+          if (!data) throw new Error('Maschine konnte nicht angelegt werden')
           try {
             await applyMachineInitialDates(data.id, input)
           } catch {
