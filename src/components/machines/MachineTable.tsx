@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import {
   copyToClipboard,
   machinesToTsv,
@@ -9,6 +9,8 @@ import {
 import { normalizeBarcode, suggestMachineBarcode } from '../../lib/barcode'
 import {
   MACHINE_CATEGORY_DATALIST_ID,
+  UNCATEGORIZED_LABEL,
+  groupMachinesByCategory,
   machineCategorySuggestions,
 } from '../../lib/machineCategories'
 import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
@@ -131,59 +133,6 @@ function DocsCell({ machine: m }: { machine: MachineWithStats }) {
         </span>
       )}
     </div>
-  )
-}
-
-function CategoryCell({
-  machine: m,
-}: {
-  machine: MachineWithStats
-}) {
-  const updateMachine = useUpdateMachine()
-  const [value, setValue] = useState(m.category ?? '')
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    setValue(m.category ?? '')
-  }, [m.id, m.category])
-
-  async function commit() {
-    const next = value.trim() || null
-    if ((next ?? '') === (m.category ?? '')) return
-    setSaving(true)
-    try {
-      await updateMachine.mutateAsync({ id: m.id, category: next })
-    } catch {
-      setValue(m.category ?? '')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-      <input
-        list={MACHINE_CATEGORY_DATALIST_ID}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            ;(e.target as HTMLInputElement).blur()
-          }
-          if (e.key === 'Escape') {
-            setValue(m.category ?? '')
-            ;(e.target as HTMLInputElement).blur()
-          }
-        }}
-        placeholder="selbst eintippen…"
-        disabled={saving}
-        className="bg-transparent text-kwd-muted h-7 w-full min-w-[5.5rem] border-0 px-1 text-xs focus:bg-kwd-paper focus:outline focus:outline-1 focus:outline-[var(--kwd-primary)]"
-        aria-label={`Kategorie für ${m.name}`}
-        title="Freitext – bekannte Werte erscheinen als Vorschlag"
-      />
-    </td>
   )
 }
 
@@ -382,7 +331,6 @@ function MachineRow({
           )}
         </div>
       </td>
-      <CategoryCell machine={m} />
       <LocationCell machine={m} />
       <td>
         <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
@@ -465,6 +413,8 @@ export function MachineTable({
   const [draftError, setDraftError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set())
   const [moreOpen, setMoreOpen] = useState(false)
   const [printingLabels, setPrintingLabels] = useState(false)
   const moreMenuRef = useRef<HTMLDivElement>(null)
@@ -527,6 +477,51 @@ export function MachineTable({
       ]),
     [machines, activeDrafts, fieldOptions?.locations],
   )
+
+  const categoryGroups = useMemo(
+    () =>
+      groupMachinesByCategory(orderedMachines, {
+        sortGroups: sortBy === 'manual' ? false : true,
+        descending: sortBy === 'category' ? sortDescending : false,
+      }),
+    [orderedMachines, sortBy, sortDescending],
+  )
+
+  function toggleCategoryCollapsed(key: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  async function moveMachinesToCategory(categoryKey: string, sourceId: string) {
+    const movingIds =
+      checkedIds.has(sourceId) && checkedIds.size > 0
+        ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+        : [sourceId]
+
+    const nextCategory = categoryKey === UNCATEGORIZED_LABEL ? null : categoryKey
+
+    try {
+      await Promise.all(
+        movingIds.map((id) => {
+          const m = orderedMachines.find((x) => x.id === id)
+          if (!m) return Promise.resolve()
+          if ((m.category?.trim() || null) === nextCategory) return Promise.resolve()
+          return updateMachine.mutateAsync({ id, category: nextCategory })
+        }),
+      )
+      flash(
+        movingIds.length === 1
+          ? `Kategorie → ${nextCategory ?? UNCATEGORIZED_LABEL}`
+          : `${movingIds.length} → ${nextCategory ?? UNCATEGORIZED_LABEL}`,
+      )
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Kategorie konnte nicht gesetzt werden')
+    }
+  }
 
   const flatIds = useMemo(() => orderedMachines.map((m) => m.id), [orderedMachines])
   const allChecked =
@@ -1113,13 +1108,6 @@ export function MachineTable({
                 className="min-w-[160px]"
               />
               <SortableTh
-                label="Kategorie"
-                column="category"
-                sortBy={sortBy}
-                sortDescending={sortDescending}
-                onSort={onSortByChange ? handleHeaderSort : undefined}
-              />
-              <SortableTh
                 label="Standort"
                 column="location"
                 sortBy={sortBy}
@@ -1142,33 +1130,82 @@ export function MachineTable({
             </tr>
           </thead>
           <tbody>
-            {orderedMachines.map((m) => (
-              <MachineRow
-                key={m.id}
-                machine={m}
-                selected={m.id === selectedId}
-                checked={checkedIds.has(m.id)}
-                searchQuery={searchQuery}
-                dragOver={dragOverId === m.id && dragId !== m.id}
-                onSelect={onSelect}
-                onToggleCheck={toggleCheck}
-                onOpenFullscreen={onOpenFullscreen}
-                onDragStart={(id) => {
-                  setDragId(id)
-                  if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
-                }}
-                onDragOver={(id) => setDragOverId(id)}
-                onDrop={(id) => {
-                  if (dragId) void moveMachinesOnto(id, dragId)
-                  setDragId(null)
-                  setDragOverId(null)
-                }}
-                onDragEnd={() => {
-                  setDragId(null)
-                  setDragOverId(null)
-                }}
-              />
-            ))}
+            {categoryGroups.map((group) => {
+              const collapsed = collapsedCategories.has(group.key)
+              const dropActive = dragOverCategory === group.key && dragId != null
+              return (
+                <Fragment key={group.key}>
+                  <tr
+                    className={`border-kwd-border border-y ${
+                      dropActive
+                        ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
+                        : 'bg-kwd-surface/90'
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      setDragOverCategory(group.key)
+                    }}
+                    onDragLeave={() => {
+                      setDragOverCategory((cur) => (cur === group.key ? null : cur))
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (dragId) void moveMachinesToCategory(group.key, dragId)
+                      setDragId(null)
+                      setDragOverId(null)
+                      setDragOverCategory(null)
+                    }}
+                  >
+                    <td colSpan={11} className="px-2 py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleCategoryCollapsed(group.key)}
+                        className="hover:text-kwd-primary flex w-full items-center gap-2 text-left text-xs font-bold tracking-wide uppercase"
+                        title="Ordner ein-/ausklappen · Maschinen hierher ziehen setzt die Kategorie"
+                      >
+                        <span className="font-mono text-[11px]" aria-hidden>
+                          {collapsed ? '▶' : '▼'}
+                        </span>
+                        <span>{group.label}</span>
+                        <span className="text-kwd-muted ml-auto font-mono font-normal normal-case tracking-normal">
+                          {group.machines.length}
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                  {!collapsed &&
+                    group.machines.map((m) => (
+                      <MachineRow
+                        key={m.id}
+                        machine={m}
+                        selected={m.id === selectedId}
+                        checked={checkedIds.has(m.id)}
+                        searchQuery={searchQuery}
+                        dragOver={dragOverId === m.id && dragId !== m.id}
+                        onSelect={onSelect}
+                        onToggleCheck={toggleCheck}
+                        onOpenFullscreen={onOpenFullscreen}
+                        onDragStart={(id) => {
+                          setDragId(id)
+                          if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
+                        }}
+                        onDragOver={(id) => setDragOverId(id)}
+                        onDrop={(id) => {
+                          if (dragId) void moveMachinesOnto(id, dragId)
+                          setDragId(null)
+                          setDragOverId(null)
+                          setDragOverCategory(null)
+                        }}
+                        onDragEnd={() => {
+                          setDragId(null)
+                          setDragOverId(null)
+                          setDragOverCategory(null)
+                        }}
+                      />
+                    ))}
+                </Fragment>
+              )
+            })}
             {showAddRow &&
               activeDrafts.map((draft, i) => (
                 <MachineAddRow
@@ -1206,7 +1243,7 @@ export function MachineTable({
               ))}
             {orderedMachines.length === 0 && !showAddRow && (
               <tr>
-                <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
+                <td colSpan={11} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>

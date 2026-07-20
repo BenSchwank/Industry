@@ -218,30 +218,31 @@ export function MachineAddRow({
         )}
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
-        {cell(
-          'name',
-          <input
-            ref={nameRef}
-            value={values.name}
-            onChange={(e) => patch('name', e.target.value)}
-            onFocus={() => onSelectField('name')}
-            placeholder=""
-            className={inputCls}
-          />,
-        )}
-      </td>
-      <td className="border-kwd-border border px-1 py-0.5">
-        {cell(
-          'category',
-          <input
-            list={MACHINE_CATEGORY_DATALIST_ID}
-            value={values.category}
-            onChange={(e) => patch('category', e.target.value)}
-            onFocus={() => onSelectField('category')}
-            placeholder="Maschine…"
-            className={inputCls}
-          />,
-        )}
+        <div className="flex flex-col gap-0.5">
+          {cell(
+            'name',
+            <input
+              ref={nameRef}
+              value={values.name}
+              onChange={(e) => patch('name', e.target.value)}
+              onFocus={() => onSelectField('name')}
+              placeholder="Bezeichnung"
+              className={inputCls}
+            />,
+          )}
+          {cell(
+            'category',
+            <input
+              list={MACHINE_CATEGORY_DATALIST_ID}
+              value={values.category}
+              onChange={(e) => patch('category', e.target.value)}
+              onFocus={() => onSelectField('category')}
+              placeholder="Ordner / Kategorie…"
+              className={`${inputCls} text-kwd-muted text-xs`}
+              title="Eigene Kategorie – wird als Ordner in der Liste angezeigt"
+            />,
+          )}
+        </div>
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
         {cell(
@@ -251,7 +252,7 @@ export function MachineAddRow({
             value={values.location}
             onChange={(e) => patch('location', e.target.value)}
             onFocus={() => onSelectField('location')}
-            placeholder="Halle…"
+            placeholder="Standort…"
             className={inputCls}
           />,
         )}

@@ -2,10 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatUptime, formatUptimeCompact, uptimeHealthClass } from '../../lib/machineHealth'
 import { normalizeBarcode } from '../../lib/barcode'
 import { formatSupabaseError } from '../../lib/formatError'
-import {
-  MACHINE_CATEGORIES,
-  machineCategorySuggestions,
-} from '../../lib/machineCategories'
+import { machineCategorySuggestions } from '../../lib/machineCategories'
 import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
@@ -490,7 +487,6 @@ function MachineStammdatenForm({
   const categorySuggestions = useMemo(
     () =>
       machineCategorySuggestions([
-        ...MACHINE_CATEGORIES,
         ...(fieldOptions?.categories ?? []),
         ...(allMachines ?? []).map((m) => m.category ?? ''),
         category,
@@ -647,9 +643,12 @@ function MachineStammdatenForm({
               list="kwd-machine-category-stammdaten"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="Maschine, Gerät, Kran…"
+              placeholder="eigene Kategorie…"
               className={fieldCls}
             />
+            <p className="text-kwd-muted mt-1 text-[11px]">
+              Wird als Ordner in der Liste geführt – einmal angelegt, später wieder wählbar.
+            </p>
             <datalist id="kwd-machine-category-stammdaten">
               {categorySuggestions.map((c) => (
                 <option key={c} value={c} />

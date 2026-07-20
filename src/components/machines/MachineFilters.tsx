@@ -1,7 +1,4 @@
-import {
-  MACHINE_CATEGORIES,
-  machineCategorySuggestions,
-} from '../../lib/machineCategories'
+import { machineCategorySuggestions } from '../../lib/machineCategories'
 import { machineLocationSuggestions } from '../../lib/machineLocations'
 import type {
   MachineDateFilter,
@@ -72,10 +69,7 @@ export function MachineFilters({
   totalCount,
   pillsOnly = false,
 }: MachineFiltersProps) {
-  const categories = machineCategorySuggestions([
-    ...MACHINE_CATEGORIES,
-    ...categoryOptions,
-  ])
+  const categories = machineCategorySuggestions(categoryOptions)
   const locations = machineLocationSuggestions(locationOptions)
 
   const hasActive = Boolean(

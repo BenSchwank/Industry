@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import { MACHINE_CATEGORIES } from './machineCategories'
 import { machineCategorySuggestions } from './machineCategories'
 import { machineLocationSuggestions } from './machineLocations'
 
@@ -99,11 +98,7 @@ export function useMachineFieldOptions() {
       ])
 
       return {
-        categories: machineCategorySuggestions([
-          ...MACHINE_CATEGORIES,
-          ...local.category,
-          ...remoteCategories,
-        ]),
+        categories: machineCategorySuggestions([...local.category, ...remoteCategories]),
         locations: machineLocationSuggestions([...local.location, ...remoteLocations]),
       }
     },
