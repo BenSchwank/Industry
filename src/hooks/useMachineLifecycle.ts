@@ -89,20 +89,38 @@ export function useMachineTimeline(machineId: string | null) {
 
       if (!lifecycleRes.error) {
         lifecycleData = (lifecycleRes.data ?? []) as LifeRow[]
-      } else {
-        const fallback = await supabase
-          .from('machine_lifecycle_entries')
-          .select('id, entry_type, title, description, occurred_at, created_by')
-          .eq('machine_id', machineId!)
-          .order('occurred_at', { ascending: false })
-        if (!fallback.error) {
-          lifecycleData = (fallback.data ?? []).map((e) => ({
-            ...e,
-            created_by: (e as { created_by?: string | null }).created_by ?? null,
-            duration_days: null,
-            next_due_date: null,
-          })) as LifeRow[]
+      } else if (/created_by|duration_days|next_due_date|schema cache/i.test(lifecycleRes.error.message)) {
+        // Spalten fehlen (Migration) → schrittweise reduzieren
+        const attempts = [
+          'id, entry_type, title, description, occurred_at, duration_days, next_due_date',
+          'id, entry_type, title, description, occurred_at, created_by',
+          'id, entry_type, title, description, occurred_at',
+        ]
+        for (const cols of attempts) {
+          const fb = await supabase
+            .from('machine_lifecycle_entries')
+            .select(cols)
+            .eq('machine_id', machineId!)
+            .order('occurred_at', { ascending: false })
+          if (!fb.error) {
+            lifecycleData = (fb.data ?? []).map((e) => {
+              const row = e as Record<string, unknown>
+              return {
+                id: row.id as string,
+                entry_type: row.entry_type as LifecycleEntryType,
+                title: row.title as string,
+                description: (row.description as string | null) ?? null,
+                occurred_at: row.occurred_at as string,
+                created_by: (row.created_by as string | null) ?? null,
+                duration_days: (row.duration_days as number | null) ?? null,
+                next_due_date: (row.next_due_date as string | null) ?? null,
+              }
+            })
+            break
+          }
         }
+      } else {
+        throw lifecycleRes.error
       }
 
       const [tasks, ticketsRes] = await Promise.all([
