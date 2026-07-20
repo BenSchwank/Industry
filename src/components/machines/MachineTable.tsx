@@ -7,9 +7,16 @@ import {
   type ParsedMachinePaste,
 } from '../../lib/excelClipboard'
 import { normalizeBarcode, suggestMachineBarcode } from '../../lib/barcode'
+import {
+  MACHINE_CATEGORY_DATALIST_ID,
+  machineCategorySuggestions,
+} from '../../lib/machineCategories'
 import { printMachineLabels } from '../../lib/printLabels'
 import { maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
-import { matchProblemSnippet } from '../../hooks/useMachinesWithStats'
+import {
+  matchProblemSnippet,
+  type MachineSortBy,
+} from '../../hooks/useMachinesWithStats'
 import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useUpdateMachine } from '../../hooks/useMachines'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
@@ -70,6 +77,9 @@ interface MachineTableProps {
   fillHeight?: boolean
   /** Bei false: Sortierung aus der Liste behalten (kein manuelles machineOrder) */
   useManualOrder?: boolean
+  sortBy?: MachineSortBy
+  sortDescending?: boolean
+  onSortByChange?: (sortBy: MachineSortBy, descending: boolean) => void
   onSelect: (id: string) => void
   onOpenFullscreen?: (id: string) => void
   onAddCancel: () => void
@@ -116,6 +126,98 @@ function DocsCell({ machine: m }: { machine: MachineWithStats }) {
         </span>
       )}
     </div>
+  )
+}
+
+function CategoryCell({
+  machine: m,
+}: {
+  machine: MachineWithStats
+}) {
+  const updateMachine = useUpdateMachine()
+  const [value, setValue] = useState(m.category ?? '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(m.category ?? '')
+  }, [m.id, m.category])
+
+  async function commit() {
+    const next = value.trim() || null
+    if ((next ?? '') === (m.category ?? '')) return
+    setSaving(true)
+    try {
+      await updateMachine.mutateAsync({ id: m.id, category: next })
+    } catch {
+      setValue(m.category ?? '')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+      <input
+        list={MACHINE_CATEGORY_DATALIST_ID}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+          if (e.key === 'Escape') {
+            setValue(m.category ?? '')
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+        placeholder="z.B. Maschine"
+        disabled={saving}
+        className="bg-transparent text-kwd-muted h-7 w-full min-w-[5.5rem] border-0 px-1 text-xs focus:bg-kwd-paper focus:outline focus:outline-1 focus:outline-[var(--kwd-primary)]"
+        aria-label={`Kategorie für ${m.name}`}
+        title="Kategorie eingeben – Vorgaben als Vorschlag"
+      />
+    </td>
+  )
+}
+
+function SortableTh({
+  label,
+  column,
+  sortBy,
+  sortDescending,
+  onSort,
+  className = '',
+}: {
+  label: string
+  column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>
+  sortBy: MachineSortBy
+  sortDescending: boolean
+  onSort?: (
+    column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>,
+  ) => void
+  className?: string
+}) {
+  const active = sortBy === column
+  const marker = active ? (sortDescending ? ' ▼' : ' ▲') : ''
+  if (!onSort) {
+    return <th className={className}>{label}</th>
+  }
+  return (
+    <th className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`hover:text-kwd-primary inline-flex items-center gap-0.5 font-semibold tracking-wide uppercase ${
+          active ? 'text-kwd-primary' : ''
+        }`}
+        title={`${label} sortieren`}
+      >
+        {label}
+        <span className="font-mono text-[10px] normal-case tracking-normal">{marker || ' ↕'}</span>
+      </button>
+    </th>
   )
 }
 
@@ -218,7 +320,7 @@ function MachineRow({
           )}
         </div>
       </td>
-      <td className="text-kwd-muted text-xs">{m.category?.trim() || '–'}</td>
+      <CategoryCell machine={m} />
       <td className="text-kwd-muted">{m.location || '–'}</td>
       <td>
         <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
@@ -266,6 +368,9 @@ export function MachineTable({
   searchQuery = '',
   fillHeight = false,
   useManualOrder = true,
+  sortBy = 'manual',
+  sortDescending = false,
+  onSortByChange,
   onSelect,
   onOpenFullscreen,
   onAddSaved,
@@ -323,6 +428,23 @@ export function MachineTable({
     for (const m of map.values()) sorted.push(m)
     return sorted
   }, [machines, machineOrder, useManualOrder])
+
+  const categorySuggestions = useMemo(
+    () => machineCategorySuggestions(machines.map((m) => m.category ?? '')),
+    [machines],
+  )
+
+  function handleHeaderSort(
+    column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>,
+  ) {
+    if (!onSortByChange) return
+    if (sortBy === column) {
+      if (!sortDescending) onSortByChange(column, true)
+      else onSortByChange('manual', false)
+    } else {
+      onSortByChange(column, false)
+    }
+  }
 
   const activeDrafts = infinite ? gridRows : continuousRows
   const setActiveDrafts = infinite ? setGridRows : setContinuousRows
@@ -880,6 +1002,11 @@ export function MachineTable({
         }`}
         onPaste={handlePaste}
       >
+        <datalist id={MACHINE_CATEGORY_DATALIST_ID}>
+          {categorySuggestions.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         <table className="w-full min-w-[1100px] text-sm">
           <thead className="bg-kwd-surface sticky top-0 z-10 shadow-sm">
             <tr>
@@ -893,13 +1020,38 @@ export function MachineTable({
                 />
               </th>
               <th>Scan-Code</th>
-              <th className="min-w-[160px]">Bezeichnung</th>
-              <th>Kategorie</th>
-              <th>Standort</th>
+              <SortableTh
+                label="Bezeichnung"
+                column="name"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+                className="min-w-[160px]"
+              />
+              <SortableTh
+                label="Kategorie"
+                column="category"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+              />
+              <SortableTh
+                label="Standort"
+                column="location"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+              />
               <th>Status</th>
               <th className="min-w-[100px]">Docs / Plan</th>
               <th>Letzte Wartung</th>
-              <th>Nächste Wartung</th>
+              <SortableTh
+                label="Nächste Wartung"
+                column="next_maintenance"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+              />
               <th>Letzte Reparatur</th>
               <th>Garantie</th>
               <th className="w-24"> </th>

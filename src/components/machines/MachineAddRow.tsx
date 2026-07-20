@@ -5,7 +5,7 @@ import {
   validateBarcode,
 } from '../../lib/barcode'
 import { mapPasteRowToMachine } from '../../lib/excelClipboard'
-import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
+import { MACHINE_CATEGORY_DATALIST_ID } from '../../lib/machineCategories'
 import type { MachineStatus } from '../../types/database'
 import { ExcelFillCell } from './ExcelFillCell'
 
@@ -232,19 +232,14 @@ export function MachineAddRow({
       <td className="border-kwd-border border px-1 py-0.5">
         {cell(
           'category',
-          <select
+          <input
+            list={MACHINE_CATEGORY_DATALIST_ID}
             value={values.category}
             onChange={(e) => patch('category', e.target.value)}
             onFocus={() => onSelectField('category')}
+            placeholder="Maschine…"
             className={inputCls}
-          >
-            <option value="">–</option>
-            {MACHINE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>,
+          />,
         )}
       </td>
       <td className="border-kwd-border border px-1 py-0.5">

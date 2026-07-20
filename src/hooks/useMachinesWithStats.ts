@@ -449,6 +449,16 @@ export function filterMachines(
 export function sortMachines(
   machines: MachineWithStats[],
   sortBy: MachineSortBy,
+  descending = false,
+): MachineWithStats[] {
+  const sorted = sortMachinesAsc(machines, sortBy)
+  if (!descending || sortBy === 'manual') return sorted
+  return sorted.reverse()
+}
+
+function sortMachinesAsc(
+  machines: MachineWithStats[],
+  sortBy: MachineSortBy,
 ): MachineWithStats[] {
   if (sortBy === 'manual') return machines
   const list = [...machines]

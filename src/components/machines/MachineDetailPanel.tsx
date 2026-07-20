@@ -606,18 +606,18 @@ function MachineStammdatenForm({
 
           <label className="block min-w-0">
             <span className="kwd-kpi-label">Kategorie</span>
-            <select
+            <input
+              list="kwd-machine-category-stammdaten"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
+              placeholder="Maschine, Gerät, Kran…"
               className={fieldCls}
-            >
-              <option value="">– wählen –</option>
+            />
+            <datalist id="kwd-machine-category-stammdaten">
               {MACHINE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+                <option key={c} value={c} />
               ))}
-            </select>
+            </datalist>
           </label>
 
           <label className="block min-w-0">

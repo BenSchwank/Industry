@@ -30,6 +30,7 @@ export default function MachinesPage() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [sortBy, setSortBy] = useState<MachineSortBy>('manual')
+  const [sortDescending, setSortDescending] = useState(false)
   const [detailFullscreen, setDetailFullscreen] = useState(false)
   const [showQs1Import, setShowQs1Import] = useState(false)
   const isDesktop = useIsDesktop()
@@ -59,7 +60,7 @@ export default function MachinesPage() {
       category: categoryFilter || undefined,
       location: locationFilter || undefined,
     })
-    return sortMachines(list, sortBy)
+    return sortMachines(list, sortBy, sortDescending)
   }, [
     machines,
     filter,
@@ -69,6 +70,7 @@ export default function MachinesPage() {
     categoryFilter,
     locationFilter,
     sortBy,
+    sortDescending,
   ])
 
   const selected = machines?.find((m) => m.id === selectedId)
@@ -200,7 +202,10 @@ export default function MachinesPage() {
             location={locationFilter}
             onLocationChange={setLocationFilter}
             sortBy={sortBy}
-            onSortByChange={setSortBy}
+            onSortByChange={(next) => {
+              setSortBy(next)
+              setSortDescending(false)
+            }}
             categoryOptions={categoryOptions}
             locationOptions={locationOptions}
             resultCount={filtered.length}
@@ -210,8 +215,8 @@ export default function MachinesPage() {
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
-              Fortlaufend/Endlos in der Toolbar · Häkchen + Ziehen verschiebt inkl. Standort · Name setzt
-              Scan-Code · Enter speichert
+              Fortlaufend/Endlos in der Toolbar · Kategorie in der Liste eintippen · Spaltenkopf klicken
+              sortiert (▲/▼) · Häkchen + Ziehen verschiebt inkl. Standort
             </p>
           )}
           <div
@@ -232,6 +237,12 @@ export default function MachinesPage() {
                 searchQuery={searchQuery}
                 fillHeight
                 useManualOrder={sortBy === 'manual'}
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSortByChange={(next, descending) => {
+                  setSortBy(next)
+                  setSortDescending(descending)
+                }}
                 onSelect={(id) => {
                   setSelectedMachineId(id)
                   setDetailFullscreen(false)
