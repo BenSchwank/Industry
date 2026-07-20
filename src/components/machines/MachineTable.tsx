@@ -11,6 +11,7 @@ import {
   MACHINE_CATEGORY_DATALIST_ID,
   machineCategorySuggestions,
 } from '../../lib/machineCategories'
+import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import {
   MACHINE_LOCATION_DATALIST_ID,
   machineLocationSuggestions,
@@ -505,22 +506,26 @@ export function MachineTable({
   const activeDrafts = infinite ? gridRows : continuousRows
   const setActiveDrafts = infinite ? setGridRows : setContinuousRows
 
+  const { data: fieldOptions } = useMachineFieldOptions()
+
   const categorySuggestions = useMemo(
     () =>
       machineCategorySuggestions([
+        ...(fieldOptions?.categories ?? []),
         ...machines.map((m) => m.category ?? ''),
         ...activeDrafts.map((d) => d.category),
       ]),
-    [machines, activeDrafts],
+    [machines, activeDrafts, fieldOptions?.categories],
   )
 
   const locationSuggestions = useMemo(
     () =>
       machineLocationSuggestions([
+        ...(fieldOptions?.locations ?? []),
         ...machines.map((m) => m.location ?? ''),
         ...activeDrafts.map((d) => d.location),
       ]),
-    [machines, activeDrafts],
+    [machines, activeDrafts, fieldOptions?.locations],
   )
 
   const flatIds = useMemo(() => orderedMachines.map((m) => m.id), [orderedMachines])

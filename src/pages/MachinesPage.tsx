@@ -13,6 +13,9 @@ import {
   type MachineDateFilter,
   type MachineSortBy,
 } from '../hooks/useMachinesWithStats'
+import { machineCategorySuggestions } from '../lib/machineCategories'
+import { useMachineFieldOptions } from '../lib/machineFieldOptions'
+import { machineLocationSuggestions } from '../lib/machineLocations'
 import { useIsDesktop } from '../hooks/usePlatform'
 import { useAppStore } from '../stores/appStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
@@ -40,15 +43,24 @@ export default function MachinesPage() {
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const { data: machines, isLoading } = useMachinesWithStats()
+  const { data: fieldOptions } = useMachineFieldOptions()
   const { data: timeline, isLoading: timelineLoading } = useMachineTimeline(selectedId)
 
   const categoryOptions = useMemo(
-    () => uniqueMachineCategories(machines ?? []),
-    [machines],
+    () =>
+      machineCategorySuggestions([
+        ...(fieldOptions?.categories ?? []),
+        ...uniqueMachineCategories(machines ?? []),
+      ]),
+    [machines, fieldOptions?.categories],
   )
   const locationOptions = useMemo(
-    () => uniqueMachineLocations(machines ?? []),
-    [machines],
+    () =>
+      machineLocationSuggestions([
+        ...(fieldOptions?.locations ?? []),
+        ...uniqueMachineLocations(machines ?? []),
+      ]),
+    [machines, fieldOptions?.locations],
   )
 
   const filtered = useMemo(() => {

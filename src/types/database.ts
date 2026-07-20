@@ -80,6 +80,27 @@ export interface Database {
         }
         Relationships: []
       }
+      machine_field_options: {
+        Row: {
+          id: string
+          field_type: 'category' | 'location'
+          value: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          field_type: 'category' | 'location'
+          value: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          field_type?: 'category' | 'location'
+          value?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       tickets: {
         Row: {
           id: string

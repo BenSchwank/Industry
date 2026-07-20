@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcode'
 import { formatSupabaseError } from '../lib/formatError'
 import { applyMachineInitialDates } from '../lib/machineInitialDates'
+import { rememberMachineFieldOptions } from '../lib/machineFieldOptions'
 import type { MachineStatus } from '../types/database'
 
 export interface MachineInput {
@@ -81,6 +82,10 @@ export function useCreateMachine() {
       } catch (dateErr) {
         console.warn('[KWD] Initiale Termine konnten nicht gespeichert werden:', dateErr)
       }
+      await rememberMachineFieldOptions({
+        category: payload.category,
+        location: payload.location,
+      })
       return data
     },
     onSuccess: () => {
@@ -88,6 +93,7 @@ export function useCreateMachine() {
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['machines-select'] })
       queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     },
   })
 }
@@ -133,6 +139,10 @@ export function useBulkCreateMachines() {
           } catch {
             /* Maschine wurde angelegt – Termine optional */
           }
+          await rememberMachineFieldOptions({
+            category: payload.category,
+            location: payload.location,
+          })
           results.push(data)
         } catch (err) {
           errors.push(`${input.name}: ${err instanceof Error ? err.message : 'Fehler'}`)
@@ -146,6 +156,7 @@ export function useBulkCreateMachines() {
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['machines-select'] })
       queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     },
   })
 }
@@ -176,6 +187,10 @@ export function useUpdateMachine() {
         .select()
         .single()
       if (error) throw new Error(formatSupabaseError(error))
+      await rememberMachineFieldOptions({
+        category: input.category,
+        location: input.location,
+      })
       return data
     },
     onSuccess: () => {
@@ -183,6 +198,7 @@ export function useUpdateMachine() {
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['machines-select'] })
       queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     },
   })
 }
@@ -242,6 +258,10 @@ export function useDuplicateMachines() {
             .select('id, name')
             .single()
           if (error) throw new Error(formatSupabaseError(error))
+          await rememberMachineFieldOptions({
+            category: m.category,
+            location: (m.location ?? '').trim() || 'Unbekannt',
+          })
           results.push(data)
         } catch (err) {
           errors.push(`${m.name}: ${err instanceof Error ? err.message : 'Fehler'}`)
@@ -255,6 +275,7 @@ export function useDuplicateMachines() {
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['machines-select'] })
       queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     },
   })
 }

@@ -6,6 +6,7 @@ import {
   MACHINE_CATEGORIES,
   machineCategorySuggestions,
 } from '../../lib/machineCategories'
+import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
@@ -476,6 +477,7 @@ function MachineStammdatenForm({
 }) {
   const updateMachine = useUpdateMachine()
   const { data: allMachines } = useMachinesWithStats()
+  const { data: fieldOptions } = useMachineFieldOptions()
   const [name, setName] = useState(machine.name)
   const [barcode, setBarcode] = useState(machine.barcode)
   const [location, setLocation] = useState(machine.location ?? '')
@@ -489,19 +491,21 @@ function MachineStammdatenForm({
     () =>
       machineCategorySuggestions([
         ...MACHINE_CATEGORIES,
+        ...(fieldOptions?.categories ?? []),
         ...(allMachines ?? []).map((m) => m.category ?? ''),
         category,
       ]),
-    [allMachines, category],
+    [allMachines, category, fieldOptions?.categories],
   )
 
   const locationSuggestions = useMemo(
     () =>
       machineLocationSuggestions([
+        ...(fieldOptions?.locations ?? []),
         ...(allMachines ?? []).map((m) => m.location ?? ''),
         location,
       ]),
-    [allMachines, location],
+    [allMachines, location, fieldOptions?.locations],
   )
 
   useEffect(() => {
