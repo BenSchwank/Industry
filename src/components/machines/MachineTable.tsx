@@ -243,10 +243,14 @@ function MachineRow({
   searchQuery,
   dragOver,
   completing,
+  categorySuggestions,
   onSelect,
   onToggleCheck,
   onOpenFullscreen,
   onQuickComplete,
+  onCategoryChange,
+  onRenameCategory,
+  onDeleteCategory,
   onDragStart,
   onDragOver,
   onDrop,
@@ -258,10 +262,14 @@ function MachineRow({
   searchQuery?: string
   dragOver: boolean
   completing?: boolean
+  categorySuggestions: string[]
   onSelect: (id: string) => void
   onToggleCheck: (id: string, shiftKey: boolean) => void
   onOpenFullscreen?: (id: string) => void
   onQuickComplete?: (machine: MachineWithStats) => void
+  onCategoryChange: (machineId: string, category: string) => void
+  onRenameCategory?: (from: string, to: string) => void | Promise<void>
+  onDeleteCategory?: (category: string) => void | Promise<void>
   onDragStart: (id: string) => void
   onDragOver: (id: string) => void
   onDrop: (id: string) => void
@@ -317,12 +325,12 @@ function MachineRow({
             }}
             className="accent-kwd-primary h-4 w-4 cursor-pointer"
             aria-label={`${m.name} markieren`}
-            title="Markieren zum Verschieben"
+            title="Markieren zum Verschieben zwischen Kategorien"
             readOnly
           />
           <span
             className="text-kwd-muted cursor-grab text-xs select-none active:cursor-grabbing"
-            title="Ziehen zum Verschieben"
+            title="Auf anderen Ordner / Gerät ziehen = Kategorie wechseln"
             aria-hidden
           >
             ⋮⋮
@@ -342,6 +350,17 @@ function MachineRow({
             <span className="text-kwd-muted text-[11px]">Treffer: {problemHit}</span>
           )}
         </div>
+      </td>
+      <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+        <CategoryPickerButton
+          value={m.category ?? ''}
+          suggestions={categorySuggestions}
+          buttonLabel={m.category?.trim() || 'Kat.'}
+          title="Gerät in andere Kategorie verschieben"
+          onChange={(c) => onCategoryChange(m.id, c)}
+          onRename={onRenameCategory}
+          onDelete={onDeleteCategory}
+        />
       </td>
       <LocationCell machine={m} />
       <td>
@@ -587,22 +606,35 @@ export function MachineTable({
   }
 
   async function deleteCategory(category: string) {
+    const label = category.trim()
+    if (!label || label === UNCATEGORIZED_LABEL) return
     const targets = orderedMachines.filter(
-      (m) => (m.category ?? '').trim().toLowerCase() === category.trim().toLowerCase(),
+      (m) => (m.category ?? '').trim().toLowerCase() === label.toLowerCase(),
     )
+    if (
+      !window.confirm(
+        `Kategorie „${label}“ löschen?\n\n${
+          targets.length > 0
+            ? `${targets.length} Gerät(e) landen unter „${UNCATEGORIZED_LABEL}“.`
+            : `Der leere Ordner wird entfernt.`
+        }`,
+      )
+    ) {
+      return
+    }
     await Promise.all(
       targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: null })),
     )
     setExtraCategories((prev) =>
-      prev.filter((x) => x.toLowerCase() !== category.trim().toLowerCase()),
+      prev.filter((x) => x.toLowerCase() !== label.toLowerCase()),
     )
-    await forgetMachineFieldOption('category', category)
+    await forgetMachineFieldOption('category', label)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
     flash(
       targets.length > 0
-        ? `„${category}“ gelöscht · ${targets.length} → ${UNCATEGORIZED_LABEL}`
-        : `„${category}“ gelöscht`,
+        ? `„${label}“ gelöscht · ${targets.length} → ${UNCATEGORIZED_LABEL}`
+        : `„${label}“ gelöscht`,
     )
   }
 
@@ -732,6 +764,19 @@ export function MachineTable({
     const target = orderedMachines.find((m) => m.id === targetId)
     if (!target) return
 
+    const targetCat = target.category?.trim() || UNCATEGORIZED_LABEL
+    const needsCategoryMove = movingIds.some((id) => {
+      const m = orderedMachines.find((x) => x.id === id)
+      const cat = m?.category?.trim() || UNCATEGORIZED_LABEL
+      return cat !== targetCat
+    })
+
+    // Anderer Ordner → Kategorie wechseln (nicht Standort/Reihenfolge)
+    if (needsCategoryMove) {
+      await moveMachinesToCategory(targetCat, sourceId)
+      return
+    }
+
     const remaining = flatIds.filter((id) => !movingIds.includes(id))
     const targetIdx = remaining.indexOf(targetId)
     const nextOrder = [
@@ -759,6 +804,17 @@ export function MachineTable({
       )
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Standort-Update fehlgeschlagen')
+    }
+  }
+
+  async function setMachineCategory(machineId: string, category: string) {
+    const next = category.trim() || null
+    try {
+      await updateMachine.mutateAsync({ id: machineId, category: next })
+      if (next) await rememberCategory(next)
+      flash(next ? `Kategorie → ${next}` : `Kategorie → ${UNCATEGORIZED_LABEL}`)
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Kategorie fehlgeschlagen')
     }
   }
 
@@ -1205,9 +1261,8 @@ export function MachineTable({
         </div>
         <Tip>
           <p className="text-kwd-muted text-xs">
-            {infinite
-              ? 'Endlos-Liste · Häkchen + Ziehen ändert Reihenfolge & Standort'
-              : 'Fortlaufend · Häkchen + Ziehen ändert Reihenfolge & Standort'}
+            Geräte zwischen Ordnern: ziehen auf Ordnerkopf / anderes Gerät, oder Spalte Kategorie.
+            Gleicher Ordner: Ziehen ändert Reihenfolge & Standort.
           </p>
         </Tip>
       </div>
@@ -1268,6 +1323,14 @@ export function MachineTable({
                 className="min-w-[160px]"
               />
               <SortableTh
+                label="Kategorie"
+                column="category"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+                className="min-w-[7rem]"
+              />
+              <SortableTh
                 label="Standort"
                 column="location"
                 sortBy={sortBy}
@@ -1316,7 +1379,7 @@ export function MachineTable({
                       setDragOverCategory(null)
                     }}
                   >
-                    <td colSpan={11} className="px-2 py-1.5">
+                    <td colSpan={12} className="px-2 py-1.5">
                       <div className="flex w-full items-center gap-2">
                         <button
                           type="button"
@@ -1335,8 +1398,8 @@ export function MachineTable({
                         <CategoryPickerButton
                           value={group.key === UNCATEGORIZED_LABEL ? '' : group.key}
                           suggestions={categorySuggestions}
-                          buttonLabel="Ändern"
-                          title="Ordner zuweisen, umbenennen oder löschen"
+                          buttonLabel="Umbenennen"
+                          title="Ordner umbenennen oder Maschinen umsortieren"
                           onRename={(from, to) => renameCategory(from, to)}
                           onDelete={(cat) => deleteCategory(cat)}
                           onChange={(c) => {
@@ -1362,6 +1425,16 @@ export function MachineTable({
                             })()
                           }}
                         />
+                        {group.key !== UNCATEGORIZED_LABEL && (
+                          <button
+                            type="button"
+                            onClick={() => void deleteCategory(group.key)}
+                            className="text-kwd-danger hover:bg-kwd-danger/10 shrink-0 px-2 py-1 text-xs font-semibold"
+                            title={`Ordner „${group.label}“ löschen – Geräte landen unter „${UNCATEGORIZED_LABEL}“`}
+                          >
+                            Löschen
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1369,7 +1442,7 @@ export function MachineTable({
                     (group.machines.length === 0 ? (
                       <tr className="bg-kwd-paper/50">
                         <td
-                          colSpan={11}
+                          colSpan={12}
                           className="text-kwd-muted px-8 py-2 text-xs"
                           onDragOver={(e) => {
                             e.preventDefault()
@@ -1396,10 +1469,14 @@ export function MachineTable({
                         searchQuery={searchQuery}
                         dragOver={dragOverId === m.id && dragId !== m.id}
                         completing={completingId === m.id}
+                        categorySuggestions={categorySuggestions}
                         onSelect={onSelect}
                         onToggleCheck={toggleCheck}
                         onOpenFullscreen={onOpenFullscreen}
                         onQuickComplete={(machine) => void handleQuickComplete(machine)}
+                        onCategoryChange={(id, c) => void setMachineCategory(id, c)}
+                        onRenameCategory={(from, to) => renameCategory(from, to)}
+                        onDeleteCategory={(cat) => deleteCategory(cat)}
                         onDragStart={(id) => {
                           setDragId(id)
                           if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
@@ -1465,7 +1542,7 @@ export function MachineTable({
               ))}
             {orderedMachines.length === 0 && !showAddRow && (
               <tr>
-                <td colSpan={11} className="text-kwd-muted px-4 py-12 text-center">
+                <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>

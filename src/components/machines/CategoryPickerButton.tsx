@@ -139,10 +139,6 @@ export function CategoryPickerButton({
 
   async function commitDelete(category: string) {
     if (!onDelete) return
-    const ok = window.confirm(
-      `Kategorie „${category}“ löschen?\n\nMaschinen darin landen unter „${UNCATEGORIZED_LABEL}“.`,
-    )
-    if (!ok) return
     setPending(true)
     try {
       await onDelete(category)

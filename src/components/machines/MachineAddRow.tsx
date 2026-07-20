@@ -238,6 +238,20 @@ export function MachineAddRow({
           />,
         )}
       </td>
+      <td className="border-kwd-border border px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+        <CategoryPickerButton
+          value={values.category}
+          suggestions={categorySuggestions}
+          buttonLabel={values.category.trim() ? values.category : 'Kat.'}
+          title="Kategorie für diese neue Zeile"
+          onChange={(c) => {
+            patch('category', c)
+            if (c.trim()) onCategoryPicked?.(c.trim())
+          }}
+          onRename={onRenameCategory}
+          onDelete={onDeleteCategory}
+        />
+      </td>
       <td className="border-kwd-border border px-1 py-0.5">
         {cell(
           'location',
@@ -321,18 +335,6 @@ export function MachineAddRow({
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
         <div className="flex items-center gap-1">
-          <CategoryPickerButton
-            value={values.category}
-            suggestions={categorySuggestions}
-            buttonLabel={values.category.trim() ? values.category : 'Kat.'}
-            title="Kategorie für diese neue Zeile"
-            onChange={(c) => {
-              patch('category', c)
-              if (c.trim()) onCategoryPicked?.(c.trim())
-            }}
-            onRename={onRenameCategory}
-            onDelete={onDeleteCategory}
-          />
           {(hasContent || !blank) && (
             <>
               {saving ? (
