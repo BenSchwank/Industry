@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { addDaysIso } from '../lib/maintenanceDue'
 import { resolveUsernames } from '../lib/resolveUsernames'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
@@ -10,6 +11,8 @@ export interface LifecycleEntryInput {
   title: string
   description?: string | null
   occurred_at?: string
+  /** Nur Wartung: Intervall in Tagen bis zur nächsten */
+  duration_days?: number | null
 }
 
 export interface TimelineItem {
@@ -19,8 +22,42 @@ export interface TimelineItem {
   title: string
   description: string | null
   occurred_at: string
-  /** Benutzername aus profiles – zum Nachfragen im Labor etc. */
   created_by_username: string | null
+  duration_days: number | null
+  next_due_date: string | null
+}
+
+async function syncMaintenanceTask(
+  machineId: string,
+  frequencyDays: number,
+  nextDueDate: string,
+) {
+  const { data: existing } = await supabase
+    .from('maintenance_tasks')
+    .select('id')
+    .eq('machine_id', machineId)
+    .order('next_due_date', { ascending: true })
+    .limit(1)
+
+  if (existing?.[0]?.id) {
+    const { error } = await supabase
+      .from('maintenance_tasks')
+      .update({
+        frequency_days: frequencyDays,
+        next_due_date: nextDueDate,
+        title: 'Wartung',
+      })
+      .eq('id', existing[0].id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('maintenance_tasks').insert({
+      machine_id: machineId,
+      title: 'Wartung',
+      frequency_days: frequencyDays,
+      next_due_date: nextDueDate,
+    })
+    if (error) throw error
+  }
 }
 
 export function useMachineTimeline(machineId: string | null) {
@@ -28,35 +65,42 @@ export function useMachineTimeline(machineId: string | null) {
     queryKey: ['machine-timeline', machineId],
     enabled: Boolean(machineId),
     queryFn: async () => {
-      let lifecycleData: {
+      type LifeRow = {
         id: string
         entry_type: LifecycleEntryType
         title: string
         description: string | null
         occurred_at: string
         created_by: string | null
-      }[] = []
+        duration_days: number | null
+        next_due_date: string | null
+      }
 
+      let lifecycleData: LifeRow[] = []
+
+      const fullSelect =
+        'id, entry_type, title, description, occurred_at, created_by, duration_days, next_due_date'
       const lifecycleRes = await supabase
         .from('machine_lifecycle_entries')
-        .select('id, entry_type, title, description, occurred_at, created_by')
+        .select(fullSelect)
         .eq('machine_id', machineId!)
         .order('occurred_at', { ascending: false })
 
       if (!lifecycleRes.error) {
-        lifecycleData = (lifecycleRes.data ?? []) as typeof lifecycleData
-      } else if (!/created_by/i.test(lifecycleRes.error.message)) {
-        // Spalte fehlt noch → ohne created_by laden
+        lifecycleData = (lifecycleRes.data ?? []) as LifeRow[]
+      } else {
         const fallback = await supabase
           .from('machine_lifecycle_entries')
-          .select('id, entry_type, title, description, occurred_at')
+          .select('id, entry_type, title, description, occurred_at, created_by')
           .eq('machine_id', machineId!)
           .order('occurred_at', { ascending: false })
         if (!fallback.error) {
           lifecycleData = (fallback.data ?? []).map((e) => ({
             ...e,
-            created_by: null,
-          })) as typeof lifecycleData
+            created_by: (e as { created_by?: string | null }).created_by ?? null,
+            duration_days: null,
+            next_due_date: null,
+          })) as LifeRow[]
         }
       }
 
@@ -92,13 +136,15 @@ export function useMachineTimeline(machineId: string | null) {
         completed_at: string
         notes: string | null
         completed_by: string | null
-        maintenance_tasks: { title: string } | null
+        maintenance_tasks: { title: string; frequency_days: number; next_due_date: string } | null
       }[] = []
 
       if (taskIds.length > 0) {
         const { data, error } = await supabase
           .from('maintenance_completions')
-          .select('id, completed_at, notes, completed_by, maintenance_tasks(title)')
+          .select(
+            'id, completed_at, notes, completed_by, maintenance_tasks(title, frequency_days, next_due_date)',
+          )
           .in('task_id', taskIds)
           .order('completed_at', { ascending: false })
         if (error) throw error
@@ -123,11 +169,13 @@ export function useMachineTimeline(machineId: string | null) {
           description: e.description,
           occurred_at: e.occurred_at,
           created_by_username: e.created_by ? (names.get(e.created_by) ?? null) : null,
+          duration_days: e.duration_days,
+          next_due_date: e.next_due_date,
         })
       }
 
       for (const c of completions) {
-        const task = c.maintenance_tasks as { title: string } | null
+        const task = c.maintenance_tasks
         items.push({
           id: c.id,
           source: 'completion',
@@ -136,6 +184,8 @@ export function useMachineTimeline(machineId: string | null) {
           description: c.notes,
           occurred_at: c.completed_at,
           created_by_username: c.completed_by ? (names.get(c.completed_by) ?? null) : null,
+          duration_days: task?.frequency_days ?? null,
+          next_due_date: task?.next_due_date ?? null,
         })
       }
 
@@ -149,6 +199,8 @@ export function useMachineTimeline(machineId: string | null) {
           description: t.description,
           occurred_at: t.resolved_at ?? t.created_at,
           created_by_username: createdBy ? (names.get(createdBy) ?? null) : null,
+          duration_days: null,
+          next_due_date: null,
         })
       }
 
@@ -164,24 +216,66 @@ export function useAddLifecycleEntry() {
   return useMutation({
     mutationFn: async (input: LifecycleEntryInput) => {
       const userId = useAuthStore.getState().user?.id ?? null
+      const occurred = input.occurred_at ?? new Date().toISOString()
+      const duration =
+        input.entry_type === 'maintenance' && input.duration_days && input.duration_days > 0
+          ? Math.round(input.duration_days)
+          : null
+      const nextDue =
+        duration != null ? addDaysIso(occurred, duration) : null
+
+      const payload: Record<string, unknown> = {
+        machine_id: input.machine_id,
+        entry_type: input.entry_type,
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        occurred_at: occurred,
+        created_by: userId,
+      }
+      if (duration != null) {
+        payload.duration_days = duration
+        payload.next_due_date = nextDue
+      }
+
       const { data, error } = await supabase
         .from('machine_lifecycle_entries')
-        .insert({
-          machine_id: input.machine_id,
-          entry_type: input.entry_type,
-          title: input.title.trim(),
-          description: input.description?.trim() || null,
-          occurred_at: input.occurred_at ?? new Date().toISOString(),
-          created_by: userId,
-        })
+        .insert(payload)
         .select()
         .single()
+
+      // Spalten fehlen noch → ohne duration speichern
+      if (error && /duration_days|next_due_date/i.test(error.message)) {
+        const { data: retry, error: retryErr } = await supabase
+          .from('machine_lifecycle_entries')
+          .insert({
+            machine_id: input.machine_id,
+            entry_type: input.entry_type,
+            title: input.title.trim(),
+            description: input.description?.trim() || null,
+            occurred_at: occurred,
+            created_by: userId,
+          })
+          .select()
+          .single()
+        if (retryErr) throw retryErr
+        if (duration != null && nextDue) {
+          await syncMaintenanceTask(input.machine_id, duration, nextDue)
+        }
+        return retry
+      }
+
       if (error) throw error
+
+      if (duration != null && nextDue) {
+        await syncMaintenanceTask(input.machine_id, duration, nextDue)
+      }
+
       return data
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machine_id] })
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
     },
   })
 }

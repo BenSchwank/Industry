@@ -26,7 +26,7 @@ type DetailTab = 'overview' | 'problems' | 'history' | 'documents' | 'plans' | '
 const BASE_TABS: { id: DetailTab; label: string; short: string }[] = [
   { id: 'overview', label: 'Stammdaten', short: 'Daten' },
   { id: 'problems', label: 'Störungen', short: 'Stör.' },
-  { id: 'history', label: 'Verlauf', short: 'Verl.' },
+  { id: 'history', label: 'Lebenszyklus', short: 'Zykl.' },
   { id: 'documents', label: 'Unterlagen', short: 'Docs' },
   { id: 'knowledge', label: 'Wissen', short: 'Wiss.' },
 ]
@@ -84,6 +84,7 @@ export function MachineDetailPanel({
 }: MachineDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>('overview')
   const [searchQuery, setSearchQuery] = useState('')
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { data: health, isLoading: healthLoading } = useMachineHealth(machine.id)
 
   const filteredTimeline = useMemo(
@@ -113,6 +114,7 @@ export function MachineDetailPanel({
   useEffect(() => {
     setTab('overview')
     setSearchQuery('')
+    setMobileNavOpen(false)
   }, [machine.id])
 
   useEffect(() => {
@@ -166,7 +168,7 @@ export function MachineDetailPanel({
       {tab === 'history' && (
         <div className="flex flex-col gap-2">
           <label className="kwd-panel block p-3">
-            <span className="kwd-kpi-label">Verlauf suchen</span>
+            <span className="kwd-kpi-label">Lebenszyklus suchen</span>
             <input
               type="search"
               value={searchQuery}
@@ -220,6 +222,7 @@ export function MachineDetailPanel({
   )
 
   if (fullscreen) {
+    const activeLabel = tabs.find((t) => t.id === tab)?.label ?? 'Bereich'
     return (
       <div
         className="bg-kwd-bg fixed inset-0 z-50 flex flex-col"
@@ -227,16 +230,31 @@ export function MachineDetailPanel({
         aria-modal="true"
         aria-label={`${machine.name} – Vollbild`}
       >
-        <header className="bg-kwd-surface border-kwd-border flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2.5 lg:px-4">
-          <div className="min-w-0">
-            <p className="text-kwd-muted text-[11px] font-semibold tracking-wide uppercase">
-              Maschinenakte
-            </p>
-            <h2 className="truncate text-lg font-semibold tracking-tight">{machine.name}</h2>
-            <p className="text-kwd-muted truncate font-mono text-xs">
-              {machine.barcode}
-              {machine.location ? ` · ${machine.location}` : ''}
-            </p>
+        <header className="bg-kwd-surface border-kwd-border flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5 lg:px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              className="kwd-btn px-2.5 lg:hidden"
+              aria-label="Menü öffnen"
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen(true)}
+            >
+              ☰
+            </button>
+            <div className="min-w-0">
+              <p className="text-kwd-muted text-[11px] font-semibold tracking-wide uppercase">
+                Maschinenakte
+              </p>
+              <h2 className="truncate text-lg font-semibold tracking-tight">{machine.name}</h2>
+              <p className="text-kwd-muted truncate font-mono text-xs lg:hidden">
+                {activeLabel}
+                {machine.location ? ` · ${machine.location}` : ''}
+              </p>
+              <p className="text-kwd-muted hidden truncate font-mono text-xs lg:block">
+                {machine.barcode}
+                {machine.location ? ` · ${machine.location}` : ''}
+              </p>
+            </div>
           </div>
           <div className="flex shrink-0 gap-2">
             {onToggleFullscreen && (
@@ -250,9 +268,55 @@ export function MachineDetailPanel({
           </div>
         </header>
 
+        {/* Mobile hamburger drawer */}
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-[60] lg:hidden" role="presentation">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/50"
+              aria-label="Menü schließen"
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <nav
+              className="bg-kwd-surface border-kwd-border absolute top-0 left-0 flex h-full w-[min(18rem,85vw)] flex-col gap-1 border-r p-3 shadow-xl"
+              aria-label="Bereiche"
+              role="tablist"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-semibold">Bereiche</p>
+                <button
+                  type="button"
+                  className="kwd-btn px-2"
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              {tabs.map(({ id, label }) => {
+                const active = tab === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => {
+                      setTab(id)
+                      setMobileNavOpen(false)
+                    }}
+                    className={`kwd-nav-item ${active ? 'kwd-nav-item-active' : ''}`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </nav>
+          </div>
+        )}
+
         <div className="flex min-h-0 flex-1">
           <nav
-            className="bg-kwd-surface border-kwd-border flex w-[120px] shrink-0 flex-col gap-0.5 border-r p-2 sm:w-44 lg:w-52"
+            className="bg-kwd-surface border-kwd-border hidden w-52 shrink-0 flex-col gap-0.5 border-r p-2 lg:flex"
             aria-label="Bereiche"
             role="tablist"
           >
@@ -320,7 +384,7 @@ export function MachineDetailPanel({
             maintenanceOverdue={Boolean(maintenanceOverdue)}
           />
           <p className="text-kwd-muted mt-3 px-1 text-xs">
-            Unterlagen, Pläne, Verlauf & Störungen → Vollbild-Akte
+            Unterlagen, Pläne, Lebenszyklus & Störungen → Vollbild-Akte
             {machine.document_count > 0
               ? ` · ${machine.document_count} Doc${machine.document_count === 1 ? '' : 's'}`
               : ''}

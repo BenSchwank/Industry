@@ -357,6 +357,8 @@ export interface Database {
           occurred_at: string
           created_at: string
           created_by: string | null
+          duration_days: number | null
+          next_due_date: string | null
         }
         Insert: {
           id?: string
@@ -367,6 +369,8 @@ export interface Database {
           occurred_at?: string
           created_at?: string
           created_by?: string | null
+          duration_days?: number | null
+          next_due_date?: string | null
         }
         Update: {
           id?: string
@@ -377,6 +381,8 @@ export interface Database {
           occurred_at?: string
           created_at?: string
           created_by?: string | null
+          duration_days?: number | null
+          next_due_date?: string | null
         }
         Relationships: [
           {

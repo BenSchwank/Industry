@@ -11,6 +11,7 @@ import {
   type LifecyclePhoto,
 } from '../../hooks/useLifecyclePhotos'
 import { formatSupabaseError } from '../../lib/formatError'
+import { addDaysIso, maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
 import type { LifecycleEntryType } from '../../types/database'
 import { Tip } from '../ui/Tip'
 import {
@@ -62,6 +63,7 @@ export function MachineLifecyclePanel({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [occurredAt, setOccurredAt] = useState(new Date().toISOString().slice(0, 10))
+  const [durationDays, setDurationDays] = useState('90')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -96,13 +98,19 @@ export function MachineLifecyclePanel({
 
   function openForm(type: LifecycleEntryType = 'maintenance') {
     setEntryType(type)
-    setTitle('')
+    setTitle(type === 'maintenance' ? 'Wartung' : '')
     setDescription('')
     setOccurredAt(new Date().toISOString().slice(0, 10))
+    setDurationDays('90')
     setPendingPhotos([])
     setError(null)
     setShowForm(true)
   }
+
+  const nextDuePreview =
+    entryType === 'maintenance' && Number(durationDays) > 0
+      ? addDaysIso(occurredAt, Number(durationDays))
+      : null
 
   function addPendingFiles(list: FileList | null) {
     if (!list || list.length === 0) return
@@ -125,13 +133,25 @@ export function MachineLifecyclePanel({
       setError('Titel ist Pflicht.')
       return
     }
+    if (entryType === 'maintenance') {
+      const days = Number(durationDays)
+      if (!Number.isFinite(days) || days < 1) {
+        setError('Bitte die Dauer der Wartung in Tagen angeben (mind. 1).')
+        return
+      }
+    }
     try {
+      const days =
+        entryType === 'maintenance' && Number(durationDays) > 0
+          ? Math.round(Number(durationDays))
+          : null
       const entry = await addEntry.mutateAsync({
         machine_id: machineId,
         entry_type: entryType,
         title: title.trim(),
         description: description.trim() || null,
         occurred_at: new Date(occurredAt).toISOString(),
+        duration_days: days,
       })
       if (pendingPhotos.length > 0 && entry?.id) {
         try {
@@ -234,7 +254,7 @@ export function MachineLifecyclePanel({
     <div className="flex flex-col gap-3">
       <section className="kwd-panel">
         <div className="kwd-panel-head flex flex-wrap items-center justify-between gap-2">
-          <span>Verlauf · {machineName}</span>
+          <span>Lebenszyklus · {machineName}</span>
           <div className="flex flex-wrap gap-1.5 font-normal normal-case tracking-normal">
             {selected.size > 0 && (
               <>
@@ -276,32 +296,38 @@ export function MachineLifecyclePanel({
 
         <Tip>
           <p className="text-kwd-muted border-kwd-border border-b px-3 py-2 text-xs">
-            Freie Daten eintragen · Fotos zu Wartung/Reparatur anhängen · neueste zuerst.
+            Wartung: Dauer angeben → nächste Fälligkeit wird gesetzt (gelb ≤ 3 Monate, rot überfällig).
           </p>
         </Tip>
 
         {showForm && (
           <form onSubmit={handleSubmit} className="border-kwd-border border-b p-3">
             <p className="mb-2 text-sm font-semibold">
-              {ENTRY_TYPES.find((t) => t.value === entryType)?.label ?? 'Eintrag'} hinzufügen
+              {entryType === 'maintenance'
+                ? 'Wartung hinzufügen'
+                : `${ENTRY_TYPES.find((t) => t.value === entryType)?.label ?? 'Eintrag'} hinzufügen`}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="kwd-kpi-label">Typ</span>
-                <select
-                  value={entryType}
-                  onChange={(e) => setEntryType(e.target.value as LifecycleEntryType)}
-                  className={fieldCls}
-                >
-                  {ENTRY_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="kwd-kpi-label">Datum</span>
+              {entryType !== 'maintenance' && (
+                <label className="block">
+                  <span className="kwd-kpi-label">Typ</span>
+                  <select
+                    value={entryType}
+                    onChange={(e) => setEntryType(e.target.value as LifecycleEntryType)}
+                    className={fieldCls}
+                  >
+                    {ENTRY_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className={`block ${entryType === 'maintenance' ? '' : ''}`}>
+                <span className="kwd-kpi-label">
+                  {entryType === 'maintenance' ? 'Wartungsdatum' : 'Datum'}
+                </span>
                 <input
                   type="date"
                   value={occurredAt}
@@ -310,13 +336,39 @@ export function MachineLifecyclePanel({
                   className={fieldCls}
                 />
               </label>
+              {entryType === 'maintenance' && (
+                <label className="block">
+                  <span className="kwd-kpi-label">Dauer der Wartung (Tage) *</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(e.target.value)}
+                    required
+                    placeholder="z.B. 90"
+                    className={fieldCls}
+                  />
+                  {nextDuePreview && (
+                    <p className={`mt-1 text-xs ${maintenanceDueClass(nextDuePreview) || 'text-kwd-muted'}`}>
+                      Nächste Wartung: {new Date(nextDuePreview).toLocaleDateString('de-DE')}
+                      {maintenanceDueTone(nextDuePreview) === 'soon' && ' · bald fällig'}
+                      {maintenanceDueTone(nextDuePreview) === 'overdue' && ' · überfällig'}
+                    </p>
+                  )}
+                </label>
+              )}
               <label className="block sm:col-span-2">
                 <span className="kwd-kpi-label">Titel *</span>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
-                  placeholder="z.B. Jahreswartung abgeschlossen, Lager getauscht…"
+                  placeholder={
+                    entryType === 'maintenance'
+                      ? 'z.B. Jahreswartung, Ölwechsel…'
+                      : 'z.B. Lager getauscht…'
+                  }
                   className={fieldCls}
                 />
               </label>
@@ -379,11 +431,11 @@ export function MachineLifecyclePanel({
           </p>
         )}
 
-        {isLoading && <p className="text-kwd-muted p-4 text-sm">Lade Verlauf…</p>}
+        {isLoading && <p className="text-kwd-muted p-4 text-sm">Lade Lebenszyklus…</p>}
 
         {!isLoading && timeline.length === 0 && (
           <p className="text-kwd-muted px-4 py-8 text-center text-sm">
-            Noch keine Einträge – „+ Wartung“ oder „+ Reparatur“ nutzen.
+            Noch keine Einträge – „+ Wartung“ nutzen und Dauer bis zur nächsten Wartung angeben.
           </p>
         )}
       </section>
@@ -406,6 +458,7 @@ export function MachineLifecyclePanel({
                   const isSelected = selected.has(key)
                   const photos =
                     item.source === 'lifecycle' ? (photosByEntry.get(item.id) ?? []) : []
+                  const dueCls = maintenanceDueClass(item.next_due_date)
                   return (
                     <li
                       key={key}
@@ -435,6 +488,25 @@ export function MachineLifecyclePanel({
                           )}
                         </p>
                         <p className="font-semibold">{item.title}</p>
+                        {(item.duration_days || item.next_due_date) && (
+                          <p className="mt-0.5 text-sm">
+                            {item.duration_days != null && (
+                              <span className="text-kwd-muted">
+                                Dauer: {item.duration_days} Tage
+                              </span>
+                            )}
+                            {item.duration_days != null && item.next_due_date && ' · '}
+                            {item.next_due_date && (
+                              <span className={dueCls || 'text-kwd-muted'}>
+                                Nächste:{' '}
+                                {new Date(item.next_due_date).toLocaleDateString('de-DE')}
+                                {maintenanceDueTone(item.next_due_date) === 'soon' && ' (bald)'}
+                                {maintenanceDueTone(item.next_due_date) === 'overdue' &&
+                                  ' (überfällig)'}
+                              </span>
+                            )}
+                          </p>
+                        )}
                         {item.description && (
                           <p className="text-kwd-muted mt-0.5 whitespace-pre-wrap text-sm">
                             {item.description}

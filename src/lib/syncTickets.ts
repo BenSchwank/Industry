@@ -20,6 +20,8 @@ function addOptimisticTimelineEntry(
     description,
     occurred_at: new Date().toISOString(),
     created_by_username: username,
+    duration_days: null,
+    next_due_date: null,
   }
 
   client.setQueryData<TimelineItem[]>(['machine-timeline', machineId], (old) => [

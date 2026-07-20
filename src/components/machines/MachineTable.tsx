@@ -8,6 +8,7 @@ import {
 } from '../../lib/excelClipboard'
 import { normalizeBarcode, suggestMachineBarcode } from '../../lib/barcode'
 import { printMachineLabels } from '../../lib/printLabels'
+import { maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
 import { matchProblemSnippet } from '../../hooks/useMachinesWithStats'
 import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useUpdateMachine } from '../../hooks/useMachines'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
@@ -46,17 +47,11 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString('de-DE')
 }
 
-function dateCellClass(d: string | null, overdue = false) {
+function dateCellClass(d: string | null, forMaintenance = false) {
   if (!d) return ''
-  if (overdue || new Date(d) < new Date()) return 'text-kwd-danger font-semibold'
+  if (forMaintenance) return maintenanceDueClass(d)
+  if (new Date(d) < new Date()) return 'text-kwd-danger font-semibold'
   return ''
-}
-
-function isOverdue(d: string | null) {
-  if (!d) return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return new Date(d) < today
 }
 
 function makeBlankGrid(count: number): MachineDraftValues[] {
@@ -231,11 +226,17 @@ function MachineRow({
         <DocsCell machine={m} />
       </td>
       <td>{formatDate(m.last_maintenance_at)}</td>
-      <td className={dateCellClass(m.next_maintenance_at, isOverdue(m.next_maintenance_at))}>
+      <td className={dateCellClass(m.next_maintenance_at, true)} title={
+        maintenanceDueTone(m.next_maintenance_at) === 'overdue'
+          ? 'Überfällig'
+          : maintenanceDueTone(m.next_maintenance_at) === 'soon'
+            ? 'Fällig innerhalb von 3 Monaten'
+            : undefined
+      }>
         {formatDate(m.next_maintenance_at)}
       </td>
       <td>{formatDate(m.last_repair_at)}</td>
-      <td className={dateCellClass(m.warranty_until, isOverdue(m.warranty_until))}>
+      <td className={dateCellClass(m.warranty_until)}>
         {formatDate(m.warranty_until)}
       </td>
       <td className="text-right">
