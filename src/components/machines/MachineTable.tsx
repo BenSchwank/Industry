@@ -30,7 +30,7 @@ import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
 import { Tip } from '../ui/Tip'
 import { usePreferencesStore } from '../../stores/preferencesStore'
-import { rememberMachineFieldOption } from '../../lib/machineFieldOptions'
+import { rememberMachineFieldOption, forgetMachineFieldOption, renameMachineFieldOption } from '../../lib/machineFieldOptions'
 import { CategoryPickerButton } from './CategoryPickerButton'
 import {
   draftToInput,
@@ -503,6 +503,42 @@ export function MachineTable({
   async function rememberCategory(value: string) {
     await rememberMachineFieldOption('category', value)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+  }
+
+  async function renameCategory(from: string, to: string) {
+    const next = to.trim()
+    if (!next) return
+    const targets = orderedMachines.filter(
+      (m) => (m.category ?? '').trim().toLowerCase() === from.trim().toLowerCase(),
+    )
+    await Promise.all(
+      targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: next })),
+    )
+    await renameMachineFieldOption('category', from, next)
+    void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+    void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+    flash(
+      targets.length > 0
+        ? `„${from}“ → „${next}“ (${targets.length})`
+        : `Kategorie „${next}“`,
+    )
+  }
+
+  async function deleteCategory(category: string) {
+    const targets = orderedMachines.filter(
+      (m) => (m.category ?? '').trim().toLowerCase() === category.trim().toLowerCase(),
+    )
+    await Promise.all(
+      targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: null })),
+    )
+    await forgetMachineFieldOption('category', category)
+    void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+    void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+    flash(
+      targets.length > 0
+        ? `„${category}“ gelöscht · ${targets.length} → ${UNCATEGORIZED_LABEL}`
+        : `„${category}“ gelöscht`,
+    )
   }
 
   async function moveMachinesToCategory(categoryKey: string, sourceId: string) {
@@ -999,13 +1035,11 @@ export function MachineTable({
             value=""
             suggestions={categorySuggestions}
             buttonLabel={
-              checkedList.length > 0 ? `Kategorie (${checkedList.length})` : 'Kategorie +'
+              checkedList.length > 0 ? `Kategorie (${checkedList.length})` : 'Kategorie'
             }
-            title={
-              checkedList.length > 0
-                ? 'Markierte Maschinen einer Kategorie zuordnen oder neue anlegen'
-                : 'Neue Kategorie anlegen (danach Maschinen auf den Ordner ziehen)'
-            }
+            title="Kategorien verwalten: zuweisen, anlegen, umbenennen, löschen"
+            onRename={(from, to) => renameCategory(from, to)}
+            onDelete={(cat) => deleteCategory(cat)}
             onChange={(c) => {
               if (checkedList.length > 0) {
                 void (async () => {
@@ -1028,7 +1062,7 @@ export function MachineTable({
                 })()
               } else if (c.trim()) {
                 void rememberCategory(c.trim()).then(() => {
-                  flash(`Kategorie „${c.trim()}“ angelegt – Maschinen auf den Ordner ziehen`)
+                  flash(`Kategorie „${c.trim()}“ angelegt`)
                 })
               }
             }}
@@ -1234,7 +1268,9 @@ export function MachineTable({
                           value={group.key === UNCATEGORIZED_LABEL ? '' : group.key}
                           suggestions={categorySuggestions}
                           buttonLabel="Ändern"
-                          title="Kategorie umbenennen / alle Maschinen in diesem Ordner zuordnen"
+                          title="Ordner zuweisen, umbenennen oder löschen"
+                          onRename={(from, to) => renameCategory(from, to)}
+                          onDelete={(cat) => deleteCategory(cat)}
                           onChange={(c) => {
                             void (async () => {
                               const next = c.trim() || null
@@ -1301,6 +1337,8 @@ export function MachineTable({
                   values={draft}
                   blank={infinite}
                   categorySuggestions={categorySuggestions}
+                  onRenameCategory={(from, to) => renameCategory(from, to)}
+                  onDeleteCategory={(cat) => deleteCategory(cat)}
                   selectedField={selectedCell?.row === i ? selectedCell.field : null}
                   onSelectField={(field) => setSelectedCell({ row: i, field })}
                   onChange={(v) => {

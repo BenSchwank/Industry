@@ -45,6 +45,14 @@ function addLocal(fieldType: MachineFieldOptionType, value: string) {
   }
 }
 
+function removeLocal(fieldType: MachineFieldOptionType, value: string) {
+  const v = value.trim()
+  if (!v) return
+  const store = readLocal()
+  store[fieldType] = store[fieldType].filter((x) => x.toLowerCase() !== v.toLowerCase())
+  writeLocal(store)
+}
+
 /** Speichert einen Freitext-Wert dauerhaft (DB + lokal), ohne bestehende Optionen zu löschen */
 export async function rememberMachineFieldOption(
   fieldType: MachineFieldOptionType,
@@ -64,6 +72,41 @@ export async function rememberMachineFieldOption(
   if (error && !/schema cache|does not exist|machine_field_options/i.test(error.message)) {
     console.warn('[KWD] field option:', error.message)
   }
+}
+
+/** Entfernt einen Vorschlag dauerhaft (DB + lokal) – Maschinen bleiben unberührt */
+export async function forgetMachineFieldOption(
+  fieldType: MachineFieldOptionType,
+  value: string | null | undefined,
+): Promise<void> {
+  const v = value?.trim()
+  if (!v) return
+
+  removeLocal(fieldType, v)
+
+  const { error } = await supabase
+    .from('machine_field_options')
+    .delete()
+    .eq('field_type', fieldType)
+    .eq('value', v)
+
+  if (error && !/schema cache|does not exist|machine_field_options/i.test(error.message)) {
+    console.warn('[KWD] field option delete:', error.message)
+  }
+}
+
+/** Benennt einen Vorschlag um (DB + lokal) */
+export async function renameMachineFieldOption(
+  fieldType: MachineFieldOptionType,
+  from: string,
+  to: string,
+): Promise<void> {
+  const oldVal = from.trim()
+  const newVal = to.trim()
+  if (!oldVal || !newVal || oldVal.toLowerCase() === newVal.toLowerCase()) return
+
+  await forgetMachineFieldOption(fieldType, oldVal)
+  await rememberMachineFieldOption(fieldType, newVal)
 }
 
 export async function rememberMachineFieldOptions(input: {
