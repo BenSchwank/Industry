@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatUptime, formatUptimeCompact, uptimeHealthClass } from '../../lib/machineHealth'
 import { normalizeBarcode } from '../../lib/barcode'
 import { formatSupabaseError } from '../../lib/formatError'
+import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import { useMachineHealth } from '../../hooks/useMachineHealth'
@@ -92,8 +93,9 @@ export function MachineDetailPanel({
     [timeline, searchQuery],
   )
 
-  const maintenanceOverdue =
-    machine.next_maintenance_at && new Date(machine.next_maintenance_at) < new Date()
+  const maintenanceTone = maintenanceDueTone(machine.next_maintenance_at)
+  const maintenanceOverdue = maintenanceTone === 'overdue'
+  const maintenanceSoon = maintenanceTone === 'soon'
 
   const showPlansTab =
     machine.documents_analyzed > 0 ||
@@ -158,6 +160,7 @@ export function MachineDetailPanel({
                 : 'Kein Ticketabschluss'
           }
           maintenanceOverdue={Boolean(maintenanceOverdue)}
+          maintenanceSoon={Boolean(maintenanceSoon)}
         />
       )}
 
@@ -382,6 +385,7 @@ export function MachineDetailPanel({
                   : 'Kein Ticketabschluss'
             }
             maintenanceOverdue={Boolean(maintenanceOverdue)}
+            maintenanceSoon={Boolean(maintenanceSoon)}
           />
           <p className="text-kwd-muted mt-3 px-1 text-xs">
             Unterlagen, Pläne, Lebenszyklus & Störungen → Vollbild-Akte
@@ -451,6 +455,7 @@ function MachineStammdatenForm({
   uptimeClass,
   healthHint,
   maintenanceOverdue,
+  maintenanceSoon,
 }: {
   machine: MachineWithStats
   compact: boolean
@@ -459,6 +464,7 @@ function MachineStammdatenForm({
   uptimeClass: string
   healthHint: string
   maintenanceOverdue: boolean
+  maintenanceSoon: boolean
 }) {
   const updateMachine = useUpdateMachine()
   const [name, setName] = useState(machine.name)
@@ -541,8 +547,15 @@ function MachineStammdatenForm({
         <StatTile
           label="Nächste Wartung"
           value={formatDate(machine.next_maintenance_at)}
-          hint={maintenanceOverdue ? 'Überfällig' : 'Geplant'}
+          hint={
+            maintenanceOverdue
+              ? 'Überfällig'
+              : maintenanceSoon
+                ? 'Innerhalb 3 Monate'
+                : 'Geplant'
+          }
           alert={maintenanceOverdue}
+          warn={maintenanceSoon}
           compact={compact}
         />
         <StatTile
@@ -669,6 +682,7 @@ function StatTile({
   hint,
   valueClass = '',
   alert = false,
+  warn = false,
   compact = false,
 }: {
   label: string
@@ -676,13 +690,20 @@ function StatTile({
   hint?: string
   valueClass?: string
   alert?: boolean
+  warn?: boolean
   compact?: boolean
 }) {
   return (
-    <div className={`kwd-kpi min-w-0 ${compact ? '!p-2.5' : ''} ${alert ? 'bg-kwd-danger/10' : ''}`}>
+    <div
+      className={`kwd-kpi min-w-0 ${compact ? '!p-2.5' : ''} ${
+        alert ? 'bg-kwd-danger/10' : warn ? 'bg-kwd-warning/10' : ''
+      }`}
+    >
       <p className="kwd-kpi-label truncate">{label}</p>
       <p
-        className={`${compact ? 'mt-0.5 text-lg font-bold leading-tight' : 'kwd-kpi-value'} break-words ${valueClass}`}
+        className={`${compact ? 'mt-0.5 text-lg font-bold leading-tight' : 'kwd-kpi-value'} break-words ${
+          alert ? 'text-kwd-danger' : warn ? 'text-kwd-warning' : valueClass
+        }`}
       >
         {value}
       </p>
