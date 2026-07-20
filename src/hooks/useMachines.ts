@@ -9,6 +9,7 @@ export interface MachineInput {
   barcode: string
   name: string
   location: string
+  category?: string | null
   warranty_until?: string | null
   status?: MachineStatus
   last_maintenance_at?: string | null
@@ -45,17 +46,28 @@ export function useCreateMachine() {
   return useMutation({
     mutationFn: async (input: MachineInput) => {
       const barcode = normalizeBarcode(input.barcode)
-      const { data, error } = await supabase
+      const payload = {
+        barcode,
+        name: input.name.trim(),
+        location: input.location.trim(),
+        category: input.category?.trim() || null,
+        warranty_until: input.warranty_until || null,
+        status: input.status ?? 'active',
+      }
+      let { data, error } = await supabase
         .from('machines')
-        .insert({
-          barcode,
-          name: input.name.trim(),
-          location: input.location.trim(),
-          warranty_until: input.warranty_until || null,
-          status: input.status ?? 'active',
-        })
+        .insert(payload)
         .select('id, barcode, name')
         .single()
+
+      if (error && /category|schema cache/i.test(error.message)) {
+        const { category: _c, ...withoutCategory } = payload
+        ;({ data, error } = await supabase
+          .from('machines')
+          .insert(withoutCategory)
+          .select('id, barcode, name')
+          .single())
+      }
 
       if (error) {
         throw new Error(formatSupabaseError(error))
@@ -88,17 +100,28 @@ export function useBulkCreateMachines() {
       for (const input of inputs) {
         try {
           const barcode = normalizeBarcode(input.barcode)
-          const { data, error } = await supabase
+          const payload = {
+            barcode,
+            name: input.name.trim(),
+            location: input.location.trim(),
+            category: input.category?.trim() || null,
+            warranty_until: input.warranty_until || null,
+            status: input.status ?? 'active',
+          }
+          let { data, error } = await supabase
             .from('machines')
-            .insert({
-              barcode,
-              name: input.name.trim(),
-              location: input.location.trim(),
-              warranty_until: input.warranty_until || null,
-              status: input.status ?? 'active',
-            })
+            .insert(payload)
             .select('id, name')
             .single()
+
+          if (error && /category|schema cache/i.test(error.message)) {
+            const { category: _c, ...withoutCategory } = payload
+            ;({ data, error } = await supabase
+              .from('machines')
+              .insert(withoutCategory)
+              .select('id, name')
+              .single())
+          }
 
           if (error) throw new Error(formatSupabaseError(error))
           try {
@@ -136,6 +159,9 @@ export function useUpdateMachine() {
         .update({
           ...(input.name !== undefined ? { name: input.name.trim() } : {}),
           ...(input.location !== undefined ? { location: input.location.trim() } : {}),
+          ...(input.category !== undefined
+            ? { category: input.category?.trim() || null }
+            : {}),
           ...(input.warranty_until !== undefined
             ? { warranty_until: input.warranty_until || null }
             : {}),
@@ -186,6 +212,7 @@ export function useDuplicateMachines() {
         barcode: string
         name: string
         location: string | null
+        category?: string | null
         warranty_until: string | null
         status: MachineStatus
       }[],
@@ -204,6 +231,7 @@ export function useDuplicateMachines() {
               barcode,
               name,
               location: (m.location ?? '').trim() || 'Unbekannt',
+              category: m.category?.trim() || null,
               warranty_until: m.warranty_until,
               status: m.status,
             })

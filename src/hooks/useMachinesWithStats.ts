@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
+import { addDaysIso } from '../lib/maintenanceDue'
+import { parseLocation } from '../lib/machineLocationGroups'
 import { supabase } from '../lib/supabase'
 import type { MachineStatus } from '../types/database'
 
@@ -7,6 +9,8 @@ export interface MachineWithStats {
   barcode: string
   name: string
   location: string | null
+  /** Maschine / Gerät / Kran … */
+  category: string | null
   warranty_until: string | null
   status: MachineStatus
   external_source: string | null
@@ -57,6 +61,7 @@ function buildSearchHaystack(m: MachineWithStats): string {
     m.barcode,
     m.name,
     m.location ?? '',
+    m.category ?? '',
     m.status,
     m.plan_label ?? '',
     ...m.problem_texts,
@@ -126,40 +131,102 @@ export function useMachinesWithStats() {
     queryFn: async () => {
       const machinesRes = await supabase
         .from('machines')
-        .select('id, barcode, name, location, warranty_until, status, external_source, created_at')
+        .select(
+          'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
+        )
         .order('name')
 
+      let machines: {
+        id: string
+        barcode: string
+        name: string
+        location: string | null
+        category: string | null
+        warranty_until: string | null
+        status: MachineStatus
+        external_source: string | null
+        created_at: string
+      }[] = []
+
       if (machinesRes.error) {
-        const basic = await supabase
-          .from('machines')
-          .select('id, barcode, name, location, warranty_until, status, created_at')
-          .order('name')
-        if (basic.error) throw basic.error
-        return (basic.data ?? []).map((m) => ({
+        // category-Spalte fehlt noch → ohne category
+        if (/category|schema cache/i.test(machinesRes.error.message)) {
+          const fb = await supabase
+            .from('machines')
+            .select(
+              'id, barcode, name, location, warranty_until, status, external_source, created_at',
+            )
+            .order('name')
+          if (fb.error) {
+            const basic = await supabase
+              .from('machines')
+              .select('id, barcode, name, location, warranty_until, status, created_at')
+              .order('name')
+            if (basic.error) throw basic.error
+            machines = (basic.data ?? []).map((m) => ({
+              ...m,
+              category: null,
+              external_source: null,
+            }))
+          } else {
+            machines = (fb.data ?? []).map((m) => ({ ...m, category: null }))
+          }
+        } else {
+          const basic = await supabase
+            .from('machines')
+            .select('id, barcode, name, location, warranty_until, status, created_at')
+            .order('name')
+          if (basic.error) throw basic.error
+          machines = (basic.data ?? []).map((m) => ({
+            ...m,
+            category: null,
+            external_source: null,
+          }))
+        }
+      } else {
+        machines = (machinesRes.data ?? []).map((m) => ({
           ...m,
-          external_source: null,
-          ...emptyStats(),
-        })) satisfies MachineWithStats[]
+          category: (m as { category?: string | null }).category ?? null,
+        }))
       }
 
-      const machines = machinesRes.data ?? []
       if (machines.length === 0) return []
 
       const ids = machines.map((m) => m.id)
 
-      let lifecycleRows: {
+      type LifeRow = {
         machine_id: string
         entry_type: string
         title: string
         description: string | null
         occurred_at: string
-      }[] = []
-      const lifecycleRes = await supabase
+        duration_days: number | null
+        next_due_date: string | null
+      }
+
+      let lifecycleRows: LifeRow[] = []
+      const lifecycleFull = await supabase
         .from('machine_lifecycle_entries')
-        .select('machine_id, entry_type, title, description, occurred_at')
+        .select(
+          'machine_id, entry_type, title, description, occurred_at, duration_days, next_due_date',
+        )
         .in('machine_id', ids)
 
-      if (!lifecycleRes.error) lifecycleRows = lifecycleRes.data ?? []
+      if (!lifecycleFull.error) {
+        lifecycleRows = (lifecycleFull.data ?? []) as LifeRow[]
+      } else {
+        const lifecycleBasic = await supabase
+          .from('machine_lifecycle_entries')
+          .select('machine_id, entry_type, title, description, occurred_at')
+          .in('machine_id', ids)
+        if (!lifecycleBasic.error) {
+          lifecycleRows = (lifecycleBasic.data ?? []).map((e) => ({
+            ...e,
+            duration_days: null,
+            next_due_date: null,
+          }))
+        }
+      }
 
       const [tasksRes, ticketsRes, attachmentsRes, draftsRes] = await Promise.all([
         supabase
@@ -204,11 +271,10 @@ export function useMachinesWithStats() {
       const taskToMachine = new Map((allTasks ?? []).map((t) => [t.id, t.machine_id]))
 
       return machines.map((m) => {
-        const nextDates = (tasksRes.data ?? [])
+        const taskNextDates = (tasksRes.data ?? [])
           .filter((t) => t.machine_id === m.id)
           .map((t) => t.next_due_date)
-          .filter(Boolean)
-          .sort()
+          .filter(Boolean) as string[]
 
         const machineTickets = (ticketsRes.data ?? []).filter((t) => t.machine_id === m.id)
         const openTickets = machineTickets.filter(
@@ -219,7 +285,12 @@ export function useMachinesWithStats() {
 
         const lifecycleMaint = lifecycleRows
           .filter((e) => e.machine_id === m.id && e.entry_type === 'maintenance')
-          .map((e) => e.occurred_at)
+          .slice()
+          .sort(
+            (a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime(),
+          )
+
+        const latestLifecycleMaint = lifecycleMaint[0] ?? null
 
         const lifecycleRepair = lifecycleRows
           .filter((e) => e.machine_id === m.id && e.entry_type === 'repair')
@@ -229,12 +300,37 @@ export function useMachinesWithStats() {
           .filter((c) => taskToMachine.get(c.task_id) === m.id)
           .map((c) => c.completed_at)
 
-        const allMaint = [...completionDates, ...lifecycleMaint]
+        const allMaint = [
+          ...completionDates,
+          ...lifecycleMaint.map((e) => e.occurred_at),
+        ]
         const allRepair = [...ticketDates, ...lifecycleRepair]
 
         const maxDate = (dates: string[]) => {
           if (dates.length === 0) return null
           return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+        }
+
+        const last_maintenance_at = maxDate(allMaint)
+
+        // Nächste Wartung: zuerst vom letzten Lebenszyklus-Eintrag (Dauer),
+        // sonst frühester Wartungsaufgaben-Termin
+        let next_maintenance_at: string | null = null
+        if (latestLifecycleMaint) {
+          if (latestLifecycleMaint.next_due_date) {
+            next_maintenance_at = latestLifecycleMaint.next_due_date
+          } else if (
+            latestLifecycleMaint.duration_days &&
+            latestLifecycleMaint.duration_days > 0
+          ) {
+            next_maintenance_at = addDaysIso(
+              latestLifecycleMaint.occurred_at,
+              latestLifecycleMaint.duration_days,
+            )
+          }
+        }
+        if (!next_maintenance_at && taskNextDates.length > 0) {
+          next_maintenance_at = taskNextDates.slice().sort()[0] ?? null
         }
 
         const machineAttachments = attachments.filter((a) => a.machine_id === m.id)
@@ -251,8 +347,8 @@ export function useMachinesWithStats() {
 
         return {
           ...m,
-          last_maintenance_at: maxDate(allMaint),
-          next_maintenance_at: nextDates[0] ?? null,
+          last_maintenance_at,
+          next_maintenance_at,
           last_repair_at: maxDate(allRepair),
           open_ticket_count: openTickets.length,
           document_count: machineAttachments.length,
@@ -276,13 +372,32 @@ export type MachineDateFilter =
   | 'repair_recent'
   | 'open_problems'
 
+export type MachineSortBy = 'manual' | 'name' | 'category' | 'location' | 'next_maintenance'
+
+export interface MachineListFilters {
+  filter?: MachineDateFilter
+  customFrom?: string
+  customTo?: string
+  searchQuery?: string
+  /** Kategorie z.B. Maschine, Gerät, Kran – leer = alle */
+  category?: string
+  /** Standort / Halle – leer = alle */
+  location?: string
+}
+
 export function filterMachines(
   machines: MachineWithStats[],
-  filter: MachineDateFilter,
+  filterOrOpts: MachineDateFilter | MachineListFilters = 'all',
   customFrom?: string,
   customTo?: string,
   searchQuery?: string,
 ): MachineWithStats[] {
+  const opts: MachineListFilters =
+    typeof filterOrOpts === 'string'
+      ? { filter: filterOrOpts, customFrom, customTo, searchQuery }
+      : filterOrOpts
+
+  const filter = opts.filter ?? 'all'
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const in7Days = new Date(today)
@@ -290,11 +405,14 @@ export function filterMachines(
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() - 30)
 
-  const terms = (searchQuery ?? '')
+  const terms = (opts.searchQuery ?? '')
     .trim()
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
+
+  const categoryFilter = opts.category?.trim() ?? ''
+  const locationFilter = opts.location?.trim() ?? ''
 
   return machines.filter((m) => {
     if (terms.length > 0) {
@@ -302,12 +420,22 @@ export function filterMachines(
       if (!terms.every((term) => hay.includes(term))) return false
     }
 
+    if (categoryFilter) {
+      if ((m.category ?? '').trim() !== categoryFilter) return false
+    }
+
+    if (locationFilter) {
+      const { hall } = parseLocation(m.location)
+      const loc = (m.location ?? '').trim()
+      if (hall !== locationFilter && loc !== locationFilter) return false
+    }
+
     if (filter === 'open_problems') {
       return m.open_ticket_count > 0
     }
 
     if (filter === 'all') {
-      if (customFrom || customTo) {
+      if (opts.customFrom || opts.customTo) {
         const dates = [
           m.last_maintenance_at,
           m.next_maintenance_at,
@@ -317,8 +445,8 @@ export function filterMachines(
         if (dates.length === 0) return false
         return dates.some((d) => {
           const dt = new Date(d)
-          if (customFrom && dt < new Date(customFrom)) return false
-          if (customTo && dt > new Date(customTo)) return false
+          if (opts.customFrom && dt < new Date(opts.customFrom)) return false
+          if (opts.customTo && dt > new Date(opts.customTo)) return false
           return true
         })
       }
@@ -341,6 +469,67 @@ export function filterMachines(
     }
     return true
   })
+}
+
+export function sortMachines(
+  machines: MachineWithStats[],
+  sortBy: MachineSortBy,
+): MachineWithStats[] {
+  if (sortBy === 'manual') return machines
+  const list = [...machines]
+  const byName = (a: MachineWithStats, b: MachineWithStats) =>
+    a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+
+  if (sortBy === 'name') return list.sort(byName)
+
+  if (sortBy === 'category') {
+    return list.sort((a, b) => {
+      const c = (a.category ?? 'ÖÖÖ').localeCompare(b.category ?? 'ÖÖÖ', 'de')
+      return c !== 0 ? c : byName(a, b)
+    })
+  }
+
+  if (sortBy === 'location') {
+    return list.sort((a, b) => {
+      const la = parseLocation(a.location).hall
+      const lb = parseLocation(b.location).hall
+      const c = la.localeCompare(lb, 'de')
+      return c !== 0 ? c : byName(a, b)
+    })
+  }
+
+  if (sortBy === 'next_maintenance') {
+    return list.sort((a, b) => {
+      if (!a.next_maintenance_at && !b.next_maintenance_at) return byName(a, b)
+      if (!a.next_maintenance_at) return 1
+      if (!b.next_maintenance_at) return -1
+      const c =
+        new Date(a.next_maintenance_at).getTime() - new Date(b.next_maintenance_at).getTime()
+      return c !== 0 ? c : byName(a, b)
+    })
+  }
+
+  return list
+}
+
+/** Eindeutige Standorte / Hallen aus der Liste */
+export function uniqueMachineLocations(machines: MachineWithStats[]): string[] {
+  const set = new Set<string>()
+  for (const m of machines) {
+    const { hall } = parseLocation(m.location)
+    if (hall && hall !== 'Ohne Standort') set.add(hall)
+    else if (m.location?.trim()) set.add(m.location.trim())
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'de'))
+}
+
+/** Eindeutige Kategorien aus der Liste (+ bekannte Vorgaben) */
+export function uniqueMachineCategories(machines: MachineWithStats[]): string[] {
+  const set = new Set<string>()
+  for (const m of machines) {
+    if (m.category?.trim()) set.add(m.category.trim())
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'de'))
 }
 
 /** Treffertext für Fehlersuche (welcher Problemtext matched) */

@@ -1,4 +1,8 @@
-import type { MachineDateFilter } from '../../hooks/useMachinesWithStats'
+import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
+import type {
+  MachineDateFilter,
+  MachineSortBy,
+} from '../../hooks/useMachinesWithStats'
 
 interface MachineFiltersProps {
   filter: MachineDateFilter
@@ -9,6 +13,14 @@ interface MachineFiltersProps {
   dateTo: string
   onDateFromChange: (v: string) => void
   onDateToChange: (v: string) => void
+  category: string
+  onCategoryChange: (v: string) => void
+  location: string
+  onLocationChange: (v: string) => void
+  sortBy: MachineSortBy
+  onSortByChange: (v: MachineSortBy) => void
+  categoryOptions: string[]
+  locationOptions: string[]
   resultCount: number
   totalCount: number
   /** Nur Schnellfilter-Pills (Suche/Datum sitzen in der Kopfzeile) */
@@ -24,6 +36,14 @@ const QUICK_FILTERS: { value: MachineDateFilter; label: string; short: string }[
   { value: 'repair_recent', label: 'Reparatur (30 Tage)', short: 'Reparatur' },
 ]
 
+const SORT_OPTIONS: { value: MachineSortBy; label: string }[] = [
+  { value: 'manual', label: 'Manuell' },
+  { value: 'name', label: 'Name' },
+  { value: 'category', label: 'Kategorie' },
+  { value: 'location', label: 'Standort' },
+  { value: 'next_maintenance', label: 'Nächste Wartung' },
+]
+
 export function MachineFilters({
   filter,
   onFilterChange,
@@ -33,11 +53,91 @@ export function MachineFilters({
   dateTo,
   onDateFromChange,
   onDateToChange,
+  category,
+  onCategoryChange,
+  location,
+  onLocationChange,
+  sortBy,
+  onSortByChange,
+  categoryOptions,
+  locationOptions,
   resultCount,
   totalCount,
   pillsOnly = false,
 }: MachineFiltersProps) {
-  const hasActive = Boolean(dateFrom || dateTo || searchQuery || filter !== 'all')
+  const categories = Array.from(
+    new Set([...MACHINE_CATEGORIES, ...categoryOptions]),
+  ).sort((a, b) => a.localeCompare(b, 'de'))
+
+  const hasActive = Boolean(
+    dateFrom ||
+      dateTo ||
+      searchQuery ||
+      category ||
+      location ||
+      sortBy !== 'manual' ||
+      filter !== 'all',
+  )
+
+  function resetAll() {
+    onDateFromChange('')
+    onDateToChange('')
+    onSearchChange('')
+    onCategoryChange('')
+    onLocationChange('')
+    onSortByChange('manual')
+    onFilterChange('all')
+  }
+
+  const categorySelect = (
+    <select
+      value={category}
+      onChange={(e) => onCategoryChange(e.target.value)}
+      className="border-kwd-border bg-kwd-paper min-h-[32px] border px-1.5 text-xs"
+      aria-label="Kategorie filtern"
+      title="Kategorie"
+    >
+      <option value="">Kategorie: alle</option>
+      {categories.map((c) => (
+        <option key={c} value={c}>
+          {c}
+        </option>
+      ))}
+    </select>
+  )
+
+  const locationSelect = (
+    <select
+      value={location}
+      onChange={(e) => onLocationChange(e.target.value)}
+      className="border-kwd-border bg-kwd-paper min-h-[32px] max-w-[10rem] border px-1.5 text-xs"
+      aria-label="Standort filtern"
+      title="Standort / Halle"
+    >
+      <option value="">Standort: alle</option>
+      {locationOptions.map((loc) => (
+        <option key={loc} value={loc}>
+          {loc}
+        </option>
+      ))}
+    </select>
+  )
+
+  const sortSelect = (
+    <select
+      value={sortBy}
+      onChange={(e) => onSortByChange(e.target.value as MachineSortBy)}
+      className="border-kwd-border bg-kwd-paper min-h-[32px] border px-1.5 text-xs"
+      aria-label="Sortierung"
+      title="Sortieren"
+    >
+      {SORT_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          Sort: {o.label}
+        </option>
+      ))}
+    </select>
+  )
 
   if (pillsOnly) {
     return (
@@ -54,17 +154,11 @@ export function MachineFilters({
             <span className="hidden lg:inline">{label}</span>
           </button>
         ))}
+        {categorySelect}
+        {locationSelect}
+        {sortSelect}
         {hasActive && (
-          <button
-            type="button"
-            onClick={() => {
-              onDateFromChange('')
-              onDateToChange('')
-              onSearchChange('')
-              onFilterChange('all')
-            }}
-            className="kwd-btn ml-auto px-2 text-xs"
-          >
+          <button type="button" onClick={resetAll} className="kwd-btn ml-auto px-2 text-xs">
             Filter zurücksetzen
           </button>
         )}
@@ -107,6 +201,9 @@ export function MachineFilters({
           title="Datum bis"
           aria-label="Datum bis"
         />
+        {categorySelect}
+        {locationSelect}
+        {sortSelect}
         <span className="text-kwd-muted ml-auto font-mono text-xs tabular-nums">
           {resultCount}/{totalCount}
         </span>

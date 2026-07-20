@@ -23,5 +23,12 @@ ALTER TABLE public.machine_lifecycle_entries
 ALTER TABLE public.machine_lifecycle_entries
   ADD COLUMN IF NOT EXISTS next_due_date DATE;
 
+-- 4) Kategorie (Maschine / Gerät / Kran …)
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS category TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_machines_category
+  ON public.machines (category);
+
 -- Danach ggf. Schema-Cache neu laden: Dashboard → Settings → API → Reload schema
 -- oder kurz warten / Projekt neu laden.

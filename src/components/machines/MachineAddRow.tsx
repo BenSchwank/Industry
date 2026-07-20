@@ -5,6 +5,7 @@ import {
   validateBarcode,
 } from '../../lib/barcode'
 import { mapPasteRowToMachine } from '../../lib/excelClipboard'
+import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
 import type { MachineStatus } from '../../types/database'
 import { ExcelFillCell } from './ExcelFillCell'
 
@@ -25,6 +26,7 @@ function dateInputCls(value: string) {
 export type DraftField =
   | 'barcode'
   | 'name'
+  | 'category'
   | 'location'
   | 'status'
   | 'lastMaintenance'
@@ -35,6 +37,7 @@ export type DraftField =
 export interface MachineDraftValues {
   barcode: string
   name: string
+  category: string
   location: string
   status: MachineStatus
   lastMaintenance: string
@@ -67,6 +70,7 @@ interface MachineAddRowProps {
 export const EMPTY_DRAFT: MachineDraftValues = {
   barcode: '',
   name: '',
+  category: '',
   location: '',
   status: 'active',
   lastMaintenance: '',
@@ -128,6 +132,7 @@ export function MachineAddRow({
     const next: MachineDraftValues = {
       ...values,
       name: mapped.name,
+      category: mapped.category ?? '',
       location: mapped.location ?? '',
       barcode: mapped.barcode
         ? normalizeBarcode(mapped.barcode)
@@ -222,6 +227,24 @@ export function MachineAddRow({
             placeholder=""
             className={inputCls}
           />,
+        )}
+      </td>
+      <td className="border-kwd-border border px-1 py-0.5">
+        {cell(
+          'category',
+          <select
+            value={values.category}
+            onChange={(e) => patch('category', e.target.value)}
+            onFocus={() => onSelectField('category')}
+            className={inputCls}
+          >
+            <option value="">–</option>
+            {MACHINE_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>,
         )}
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
@@ -348,6 +371,7 @@ export function draftToInput(values: MachineDraftValues) {
   return {
     barcode: normalizeBarcode(code),
     name: values.name.trim(),
+    category: values.category.trim() || null,
     location: values.location.trim(),
     warranty_until: values.warrantyUntil || null,
     status: values.status,

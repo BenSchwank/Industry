@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatUptime, formatUptimeCompact, uptimeHealthClass } from '../../lib/machineHealth'
 import { normalizeBarcode } from '../../lib/barcode'
 import { formatSupabaseError } from '../../lib/formatError'
+import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
@@ -470,6 +471,7 @@ function MachineStammdatenForm({
   const [name, setName] = useState(machine.name)
   const [barcode, setBarcode] = useState(machine.barcode)
   const [location, setLocation] = useState(machine.location ?? '')
+  const [category, setCategory] = useState(machine.category ?? '')
   const [status, setStatus] = useState<MachineStatus>(machine.status)
   const [warrantyUntil, setWarrantyUntil] = useState(toDateInput(machine.warranty_until))
   const [message, setMessage] = useState<string | null>(null)
@@ -479,6 +481,7 @@ function MachineStammdatenForm({
     setName(machine.name)
     setBarcode(machine.barcode)
     setLocation(machine.location ?? '')
+    setCategory(machine.category ?? '')
     setStatus(machine.status)
     setWarrantyUntil(toDateInput(machine.warranty_until))
     setMessage(null)
@@ -489,6 +492,7 @@ function MachineStammdatenForm({
     name.trim() !== machine.name ||
     normalizeBarcode(barcode) !== machine.barcode ||
     location.trim() !== (machine.location ?? '') ||
+    (category.trim() || '') !== (machine.category ?? '') ||
     status !== machine.status ||
     (warrantyUntil || '') !== toDateInput(machine.warranty_until)
 
@@ -509,6 +513,7 @@ function MachineStammdatenForm({
         name: name.trim(),
         barcode: barcode.trim(),
         location: location.trim(),
+        category: category.trim() || null,
         status,
         warranty_until: warrantyUntil || null,
       })
@@ -597,6 +602,22 @@ function MachineStammdatenForm({
               required
               className={fieldCls}
             />
+          </label>
+
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">Kategorie</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={fieldCls}
+            >
+              <option value="">– wählen –</option>
+              {MACHINE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="block min-w-0">

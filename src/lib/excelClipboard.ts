@@ -19,9 +19,17 @@ export function parseExcelPaste(text: string): string[][] {
 
 function looksLikeHeaderRow(cells: string[]): boolean {
   const joined = cells.join(' ').toLowerCase()
-  const hits = ['scan', 'bezeichnung', 'standort', 'status', 'wartung', 'garantie', 'barcode', 'name'].filter(
-    (h) => joined.includes(h),
-  )
+  const hits = [
+    'scan',
+    'bezeichnung',
+    'kategorie',
+    'standort',
+    'status',
+    'wartung',
+    'garantie',
+    'barcode',
+    'name',
+  ].filter((h) => joined.includes(h))
   return hits.length >= 2
 }
 
@@ -32,6 +40,7 @@ export function rowsToTsv(rows: string[][]): string {
 export interface ParsedMachinePaste {
   barcode?: string
   name: string
+  category?: string | null
   location: string | null
   status?: string
   last_maintenance_at?: string | null
@@ -79,6 +88,26 @@ function looksLikeDate(s: string): boolean {
 export function mapPasteRowToMachine(cells: string[]): ParsedMachinePaste | null {
   const nonEmpty = cells.filter(Boolean)
   if (nonEmpty.length === 0) return null
+
+  // Volle Excel-Zeile mit Kategorie: Code | Name | Kategorie | Standort | Status | …
+  if (cells.length >= 9 && looksLikeBarcode(cells[0])) {
+    const name = cells[1]?.trim()
+    if (!name) return null
+    const statusAt4 = cells[4] ? STATUS_MAP[cells[4].toLowerCase()] : undefined
+    if (statusAt4 || cells[2]?.trim()) {
+      return {
+        barcode: cells[0],
+        name,
+        category: cells[2]?.trim() || null,
+        location: cells[3]?.trim() || null,
+        status: statusAt4,
+        last_maintenance_at: parseGermanDate(cells[5] ?? ''),
+        next_maintenance_at: parseGermanDate(cells[6] ?? ''),
+        last_repair_at: parseGermanDate(cells[7] ?? ''),
+        warranty_until: parseGermanDate(cells[8] ?? ''),
+      }
+    }
+  }
 
   // Volle Excel-Zeile: Code | Name | Standort | Status | Letzte W. | Nächste W. | Reparatur | Garantie
   if (cells.length >= 8 && looksLikeBarcode(cells[0])) {
@@ -137,6 +166,7 @@ export function machinesToTsv(
   machines: {
     barcode: string
     name: string
+    category?: string | null
     location: string | null
     status: string
     last_maintenance_at: string | null
@@ -150,6 +180,7 @@ export function machinesToTsv(
   const header = [
     'Scan-Code',
     'Bezeichnung',
+    'Kategorie',
     'Standort',
     'Status',
     'Dokumente',
@@ -162,6 +193,7 @@ export function machinesToTsv(
   const rows = machines.map((m) => [
     m.barcode,
     m.name,
+    m.category ?? '',
     m.location ?? '',
     STATUS_EXPORT[m.status] ?? m.status,
     m.document_count != null ? String(m.document_count) : '',

@@ -68,6 +68,8 @@ interface MachineTableProps {
   showAddRow: boolean
   searchQuery?: string
   fillHeight?: boolean
+  /** Bei false: Sortierung aus der Liste behalten (kein manuelles machineOrder) */
+  useManualOrder?: boolean
   onSelect: (id: string) => void
   onOpenFullscreen?: (id: string) => void
   onAddCancel: () => void
@@ -216,6 +218,7 @@ function MachineRow({
           )}
         </div>
       </td>
+      <td className="text-kwd-muted text-xs">{m.category?.trim() || '–'}</td>
       <td className="text-kwd-muted">{m.location || '–'}</td>
       <td>
         <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
@@ -262,6 +265,7 @@ export function MachineTable({
   showAddRow,
   searchQuery = '',
   fillHeight = false,
+  useManualOrder = true,
   onSelect,
   onOpenFullscreen,
   onAddSaved,
@@ -306,7 +310,7 @@ export function MachineTable({
   const lastCheckedId = useRef<string | null>(null)
 
   const orderedMachines = useMemo(() => {
-    if (machineOrder.length === 0) return machines
+    if (!useManualOrder || machineOrder.length === 0) return machines
     const map = new Map(machines.map((m) => [m.id, m]))
     const sorted: MachineWithStats[] = []
     for (const id of machineOrder) {
@@ -318,7 +322,7 @@ export function MachineTable({
     }
     for (const m of map.values()) sorted.push(m)
     return sorted
-  }, [machines, machineOrder])
+  }, [machines, machineOrder, useManualOrder])
 
   const activeDrafts = infinite ? gridRows : continuousRows
   const setActiveDrafts = infinite ? setGridRows : setContinuousRows
@@ -638,6 +642,7 @@ export function MachineTable({
           next[i] = {
             ...EMPTY_DRAFT,
             name: mappedRow.name,
+            category: mappedRow.category ?? '',
             location: mappedRow.location ?? '',
             barcode: mappedRow.barcode
               ? normalizeBarcode(mappedRow.barcode)
@@ -668,6 +673,7 @@ export function MachineTable({
         return {
           barcode,
           name: row.name,
+          category: row.category?.trim() || null,
           location: row.location!.trim(),
           warranty_until: row.warranty_until ?? null,
           status: (row.status as MachineStatus) ?? 'active',
@@ -888,6 +894,7 @@ export function MachineTable({
               </th>
               <th>Scan-Code</th>
               <th className="min-w-[160px]">Bezeichnung</th>
+              <th>Kategorie</th>
               <th>Standort</th>
               <th>Status</th>
               <th className="min-w-[100px]">Docs / Plan</th>
@@ -963,7 +970,7 @@ export function MachineTable({
               ))}
             {orderedMachines.length === 0 && !showAddRow && (
               <tr>
-                <td colSpan={11} className="text-kwd-muted px-4 py-12 text-center">
+                <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>

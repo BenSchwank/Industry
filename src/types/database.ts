@@ -44,6 +44,7 @@ export interface Database {
           barcode: string
           name: string
           location: string | null
+          category: string | null
           warranty_until: string | null
           status: MachineStatus
           external_id: string | null
@@ -56,6 +57,7 @@ export interface Database {
           barcode: string
           name: string
           location?: string | null
+          category?: string | null
           warranty_until?: string | null
           status?: MachineStatus
           external_id?: string | null
@@ -68,6 +70,7 @@ export interface Database {
           barcode?: string
           name?: string
           location?: string | null
+          category?: string | null
           warranty_until?: string | null
           status?: MachineStatus
           external_id?: string | null

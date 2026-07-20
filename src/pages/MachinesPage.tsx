@@ -6,8 +6,12 @@ import { MachineTable } from '../components/machines/MachineTable'
 import { useMachineTimeline } from '../hooks/useMachineLifecycle'
 import {
   filterMachines,
+  sortMachines,
+  uniqueMachineCategories,
+  uniqueMachineLocations,
   useMachinesWithStats,
   type MachineDateFilter,
+  type MachineSortBy,
 } from '../hooks/useMachinesWithStats'
 import { useIsDesktop } from '../hooks/usePlatform'
 import { useAppStore } from '../stores/appStore'
@@ -23,6 +27,9 @@ export default function MachinesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [locationFilter, setLocationFilter] = useState('')
+  const [sortBy, setSortBy] = useState<MachineSortBy>('manual')
   const [detailFullscreen, setDetailFullscreen] = useState(false)
   const [showQs1Import, setShowQs1Import] = useState(false)
   const isDesktop = useIsDesktop()
@@ -34,17 +41,35 @@ export default function MachinesPage() {
   const { data: machines, isLoading } = useMachinesWithStats()
   const { data: timeline, isLoading: timelineLoading } = useMachineTimeline(selectedId)
 
-  const filtered = useMemo(
-    () =>
-      filterMachines(
-        machines ?? [],
-        filter,
-        dateFrom || undefined,
-        dateTo || undefined,
-        searchQuery,
-      ),
-    [machines, filter, dateFrom, dateTo, searchQuery],
+  const categoryOptions = useMemo(
+    () => uniqueMachineCategories(machines ?? []),
+    [machines],
   )
+  const locationOptions = useMemo(
+    () => uniqueMachineLocations(machines ?? []),
+    [machines],
+  )
+
+  const filtered = useMemo(() => {
+    const list = filterMachines(machines ?? [], {
+      filter,
+      customFrom: dateFrom || undefined,
+      customTo: dateTo || undefined,
+      searchQuery,
+      category: categoryFilter || undefined,
+      location: locationFilter || undefined,
+    })
+    return sortMachines(list, sortBy)
+  }, [
+    machines,
+    filter,
+    dateFrom,
+    dateTo,
+    searchQuery,
+    categoryFilter,
+    locationFilter,
+    sortBy,
+  ])
 
   const selected = machines?.find((m) => m.id === selectedId)
   const drawerOpen = Boolean(selected && !detailFullscreen)
@@ -170,6 +195,14 @@ export default function MachinesPage() {
             dateTo={dateTo}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
+            category={categoryFilter}
+            onCategoryChange={setCategoryFilter}
+            location={locationFilter}
+            onLocationChange={setLocationFilter}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            categoryOptions={categoryOptions}
+            locationOptions={locationOptions}
             resultCount={filtered.length}
             totalCount={machines?.length ?? 0}
             pillsOnly
@@ -198,6 +231,7 @@ export default function MachinesPage() {
                 showAddRow={showAddRow}
                 searchQuery={searchQuery}
                 fillHeight
+                useManualOrder={sortBy === 'manual'}
                 onSelect={(id) => {
                   setSelectedMachineId(id)
                   setDetailFullscreen(false)
