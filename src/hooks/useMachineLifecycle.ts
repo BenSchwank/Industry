@@ -224,17 +224,16 @@ export function useAddLifecycleEntry() {
       const nextDue =
         duration != null ? addDaysIso(occurred, duration) : null
 
-      const payload: Record<string, unknown> = {
+      const payload = {
         machine_id: input.machine_id,
         entry_type: input.entry_type,
         title: input.title.trim(),
         description: input.description?.trim() || null,
         occurred_at: occurred,
         created_by: userId,
-      }
-      if (duration != null) {
-        payload.duration_days = duration
-        payload.next_due_date = nextDue
+        ...(duration != null
+          ? { duration_days: duration, next_due_date: nextDue }
+          : {}),
       }
 
       const { data, error } = await supabase
