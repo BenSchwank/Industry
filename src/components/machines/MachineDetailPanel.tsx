@@ -2,10 +2,17 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatUptime, formatUptimeCompact, uptimeHealthClass } from '../../lib/machineHealth'
 import { normalizeBarcode } from '../../lib/barcode'
 import { formatSupabaseError } from '../../lib/formatError'
-import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
+import {
+  MACHINE_CATEGORIES,
+  machineCategorySuggestions,
+} from '../../lib/machineCategories'
+import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
-import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
+import {
+  useMachinesWithStats,
+  type MachineWithStats,
+} from '../../hooks/useMachinesWithStats'
 import { useMachineHealth } from '../../hooks/useMachineHealth'
 import type { TimelineItem } from '../../hooks/useMachineLifecycle'
 import type { MachineStatus } from '../../types/database'
@@ -468,6 +475,7 @@ function MachineStammdatenForm({
   maintenanceSoon: boolean
 }) {
   const updateMachine = useUpdateMachine()
+  const { data: allMachines } = useMachinesWithStats()
   const [name, setName] = useState(machine.name)
   const [barcode, setBarcode] = useState(machine.barcode)
   const [location, setLocation] = useState(machine.location ?? '')
@@ -476,6 +484,25 @@ function MachineStammdatenForm({
   const [warrantyUntil, setWarrantyUntil] = useState(toDateInput(machine.warranty_until))
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const categorySuggestions = useMemo(
+    () =>
+      machineCategorySuggestions([
+        ...MACHINE_CATEGORIES,
+        ...(allMachines ?? []).map((m) => m.category ?? ''),
+        category,
+      ]),
+    [allMachines, category],
+  )
+
+  const locationSuggestions = useMemo(
+    () =>
+      machineLocationSuggestions([
+        ...(allMachines ?? []).map((m) => m.location ?? ''),
+        location,
+      ]),
+    [allMachines, location],
+  )
 
   useEffect(() => {
     setName(machine.name)
@@ -596,12 +623,18 @@ function MachineStammdatenForm({
               Standort <span className="text-kwd-danger">*</span>
             </span>
             <input
+              list="kwd-machine-location-stammdaten"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Halle 1 / Verzahnung"
               required
               className={fieldCls}
             />
+            <datalist id="kwd-machine-location-stammdaten">
+              {locationSuggestions.map((loc) => (
+                <option key={loc} value={loc} />
+              ))}
+            </datalist>
           </label>
 
           <label className="block min-w-0">
@@ -614,7 +647,7 @@ function MachineStammdatenForm({
               className={fieldCls}
             />
             <datalist id="kwd-machine-category-stammdaten">
-              {MACHINE_CATEGORIES.map((c) => (
+              {categorySuggestions.map((c) => (
                 <option key={c} value={c} />
               ))}
             </datalist>

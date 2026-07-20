@@ -6,6 +6,7 @@ import {
 } from '../../lib/barcode'
 import { mapPasteRowToMachine } from '../../lib/excelClipboard'
 import { MACHINE_CATEGORY_DATALIST_ID } from '../../lib/machineCategories'
+import { MACHINE_LOCATION_DATALIST_ID } from '../../lib/machineLocations'
 import type { MachineStatus } from '../../types/database'
 import { ExcelFillCell } from './ExcelFillCell'
 
@@ -246,10 +247,11 @@ export function MachineAddRow({
         {cell(
           'location',
           <input
+            list={MACHINE_LOCATION_DATALIST_ID}
             value={values.location}
             onChange={(e) => patch('location', e.target.value)}
             onFocus={() => onSelectField('location')}
-            placeholder=""
+            placeholder="Halle…"
             className={inputCls}
           />,
         )}

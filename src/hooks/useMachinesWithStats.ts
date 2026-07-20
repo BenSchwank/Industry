@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { addDaysIso } from '../lib/maintenanceDue'
 import { parseLocation } from '../lib/machineLocationGroups'
+import { machineLocationSuggestions } from '../lib/machineLocations'
 import { supabase } from '../lib/supabase'
 import type { MachineStatus } from '../types/database'
 
@@ -400,9 +401,14 @@ export function filterMachines(
     }
 
     if (locationFilter) {
-      const { hall } = parseLocation(m.location)
       const loc = (m.location ?? '').trim()
-      if (hall !== locationFilter && loc !== locationFilter) return false
+      const { hall } = parseLocation(m.location)
+      const needle = locationFilter.toLowerCase()
+      const match =
+        loc === locationFilter ||
+        hall === locationFilter ||
+        loc.toLowerCase().includes(needle)
+      if (!match) return false
     }
 
     if (filter === 'open_problems') {
@@ -497,15 +503,9 @@ function sortMachinesAsc(
   return list
 }
 
-/** Eindeutige Standorte / Hallen aus der Liste */
+/** Eindeutige Standorte / Hallen aus der Liste (Filter) */
 export function uniqueMachineLocations(machines: MachineWithStats[]): string[] {
-  const set = new Set<string>()
-  for (const m of machines) {
-    const { hall } = parseLocation(m.location)
-    if (hall && hall !== 'Ohne Standort') set.add(hall)
-    else if (m.location?.trim()) set.add(m.location.trim())
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, 'de'))
+  return machineLocationSuggestions(machines.map((m) => m.location ?? ''))
 }
 
 /** Eindeutige Kategorien aus der Liste (+ bekannte Vorgaben) */

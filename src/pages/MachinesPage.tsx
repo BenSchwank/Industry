@@ -215,8 +215,8 @@ export default function MachinesPage() {
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
-              Fortlaufend/Endlos in der Toolbar · Kategorie in der Liste eintippen · Spaltenkopf klicken
-              sortiert (▲/▼) · Häkchen + Ziehen verschiebt inkl. Standort
+              Fortlaufend/Endlos · Kategorie & Standort selbst eintippen (bekannte Werte als Vorschlag) ·
+              Spaltenkopf sortiert · Häkchen + Ziehen verschiebt inkl. Standort
             </p>
           )}
           <div

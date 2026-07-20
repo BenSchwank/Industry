@@ -11,6 +11,10 @@ import {
   MACHINE_CATEGORY_DATALIST_ID,
   machineCategorySuggestions,
 } from '../../lib/machineCategories'
+import {
+  MACHINE_LOCATION_DATALIST_ID,
+  machineLocationSuggestions,
+} from '../../lib/machineLocations'
 import { printMachineLabels } from '../../lib/printLabels'
 import { maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
 import {
@@ -172,11 +176,68 @@ function CategoryCell({
             ;(e.target as HTMLInputElement).blur()
           }
         }}
-        placeholder="z.B. Maschine"
+        placeholder="selbst eintippen…"
         disabled={saving}
         className="bg-transparent text-kwd-muted h-7 w-full min-w-[5.5rem] border-0 px-1 text-xs focus:bg-kwd-paper focus:outline focus:outline-1 focus:outline-[var(--kwd-primary)]"
         aria-label={`Kategorie für ${m.name}`}
-        title="Kategorie eingeben – Vorgaben als Vorschlag"
+        title="Freitext – bekannte Werte erscheinen als Vorschlag"
+      />
+    </td>
+  )
+}
+
+function LocationCell({
+  machine: m,
+}: {
+  machine: MachineWithStats
+}) {
+  const updateMachine = useUpdateMachine()
+  const [value, setValue] = useState(m.location ?? '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(m.location ?? '')
+  }, [m.id, m.location])
+
+  async function commit() {
+    const next = value.trim()
+    if (!next) {
+      setValue(m.location ?? '')
+      return
+    }
+    if (next === (m.location ?? '')) return
+    setSaving(true)
+    try {
+      await updateMachine.mutateAsync({ id: m.id, location: next })
+    } catch {
+      setValue(m.location ?? '')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+      <input
+        list={MACHINE_LOCATION_DATALIST_ID}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+          if (e.key === 'Escape') {
+            setValue(m.location ?? '')
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+        placeholder="Halle / Bereich…"
+        disabled={saving}
+        className="bg-transparent text-kwd-muted h-7 w-full min-w-[6rem] border-0 px-1 text-xs focus:bg-kwd-paper focus:outline focus:outline-1 focus:outline-[var(--kwd-primary)]"
+        aria-label={`Standort für ${m.name}`}
+        title="Freitext – bekannte Standorte erscheinen als Vorschlag"
       />
     </td>
   )
@@ -321,7 +382,7 @@ function MachineRow({
         </div>
       </td>
       <CategoryCell machine={m} />
-      <td className="text-kwd-muted">{m.location || '–'}</td>
+      <LocationCell machine={m} />
       <td>
         <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
           {STATUS_LABEL[m.status]}
@@ -429,11 +490,6 @@ export function MachineTable({
     return sorted
   }, [machines, machineOrder, useManualOrder])
 
-  const categorySuggestions = useMemo(
-    () => machineCategorySuggestions(machines.map((m) => m.category ?? '')),
-    [machines],
-  )
-
   function handleHeaderSort(
     column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>,
   ) {
@@ -448,6 +504,24 @@ export function MachineTable({
 
   const activeDrafts = infinite ? gridRows : continuousRows
   const setActiveDrafts = infinite ? setGridRows : setContinuousRows
+
+  const categorySuggestions = useMemo(
+    () =>
+      machineCategorySuggestions([
+        ...machines.map((m) => m.category ?? ''),
+        ...activeDrafts.map((d) => d.category),
+      ]),
+    [machines, activeDrafts],
+  )
+
+  const locationSuggestions = useMemo(
+    () =>
+      machineLocationSuggestions([
+        ...machines.map((m) => m.location ?? ''),
+        ...activeDrafts.map((d) => d.location),
+      ]),
+    [machines, activeDrafts],
+  )
 
   const flatIds = useMemo(() => orderedMachines.map((m) => m.id), [orderedMachines])
   const allChecked =
@@ -1005,6 +1079,11 @@ export function MachineTable({
         <datalist id={MACHINE_CATEGORY_DATALIST_ID}>
           {categorySuggestions.map((c) => (
             <option key={c} value={c} />
+          ))}
+        </datalist>
+        <datalist id={MACHINE_LOCATION_DATALIST_ID}>
+          {locationSuggestions.map((loc) => (
+            <option key={loc} value={loc} />
           ))}
         </datalist>
         <table className="w-full min-w-[1100px] text-sm">

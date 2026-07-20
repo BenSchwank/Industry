@@ -1,4 +1,8 @@
-import { MACHINE_CATEGORIES } from '../../lib/machineCategories'
+import {
+  MACHINE_CATEGORIES,
+  machineCategorySuggestions,
+} from '../../lib/machineCategories'
+import { machineLocationSuggestions } from '../../lib/machineLocations'
 import type {
   MachineDateFilter,
   MachineSortBy,
@@ -44,6 +48,9 @@ const SORT_OPTIONS: { value: MachineSortBy; label: string }[] = [
   { value: 'next_maintenance', label: 'Nächste Wartung' },
 ]
 
+const filterInputCls =
+  'border-kwd-border bg-kwd-paper min-h-[32px] max-w-[10rem] border px-1.5 text-xs'
+
 export function MachineFilters({
   filter,
   onFilterChange,
@@ -65,9 +72,11 @@ export function MachineFilters({
   totalCount,
   pillsOnly = false,
 }: MachineFiltersProps) {
-  const categories = Array.from(
-    new Set([...MACHINE_CATEGORIES, ...categoryOptions]),
-  ).sort((a, b) => a.localeCompare(b, 'de'))
+  const categories = machineCategorySuggestions([
+    ...MACHINE_CATEGORIES,
+    ...categoryOptions,
+  ])
+  const locations = machineLocationSuggestions(locationOptions)
 
   const hasActive = Boolean(
     dateFrom ||
@@ -89,38 +98,42 @@ export function MachineFilters({
     onFilterChange('all')
   }
 
-  const categorySelect = (
-    <select
-      value={category}
-      onChange={(e) => onCategoryChange(e.target.value)}
-      className="border-kwd-border bg-kwd-paper min-h-[32px] border px-1.5 text-xs"
-      aria-label="Kategorie filtern"
-      title="Kategorie"
-    >
-      <option value="">Kategorie: alle</option>
-      {categories.map((c) => (
-        <option key={c} value={c}>
-          {c}
-        </option>
-      ))}
-    </select>
+  const categoryFilter = (
+    <>
+      <input
+        list="kwd-filter-category"
+        value={category}
+        onChange={(e) => onCategoryChange(e.target.value)}
+        placeholder="Kategorie: alle"
+        className={filterInputCls}
+        aria-label="Kategorie filtern"
+        title="Kategorie wählen oder eintippen"
+      />
+      <datalist id="kwd-filter-category">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+    </>
   )
 
-  const locationSelect = (
-    <select
-      value={location}
-      onChange={(e) => onLocationChange(e.target.value)}
-      className="border-kwd-border bg-kwd-paper min-h-[32px] max-w-[10rem] border px-1.5 text-xs"
-      aria-label="Standort filtern"
-      title="Standort / Halle"
-    >
-      <option value="">Standort: alle</option>
-      {locationOptions.map((loc) => (
-        <option key={loc} value={loc}>
-          {loc}
-        </option>
-      ))}
-    </select>
+  const locationFilter = (
+    <>
+      <input
+        list="kwd-filter-location"
+        value={location}
+        onChange={(e) => onLocationChange(e.target.value)}
+        placeholder="Standort: alle"
+        className={filterInputCls}
+        aria-label="Standort filtern"
+        title="Standort wählen oder eintippen"
+      />
+      <datalist id="kwd-filter-location">
+        {locations.map((loc) => (
+          <option key={loc} value={loc} />
+        ))}
+      </datalist>
+    </>
   )
 
   const sortSelect = (
@@ -154,8 +167,8 @@ export function MachineFilters({
             <span className="hidden lg:inline">{label}</span>
           </button>
         ))}
-        {categorySelect}
-        {locationSelect}
+        {categoryFilter}
+        {locationFilter}
         {sortSelect}
         {hasActive && (
           <button type="button" onClick={resetAll} className="kwd-btn ml-auto px-2 text-xs">
@@ -201,8 +214,8 @@ export function MachineFilters({
           title="Datum bis"
           aria-label="Datum bis"
         />
-        {categorySelect}
-        {locationSelect}
+        {categoryFilter}
+        {locationFilter}
         {sortSelect}
         <span className="text-kwd-muted ml-auto font-mono text-xs tabular-nums">
           {resultCount}/{totalCount}
