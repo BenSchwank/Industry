@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { insertLifecycleEntry } from '../lib/insertLifecycleEntry'
 import { addDaysIso } from '../lib/maintenanceDue'
 import { resolveUsernames } from '../lib/resolveUsernames'
 import { supabase } from '../lib/supabase'
@@ -221,47 +222,18 @@ export function useAddLifecycleEntry() {
         input.entry_type === 'maintenance' && input.duration_days && input.duration_days > 0
           ? Math.round(input.duration_days)
           : null
-      const nextDue =
-        duration != null ? addDaysIso(occurred, duration) : null
+      const nextDue = duration != null ? addDaysIso(occurred, duration) : null
 
-      const payload = {
+      const { data, error } = await insertLifecycleEntry({
         machine_id: input.machine_id,
         entry_type: input.entry_type,
         title: input.title.trim(),
         description: input.description?.trim() || null,
         occurred_at: occurred,
         created_by: userId,
-        ...(duration != null
-          ? { duration_days: duration, next_due_date: nextDue }
-          : {}),
-      }
-
-      const { data, error } = await supabase
-        .from('machine_lifecycle_entries')
-        .insert(payload)
-        .select()
-        .single()
-
-      // Spalten fehlen noch → ohne duration speichern
-      if (error && /duration_days|next_due_date/i.test(error.message)) {
-        const { data: retry, error: retryErr } = await supabase
-          .from('machine_lifecycle_entries')
-          .insert({
-            machine_id: input.machine_id,
-            entry_type: input.entry_type,
-            title: input.title.trim(),
-            description: input.description?.trim() || null,
-            occurred_at: occurred,
-            created_by: userId,
-          })
-          .select()
-          .single()
-        if (retryErr) throw retryErr
-        if (duration != null && nextDue) {
-          await syncMaintenanceTask(input.machine_id, duration, nextDue)
-        }
-        return retry
-      }
+        duration_days: duration,
+        next_due_date: nextDue,
+      })
 
       if (error) throw error
 

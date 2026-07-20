@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { supabase } from './supabase'
+import { insertTicketRow } from './insertTicket'
 import { useOfflineTicketStore } from '../stores/offlineTicketStore'
 import { useAuthStore } from '../stores/authStore'
 import { queryClient } from './queryClient'
@@ -42,7 +42,7 @@ export async function syncPendingTickets(): Promise<number> {
   const createdBy = currentUserId()
 
   for (const ticket of pending) {
-    const { error } = await supabase.from('tickets').insert({
+    const { error } = await insertTicketRow({
       machine_id: ticket.machine_id,
       description: ticket.description,
       priority: ticket.priority,
@@ -100,7 +100,7 @@ export async function createTicketOptimistic(
     return { mode: 'queued', localId }
   }
 
-  const { error } = await supabase.from('tickets').insert({
+  const { error } = await insertTicketRow({
     machine_id: ticket.machine_id,
     description: ticket.description,
     priority: ticket.priority,

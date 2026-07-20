@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDaysIso, maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
+import { insertLifecycleEntry } from '../../lib/insertLifecycleEntry'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -108,7 +109,7 @@ export function ChecklistPanel({
       if (taskErr) throw new Error(taskErr.message)
 
       // Auch im Lebenszyklus sichtbar machen
-      await supabase.from('machine_lifecycle_entries').insert({
+      const life = await insertLifecycleEntry({
         machine_id: machineId,
         entry_type: 'maintenance',
         title: taskTitle || 'Wartung',
@@ -118,6 +119,9 @@ export function ChecklistPanel({
         duration_days: days,
         next_due_date: nextDue,
       })
+      if (life.error) {
+        console.warn('Lebenszyklus-Eintrag:', life.error.message)
+      }
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] }),
