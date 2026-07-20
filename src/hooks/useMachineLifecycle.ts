@@ -104,7 +104,7 @@ export function useMachineTimeline(machineId: string | null) {
             .order('occurred_at', { ascending: false })
           if (!fb.error) {
             lifecycleData = (fb.data ?? []).map((e) => {
-              const row = e as Record<string, unknown>
+              const row = e as unknown as Record<string, unknown>
               return {
                 id: row.id as string,
                 entry_type: row.entry_type as LifecycleEntryType,
