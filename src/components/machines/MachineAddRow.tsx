@@ -5,9 +5,9 @@ import {
   validateBarcode,
 } from '../../lib/barcode'
 import { mapPasteRowToMachine } from '../../lib/excelClipboard'
-import { MACHINE_CATEGORY_DATALIST_ID } from '../../lib/machineCategories'
 import { MACHINE_LOCATION_DATALIST_ID } from '../../lib/machineLocations'
 import type { MachineStatus } from '../../types/database'
+import { CategoryPickerButton } from './CategoryPickerButton'
 import { ExcelFillCell } from './ExcelFillCell'
 
 const STATUS_OPTIONS: { value: MachineStatus; label: string }[] = [
@@ -66,6 +66,7 @@ interface MachineAddRowProps {
   registerRef?: (handle: MachineAddRowHandle | null) => void
   error?: string | null
   saving?: boolean
+  categorySuggestions?: string[]
 }
 
 export const EMPTY_DRAFT: MachineDraftValues = {
@@ -92,6 +93,7 @@ export function MachineAddRow({
   registerRef,
   error,
   saving,
+  categorySuggestions = [],
 }: MachineAddRowProps) {
   const [local, setLocal] = useState<MachineDraftValues>(controlled ?? EMPTY_DRAFT)
   const values = controlled ?? local
@@ -189,7 +191,7 @@ export function MachineAddRow({
 
   return (
     <tr
-      className={`border-kwd-border border-b ${
+      className={`border-kwd-border h-9 border-b ${
         hasContent ? 'bg-kwd-primary/10' : 'bg-kwd-paper hover:bg-kwd-surface-light'
       }`}
       onKeyDown={handleKeyDown}
@@ -218,31 +220,17 @@ export function MachineAddRow({
         )}
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
-        <div className="flex flex-col gap-0.5">
-          {cell(
-            'name',
-            <input
-              ref={nameRef}
-              value={values.name}
-              onChange={(e) => patch('name', e.target.value)}
-              onFocus={() => onSelectField('name')}
-              placeholder="Bezeichnung"
-              className={inputCls}
-            />,
-          )}
-          {cell(
-            'category',
-            <input
-              list={MACHINE_CATEGORY_DATALIST_ID}
-              value={values.category}
-              onChange={(e) => patch('category', e.target.value)}
-              onFocus={() => onSelectField('category')}
-              placeholder="Ordner / Kategorie…"
-              className={`${inputCls} text-kwd-muted text-xs`}
-              title="Eigene Kategorie – wird als Ordner in der Liste angezeigt"
-            />,
-          )}
-        </div>
+        {cell(
+          'name',
+          <input
+            ref={nameRef}
+            value={values.name}
+            onChange={(e) => patch('name', e.target.value)}
+            onFocus={() => onSelectField('name')}
+            placeholder="Bezeichnung"
+            className={inputCls}
+          />,
+        )}
       </td>
       <td className="border-kwd-border border px-1 py-0.5">
         {cell(
@@ -325,29 +313,38 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-2 py-0.5">
-        {hasContent || !blank ? (
-          <div className="flex items-center gap-1">
-            {saving ? (
-              <span className="text-kwd-muted text-[10px]">…</span>
-            ) : (
-              <span className="text-kwd-muted text-[10px]">↵</span>
-            )}
-            {hasContent && (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="text-kwd-muted text-[10px] hover:underline"
-                title="Zeile leeren"
-              >
-                ✕
-              </button>
-            )}
-            {error && (
-              <p className="text-kwd-danger max-w-[120px] text-[10px] leading-tight">{error}</p>
-            )}
-          </div>
-        ) : null}
+      <td className="border-kwd-border border px-1 py-0.5">
+        <div className="flex items-center gap-1">
+          <CategoryPickerButton
+            value={values.category}
+            suggestions={categorySuggestions}
+            buttonLabel={values.category.trim() ? values.category : 'Kat.'}
+            title="Kategorie für diese neue Zeile"
+            onChange={(c) => patch('category', c)}
+          />
+          {(hasContent || !blank) && (
+            <>
+              {saving ? (
+                <span className="text-kwd-muted text-[10px]">…</span>
+              ) : (
+                <span className="text-kwd-muted text-[10px]">↵</span>
+              )}
+              {hasContent && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="text-kwd-muted text-[10px] hover:underline"
+                  title="Zeile leeren"
+                >
+                  ✕
+                </button>
+              )}
+            </>
+          )}
+          {error && (
+            <p className="text-kwd-danger max-w-[120px] text-[10px] leading-tight">{error}</p>
+          )}
+        </div>
       </td>
     </tr>
   )

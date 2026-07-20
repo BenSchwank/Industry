@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   copyToClipboard,
   machinesToTsv,
@@ -29,6 +30,8 @@ import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
 import { Tip } from '../ui/Tip'
 import { usePreferencesStore } from '../../stores/preferencesStore'
+import { rememberMachineFieldOption } from '../../lib/machineFieldOptions'
+import { CategoryPickerButton } from './CategoryPickerButton'
 import {
   draftToInput,
   EMPTY_DRAFT,
@@ -385,6 +388,7 @@ export function MachineTable({
   onOpenFullscreen,
   onAddSaved,
 }: MachineTableProps) {
+  const queryClient = useQueryClient()
   const addRowRef = useRef<MachineAddRowHandle | null>(null)
   const tableFocusRef = useRef<HTMLDivElement>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -494,6 +498,11 @@ export function MachineTable({
       else next.add(key)
       return next
     })
+  }
+
+  async function rememberCategory(value: string) {
+    await rememberMachineFieldOption('category', value)
+    void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
   }
 
   async function moveMachinesToCategory(categoryKey: string, sourceId: string) {
@@ -961,7 +970,12 @@ export function MachineTable({
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           <button
             type="button"
-            onClick={() => setTableListMode('continuous')}
+            onClick={() => {
+              setTableListMode('continuous')
+              setContinuousRows([{ ...EMPTY_DRAFT }])
+              setSelectedCell(null)
+              setDraftError(null)
+            }}
             className={`kwd-btn text-xs ${!infinite ? 'kwd-btn-primary' : ''}`}
             title="Nur Zeile nach der letzten"
           >
@@ -969,12 +983,56 @@ export function MachineTable({
           </button>
           <button
             type="button"
-            onClick={() => setTableListMode('infinite')}
+            onClick={() => {
+              setTableListMode('infinite')
+              setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
+              setSelectedCell(null)
+              setDraftError(null)
+            }}
             className={`kwd-btn text-xs ${infinite ? 'kwd-btn-primary' : ''}`}
             title="Viele leere Zeilen"
           >
             Endlos
           </button>
+          <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
+          <CategoryPickerButton
+            value=""
+            suggestions={categorySuggestions}
+            buttonLabel={
+              checkedList.length > 0 ? `Kategorie (${checkedList.length})` : 'Kategorie +'
+            }
+            title={
+              checkedList.length > 0
+                ? 'Markierte Maschinen einer Kategorie zuordnen oder neue anlegen'
+                : 'Neue Kategorie anlegen (danach Maschinen auf den Ordner ziehen)'
+            }
+            onChange={(c) => {
+              if (checkedList.length > 0) {
+                void (async () => {
+                  const next = c.trim() || null
+                  try {
+                    await Promise.all(
+                      checkedList.map((m) =>
+                        updateMachine.mutateAsync({ id: m.id, category: next }),
+                      ),
+                    )
+                    if (next) await rememberCategory(next)
+                    flash(
+                      next
+                        ? `${checkedList.length} → ${next}`
+                        : `${checkedList.length} → ${UNCATEGORIZED_LABEL}`,
+                    )
+                  } catch (e) {
+                    flash(e instanceof Error ? e.message : 'Kategorie fehlgeschlagen')
+                  }
+                })()
+              } else if (c.trim()) {
+                void rememberCategory(c.trim()).then(() => {
+                  flash(`Kategorie „${c.trim()}“ angelegt – Maschinen auf den Ordner ziehen`)
+                })
+              }
+            }}
+          />
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           <button
             type="button"
@@ -1157,20 +1215,50 @@ export function MachineTable({
                     }}
                   >
                     <td colSpan={11} className="px-2 py-1.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleCategoryCollapsed(group.key)}
-                        className="hover:text-kwd-primary flex w-full items-center gap-2 text-left text-xs font-bold tracking-wide uppercase"
-                        title="Ordner ein-/ausklappen · Maschinen hierher ziehen setzt die Kategorie"
-                      >
-                        <span className="font-mono text-[11px]" aria-hidden>
-                          {collapsed ? '▶' : '▼'}
-                        </span>
-                        <span>{group.label}</span>
-                        <span className="text-kwd-muted ml-auto font-mono font-normal normal-case tracking-normal">
-                          {group.machines.length}
-                        </span>
-                      </button>
+                      <div className="flex w-full items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleCategoryCollapsed(group.key)}
+                          className="hover:text-kwd-primary flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-bold tracking-wide uppercase"
+                          title="Ordner ein-/ausklappen · Maschinen hierher ziehen setzt die Kategorie"
+                        >
+                          <span className="font-mono text-[11px]" aria-hidden>
+                            {collapsed ? '▶' : '▼'}
+                          </span>
+                          <span className="truncate">{group.label}</span>
+                          <span className="text-kwd-muted font-mono font-normal normal-case tracking-normal">
+                            {group.machines.length}
+                          </span>
+                        </button>
+                        <CategoryPickerButton
+                          value={group.key === UNCATEGORIZED_LABEL ? '' : group.key}
+                          suggestions={categorySuggestions}
+                          buttonLabel="Ändern"
+                          title="Kategorie umbenennen / alle Maschinen in diesem Ordner zuordnen"
+                          onChange={(c) => {
+                            void (async () => {
+                              const next = c.trim() || null
+                              try {
+                                await Promise.all(
+                                  group.machines.map((m) =>
+                                    updateMachine.mutateAsync({ id: m.id, category: next }),
+                                  ),
+                                )
+                                if (next) await rememberCategory(next)
+                                flash(
+                                  next
+                                    ? `Ordner → ${next}`
+                                    : `Ordner → ${UNCATEGORIZED_LABEL}`,
+                                )
+                              } catch (e) {
+                                flash(
+                                  e instanceof Error ? e.message : 'Kategorie fehlgeschlagen',
+                                )
+                              }
+                            })()
+                          }}
+                        />
+                      </div>
                     </td>
                   </tr>
                   {!collapsed &&
@@ -1212,6 +1300,7 @@ export function MachineTable({
                   key={`grid-${i}`}
                   values={draft}
                   blank={infinite}
+                  categorySuggestions={categorySuggestions}
                   selectedField={selectedCell?.row === i ? selectedCell.field : null}
                   onSelectField={(field) => setSelectedCell({ row: i, field })}
                   onChange={(v) => {

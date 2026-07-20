@@ -227,8 +227,8 @@ export default function MachinesPage() {
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
-              Fortlaufend/Endlos · Kategorie = Ordner (▶/▼) · Maschinen auf Ordner ziehen · Standort
-              freitext · Spaltenkopf sortiert innerhalb der Ordner
+              Fortlaufend/Endlos · Button „Kategorie +“ / „Kat.“ · Ordner ▶/▼ · Maschinen auf Ordner
+              ziehen · Spaltenkopf sortiert innerhalb der Ordner
             </p>
           )}
           <div
