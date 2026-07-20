@@ -1,27 +1,36 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { addDaysIso, maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 
 interface ChecklistPanelProps {
   taskId: string
+  machineId: string
   taskTitle: string
   machineName: string
+  machineBarcode?: string
   frequencyDays: number
+  nextDueDate: string
   onClose: () => void
 }
 
 export function ChecklistPanel({
   taskId,
+  machineId,
   taskTitle,
   machineName,
+  machineBarcode,
   frequencyDays,
+  nextDueDate,
   onClose,
 }: ChecklistPanelProps) {
   const user = useAuthStore((s) => s.user)
+  const profile = useAuthStore((s) => s.profile)
   const queryClient = useQueryClient()
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState('')
+  const [durationDays, setDurationDays] = useState(String(frequencyDays || 90))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -46,84 +55,128 @@ export function ChecklistPanel({
     }
   }, [items])
 
-  const allChecked = items?.length ? items.every((i) => checked[i.id]) : false
+  useEffect(() => {
+    setDurationDays(String(frequencyDays || 90))
+  }, [frequencyDays])
+
+  const hasSteps = Boolean(items && items.length > 0)
+  const allChecked = hasSteps ? items!.every((i) => checked[i.id]) : true
+  const days = Math.max(1, Math.round(Number(durationDays) || frequencyDays || 90))
+  const previewNext = addDaysIso(new Date().toISOString(), days)
+  const canComplete = allChecked && !submitting
 
   async function handleComplete() {
-    if (!items?.length || !allChecked) return
+    if (!canComplete) return
     setSubmitting(true)
     setError(null)
 
-    const { data: completion, error: completionError } = await supabase
-      .from('maintenance_completions')
-      .insert({
-        task_id: taskId,
-        completed_by: user?.id ?? null,
-        notes: notes.trim() || null,
+    try {
+      const { data: completion, error: completionError } = await supabase
+        .from('maintenance_completions')
+        .insert({
+          task_id: taskId,
+          completed_by: user?.id ?? null,
+          notes: notes.trim() || null,
+        })
+        .select('id')
+        .single()
+
+      if (completionError || !completion) {
+        throw new Error(completionError?.message ?? 'Fehler beim Speichern')
+      }
+
+      if (hasSteps && items) {
+        const completionItems = items.map((item) => ({
+          completion_id: completion.id,
+          label: item.label,
+          checked: checked[item.id] ?? false,
+        }))
+        const { error: itemsError } = await supabase
+          .from('maintenance_completion_items')
+          .insert(completionItems)
+        if (itemsError) throw new Error(itemsError.message)
+      }
+
+      const nextDue = previewNext
+      const { error: taskErr } = await supabase
+        .from('maintenance_tasks')
+        .update({
+          frequency_days: days,
+          next_due_date: nextDue,
+        })
+        .eq('id', taskId)
+      if (taskErr) throw new Error(taskErr.message)
+
+      // Auch im Lebenszyklus sichtbar machen
+      await supabase.from('machine_lifecycle_entries').insert({
+        machine_id: machineId,
+        entry_type: 'maintenance',
+        title: taskTitle || 'Wartung',
+        description: notes.trim() || null,
+        occurred_at: new Date().toISOString(),
+        created_by: user?.id ?? null,
+        duration_days: days,
+        next_due_date: nextDue,
       })
-      .select('id')
-      .single()
 
-    if (completionError || !completion) {
-      setError(completionError?.message ?? 'Fehler beim Speichern')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] }),
+        queryClient.invalidateQueries({ queryKey: ['maintenance-completions'] }),
+        queryClient.invalidateQueries({ queryKey: ['machine-timeline', machineId] }),
+        queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] }),
+      ])
+
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen')
       setSubmitting(false)
-      return
     }
-
-    const completionItems = items.map((item) => ({
-      completion_id: completion.id,
-      label: item.label,
-      checked: checked[item.id] ?? false,
-    }))
-
-    const { error: itemsError } = await supabase
-      .from('maintenance_completion_items')
-      .insert(completionItems)
-
-    if (itemsError) {
-      setError(itemsError.message)
-      setSubmitting(false)
-      return
-    }
-
-    const nextDue = new Date()
-    nextDue.setDate(nextDue.getDate() + frequencyDays)
-
-    await supabase
-      .from('maintenance_tasks')
-      .update({ next_due_date: nextDue.toISOString().slice(0, 10) })
-      .eq('id', taskId)
-
-    await queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
-    await queryClient.invalidateQueries({ queryKey: ['maintenance-completions'] })
-    setSubmitting(false)
-    onClose()
   }
 
   function toggleItem(id: string) {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
+  const currentTone = maintenanceDueTone(nextDueDate)
+
   return (
     <div className="bg-kwd-bg/80 fixed inset-0 z-50 flex flex-col">
-      <div className="bg-kwd-surface border-kwd-surface-light flex items-center justify-between border-b px-4 py-3">
-        <div>
-          <p className="text-kwd-muted text-xs">{machineName}</p>
+      <div className="bg-kwd-surface border-kwd-border flex items-center justify-between border-b px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-kwd-muted text-xs">
+            {machineBarcode ? `${machineBarcode} · ` : ''}
+            {machineName}
+          </p>
           <h3 className="font-bold">{taskTitle}</h3>
+          {profile?.username && (
+            <p className="text-kwd-muted text-[11px]">Als {profile.username}</p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="bg-kwd-surface-light min-h-[44px] rounded-lg px-4 font-semibold"
-        >
+        <button type="button" onClick={onClose} className="kwd-btn shrink-0">
           Schließen
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        <div className="border-kwd-border bg-kwd-surface mb-4 rounded-xl border p-3 text-sm">
+          <p>
+            Aktuell fällig:{' '}
+            <span className={maintenanceDueClass(nextDueDate) || undefined}>
+              {new Date(nextDueDate).toLocaleDateString('de-DE')}
+              {currentTone === 'overdue' && ' · überfällig'}
+              {currentTone === 'soon' && ' · bald'}
+            </span>
+          </p>
+          <p className="text-kwd-muted mt-1">Bisheriges Intervall: {frequencyDays} Tage</p>
+        </div>
+
         {isLoading && <p className="text-kwd-muted">Lade Checkliste…</p>}
 
-        {!isLoading && items?.length === 0 && (
-          <p className="text-kwd-muted">Keine Checklisten-Schritte definiert.</p>
+        {!isLoading && !hasSteps && (
+          <p className="bg-kwd-surface-light text-kwd-muted mb-4 rounded-xl px-3 py-3 text-sm">
+            Keine Checklisten-Schritte – du kannst die Wartung trotzdem mit Notizen und Dauer
+            abschließen.
+          </p>
         )}
 
         <ul className="flex flex-col gap-2">
@@ -135,12 +188,12 @@ export function ChecklistPanel({
                 className={`flex min-h-[56px] w-full items-center gap-4 rounded-xl p-4 text-left transition-colors ${
                   checked[item.id]
                     ? 'bg-kwd-success/20 border-kwd-success border-2'
-                    : 'bg-kwd-surface border-kwd-surface-light border-2'
+                    : 'bg-kwd-surface border-kwd-border border-2'
                 }`}
               >
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg font-bold ${
-                    checked[item.id] ? 'bg-kwd-success text-kwd-bg' : 'bg-kwd-bg'
+                    checked[item.id] ? 'bg-kwd-success text-white' : 'bg-kwd-bg'
                   }`}
                 >
                   {checked[item.id] ? '✓' : ''}
@@ -152,12 +205,27 @@ export function ChecklistPanel({
         </ul>
 
         <label className="mt-6 block">
+          <span className="text-kwd-muted text-sm font-medium">Dauer bis zur nächsten Wartung (Tage)</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={durationDays}
+            onChange={(e) => setDurationDays(e.target.value)}
+            className="border-kwd-border bg-kwd-surface mt-1 min-h-[48px] w-full border px-4"
+          />
+          <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
+            Nächste Wartung nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
+          </p>
+        </label>
+
+        <label className="mt-4 block">
           <span className="text-kwd-muted text-sm font-medium">Notizen (optional)</span>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            className="bg-kwd-surface border-kwd-surface-light mt-1 w-full rounded-xl border px-4 py-3"
+            className="border-kwd-border bg-kwd-surface mt-1 w-full border px-4 py-3"
             placeholder="Besonderheiten, Messwerte…"
           />
         </label>
@@ -165,18 +233,18 @@ export function ChecklistPanel({
         {error && <p className="text-kwd-danger mt-3 text-sm">{error}</p>}
       </div>
 
-      <div className="border-kwd-surface-light safe-area-bottom border-t p-4">
+      <div className="border-kwd-border safe-area-bottom border-t p-4">
         <button
           type="button"
-          disabled={!allChecked || submitting}
-          onClick={handleComplete}
-          className="bg-kwd-primary text-kwd-bg min-h-[56px] w-full rounded-xl text-lg font-bold disabled:opacity-40"
+          disabled={!canComplete}
+          onClick={() => void handleComplete()}
+          className="bg-kwd-primary min-h-[56px] w-full rounded-xl text-lg font-bold text-white disabled:opacity-40"
         >
           {submitting ? 'Speichern…' : 'Wartung abschließen'}
         </button>
-        {!allChecked && items && items.length > 0 && (
+        {hasSteps && !allChecked && (
           <p className="text-kwd-muted mt-2 text-center text-xs">
-            Alle {items.length} Punkte abhaken um abzuschließen
+            Alle {items!.length} Punkte abhaken um abzuschließen
           </p>
         )}
       </div>
