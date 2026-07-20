@@ -2,6 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TicketForm } from '../components/tickets/TicketForm'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
+import {
+  TICKET_PRIORITY_LABEL,
+  TICKET_STATUS_LABEL,
+  useDeleteTicket,
+  useResolveTicket,
+} from '../hooks/useTicketActions'
 import { supabase } from '../lib/supabase'
 import { useOfflineTicketStore } from '../stores/offlineTicketStore'
 
@@ -12,15 +18,23 @@ const PRIORITY_COLORS: Record<string, string> = {
   critical: 'text-kwd-danger',
 }
 
+type FilterMode = 'open' | 'all'
+
 export default function TicketsPage() {
   const [showForm, setShowForm] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [filter, setFilter] = useState<FilterMode>('open')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const pending = useOfflineTicketStore((s) => s.pending)
+
+  const resolveTicket = useResolveTicket()
+  const deleteTicket = useDeleteTicket()
 
   useTicketSync()
   useTicketsRealtime()
 
-      const { data: tickets, isLoading } = useQuery({
+  const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -28,7 +42,6 @@ export default function TicketsPage() {
         .select('id, description, status, priority, created_at, created_by, machines(name, barcode)')
         .order('created_at', { ascending: false })
       if (error) {
-        // Migration noch nicht: ohne created_by
         if (/created_by/i.test(error.message)) {
           const fb = await supabase
             .from('tickets')
@@ -52,13 +65,49 @@ export default function TicketsPage() {
     },
   })
 
+  const visible =
+    tickets?.filter((t) =>
+      filter === 'open' ? t.status === 'open' || t.status === 'in_progress' : true,
+    ) ?? []
+
+  async function handleResolve(id: string) {
+    setBusyId(id)
+    setActionError(null)
+    try {
+      await resolveTicket.mutateAsync(id)
+      setToast('Störung als erledigt markiert.')
+      setTimeout(() => setToast(null), 3000)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Erledigen fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm('Störung wirklich löschen? Das kann nicht rückgängig gemacht werden.')) {
+      return
+    }
+    setBusyId(id)
+    setActionError(null)
+    try {
+      await deleteTicket.mutateAsync(id)
+      setToast('Störung gelöscht.')
+      setTimeout(() => setToast(null), 3000)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Löschen fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (isLoading) {
     return <p className="text-kwd-muted p-4">Lade Störungen…</p>
   }
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-bold">Störungen</h2>
         <button
           type="button"
@@ -69,10 +118,34 @@ export default function TicketsPage() {
         </button>
       </div>
 
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setFilter('open')}
+          className={`min-h-[40px] rounded-lg px-3 text-sm font-semibold ${
+            filter === 'open' ? 'bg-kwd-primary text-white' : 'bg-kwd-surface text-kwd-muted'
+          }`}
+        >
+          Offen
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('all')}
+          className={`min-h-[40px] rounded-lg px-3 text-sm font-semibold ${
+            filter === 'all' ? 'bg-kwd-primary text-white' : 'bg-kwd-surface text-kwd-muted'
+          }`}
+        >
+          Alle
+        </button>
+      </div>
+
       {toast && (
         <p className="bg-kwd-success/20 text-kwd-success rounded-lg px-4 py-2 text-sm font-medium">
           {toast}
         </p>
+      )}
+      {actionError && (
+        <p className="bg-kwd-danger/10 text-kwd-danger rounded-lg px-4 py-2 text-sm">{actionError}</p>
       )}
 
       {pending.length > 0 && (
@@ -97,17 +170,18 @@ export default function TicketsPage() {
         </section>
       )}
 
-      {tickets?.length === 0 && pending.length === 0 && (
+      {visible.length === 0 && pending.length === 0 && (
         <div className="bg-kwd-surface rounded-xl p-6 text-center">
-          <p className="text-kwd-muted">Keine offenen Störungen.</p>
-          <p className="text-kwd-muted mt-1 text-sm">
-            Offline-Meldungen werden automatisch synchronisiert.
+          <p className="text-kwd-muted">
+            {filter === 'open' ? 'Keine offenen Störungen.' : 'Keine Störungen.'}
           </p>
         </div>
       )}
 
-      {tickets?.map((ticket) => {
+      {visible.map((ticket) => {
         const machine = ticket.machines as { name: string; barcode: string } | null
+        const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
+        const busy = busyId === ticket.id
         return (
           <article key={ticket.id} className="bg-kwd-surface rounded-xl p-4">
             <div className="flex items-start justify-between gap-2">
@@ -116,13 +190,13 @@ export default function TicketsPage() {
                 <p className="font-semibold">{machine?.name ?? 'Unbekannte Maschine'}</p>
               </div>
               <span className={`text-xs font-bold uppercase ${PRIORITY_COLORS[ticket.priority]}`}>
-                {ticket.priority}
+                {TICKET_PRIORITY_LABEL[ticket.priority] ?? ticket.priority}
               </span>
             </div>
             <p className="text-kwd-muted mt-2 text-sm">{ticket.description}</p>
-            <div className="mt-3 flex items-center justify-between text-xs">
-              <span className="bg-kwd-bg rounded px-2 py-1 font-medium capitalize">
-                {ticket.status}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="bg-kwd-bg rounded px-2 py-1 font-medium">
+                {TICKET_STATUS_LABEL[ticket.status] ?? ticket.status}
               </span>
               <span className="text-kwd-muted">
                 {ticket.created_by && nameMap?.get(ticket.created_by) && (
@@ -132,6 +206,26 @@ export default function TicketsPage() {
                 )}
                 {new Date(ticket.created_at).toLocaleDateString('de-DE')}
               </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {isOpen && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleResolve(ticket.id)}
+                  className="bg-kwd-success min-h-[44px] rounded-lg px-4 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {busy ? '…' : 'Erledigt'}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleDelete(ticket.id)}
+                className="border-kwd-danger text-kwd-danger min-h-[44px] rounded-lg border px-4 text-sm font-semibold disabled:opacity-50"
+              >
+                Löschen
+              </button>
             </div>
           </article>
         )
