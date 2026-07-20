@@ -126,7 +126,6 @@ function MachineRow({
   machine: m,
   selected,
   checked,
-  rowIndex,
   searchQuery,
   dragOver,
   onSelect,
@@ -140,7 +139,6 @@ function MachineRow({
   machine: MachineWithStats
   selected: boolean
   checked: boolean
-  rowIndex: number
   searchQuery?: string
   dragOver: boolean
   onSelect: (id: string) => void
@@ -265,7 +263,6 @@ export function MachineTable({
   fillHeight = false,
   onSelect,
   onOpenFullscreen,
-  onAddCancel,
   onAddSaved,
 }: MachineTableProps) {
   const addRowRef = useRef<MachineAddRowHandle | null>(null)
@@ -614,12 +611,6 @@ export function MachineTable({
     }
   }
 
-  function handleAddCancel() {
-    resetDrafts()
-    setDraftError(null)
-    onAddCancel()
-  }
-
   async function handleCopyAll() {
     await handleCopySelection()
   }
@@ -907,13 +898,12 @@ export function MachineTable({
             </tr>
           </thead>
           <tbody>
-            {orderedMachines.map((m, idx) => (
+            {orderedMachines.map((m) => (
               <MachineRow
                 key={m.id}
                 machine={m}
                 selected={m.id === selectedId}
                 checked={checkedIds.has(m.id)}
-                rowIndex={idx}
                 searchQuery={searchQuery}
                 dragOver={dragOverId === m.id && dragId !== m.id}
                 onSelect={onSelect}
