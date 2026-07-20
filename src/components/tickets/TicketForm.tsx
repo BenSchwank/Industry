@@ -71,10 +71,10 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
   }
 
   return (
-    <div className="bg-kwd-bg/80 fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
       <form
         onSubmit={handleSubmit}
-        className="bg-kwd-surface border-kwd-surface-light w-full max-w-lg rounded-t-2xl border p-5 sm:rounded-2xl"
+        className="bg-kwd-surface border-kwd-border text-kwd-text w-full max-w-lg rounded-t-2xl border p-5 shadow-xl sm:rounded-2xl"
       >
         <h3 className="text-lg font-bold">Störung melden</h3>
         {!isOnline && (

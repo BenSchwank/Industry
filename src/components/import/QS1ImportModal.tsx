@@ -97,7 +97,7 @@ export function QS1ImportModal({ onClose }: QS1ImportModalProps) {
 
   return (
     <div
-      className="bg-kwd-bg/90 fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:p-8"
       role="dialog"
       aria-modal="true"
       aria-labelledby="qs1-import-title"

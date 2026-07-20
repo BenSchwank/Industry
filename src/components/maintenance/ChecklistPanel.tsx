@@ -157,8 +157,8 @@ export function ChecklistPanel({
   const currentTone = maintenanceDueTone(nextDueDate)
 
   return (
-    <div className="bg-kwd-bg/80 fixed inset-0 z-50 flex flex-col">
-      <div className="bg-kwd-surface border-kwd-border flex items-center justify-between border-b px-4 py-3">
+    <div className="bg-kwd-bg text-kwd-text fixed inset-0 z-50 flex flex-col">
+      <div className="bg-kwd-surface border-kwd-border flex shrink-0 items-center justify-between border-b px-4 py-3">
         <div className="min-w-0">
           <p className="text-kwd-muted text-xs">
             {machineBarcode ? `${machineBarcode} · ` : ''}
@@ -174,7 +174,7 @@ export function ChecklistPanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="bg-kwd-bg min-h-0 flex-1 overflow-y-auto p-4">
         <div className="border-kwd-border bg-kwd-surface mb-4 rounded-xl border p-3 text-sm">
           <p>
             Aktuell fällig:{' '}
@@ -212,7 +212,7 @@ export function ChecklistPanel({
               >
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg font-bold ${
-                    checked[item.id] ? 'bg-kwd-success text-white' : 'bg-kwd-bg'
+                    checked[item.id] ? 'bg-kwd-success text-white' : 'bg-kwd-surface-light'
                   }`}
                 >
                   {checked[item.id] ? '✓' : ''}
@@ -254,7 +254,7 @@ export function ChecklistPanel({
         {error && <p className="text-kwd-danger mt-3 text-sm">{error}</p>}
       </div>
 
-      <div className="border-kwd-border safe-area-bottom border-t p-4">
+      <div className="border-kwd-border bg-kwd-surface safe-area-bottom shrink-0 border-t p-4">
         <button
           type="button"
           disabled={!canComplete}
