@@ -69,6 +69,7 @@ interface MachineAddRowProps {
   categorySuggestions?: string[]
   onRenameCategory?: (from: string, to: string) => void | Promise<void>
   onDeleteCategory?: (category: string) => void | Promise<void>
+  onCategoryPicked?: (category: string) => void
 }
 
 export const EMPTY_DRAFT: MachineDraftValues = {
@@ -98,6 +99,7 @@ export function MachineAddRow({
   categorySuggestions = [],
   onRenameCategory,
   onDeleteCategory,
+  onCategoryPicked,
 }: MachineAddRowProps) {
   const [local, setLocal] = useState<MachineDraftValues>(controlled ?? EMPTY_DRAFT)
   const values = controlled ?? local
@@ -324,7 +326,10 @@ export function MachineAddRow({
             suggestions={categorySuggestions}
             buttonLabel={values.category.trim() ? values.category : 'Kat.'}
             title="Kategorie für diese neue Zeile"
-            onChange={(c) => patch('category', c)}
+            onChange={(c) => {
+              patch('category', c)
+              if (c.trim()) onCategoryPicked?.(c.trim())
+            }}
             onRename={onRenameCategory}
             onDelete={onDeleteCategory}
           />

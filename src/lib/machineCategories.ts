@@ -29,7 +29,12 @@ export interface MachineCategoryGroup {
 /** Gruppen wie früher die Hallen – Reihenfolge der Maschinen bleibt erhalten */
 export function groupMachinesByCategory(
   machines: MachineWithStats[],
-  options?: { sortGroups?: boolean; descending?: boolean },
+  options?: {
+    sortGroups?: boolean
+    descending?: boolean
+    /** Auch leere Ordner anzeigen (neu angelegte Kategorien) */
+    ensureCategories?: Iterable<string>
+  },
 ): MachineCategoryGroup[] {
   const order: string[] = []
   const map = new Map<string, MachineWithStats[]>()
@@ -41,6 +46,13 @@ export function groupMachinesByCategory(
       order.push(key)
     }
     map.get(key)!.push(machine)
+  }
+
+  for (const raw of options?.ensureCategories ?? []) {
+    const key = raw.trim()
+    if (!key || key === UNCATEGORIZED_LABEL || map.has(key)) continue
+    map.set(key, [])
+    order.push(key)
   }
 
   const sortGroups = options?.sortGroups ?? true

@@ -88,23 +88,29 @@ export function CategoryPickerButton({
 
   useEffect(() => {
     if (!open) return
-    function onDoc(e: MouseEvent) {
-      const t = e.target as Node
-      if (buttonRef.current?.contains(t)) return
-      if (panelRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        if (renaming) setRenaming(null)
-        else setOpen(false)
+    let onDoc: ((e: MouseEvent) => void) | null = null
+    let onKey: ((e: KeyboardEvent) => void) | null = null
+    // erst nach dem Öffnen-Klick registrieren, sonst schließt sich das Menü sofort
+    const timer = window.setTimeout(() => {
+      onDoc = (e: MouseEvent) => {
+        const t = e.target as Node
+        if (buttonRef.current?.contains(t)) return
+        if (panelRef.current?.contains(t)) return
+        setOpen(false)
       }
-    }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
+      onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          if (renaming) setRenaming(null)
+          else setOpen(false)
+        }
+      }
+      document.addEventListener('mousedown', onDoc)
+      document.addEventListener('keydown', onKey)
+    }, 0)
     return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
+      window.clearTimeout(timer)
+      if (onDoc) document.removeEventListener('mousedown', onDoc)
+      if (onKey) document.removeEventListener('keydown', onKey)
     }
   }, [open, renaming])
 

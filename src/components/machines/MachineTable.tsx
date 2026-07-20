@@ -455,6 +455,7 @@ export function MachineTable({
   const updateMachine = useUpdateMachine()
   const quickComplete = useQuickCompleteMaintenance()
   const [completingId, setCompletingId] = useState<string | null>(null)
+  const [extraCategories, setExtraCategories] = useState<string[]>([])
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const lastCheckedId = useRef<string | null>(null)
 
@@ -493,11 +494,12 @@ export function MachineTable({
   const categorySuggestions = useMemo(
     () =>
       machineCategorySuggestions([
+        ...extraCategories,
         ...(fieldOptions?.categories ?? []),
         ...machines.map((m) => m.category ?? ''),
         ...activeDrafts.map((d) => d.category),
       ]),
-    [machines, activeDrafts, fieldOptions?.categories],
+    [machines, activeDrafts, fieldOptions?.categories, extraCategories],
   )
 
   const locationSuggestions = useMemo(
@@ -515,8 +517,9 @@ export function MachineTable({
       groupMachinesByCategory(orderedMachines, {
         sortGroups: sortBy === 'manual' ? false : true,
         descending: sortBy === 'category' ? sortDescending : false,
+        ensureCategories: categorySuggestions,
       }),
-    [orderedMachines, sortBy, sortDescending],
+    [orderedMachines, sortBy, sortDescending, categorySuggestions],
   )
 
   function toggleCategoryCollapsed(key: string) {
@@ -550,7 +553,12 @@ export function MachineTable({
   }
 
   async function rememberCategory(value: string) {
-    await rememberMachineFieldOption('category', value)
+    const v = value.trim()
+    if (!v) return
+    setExtraCategories((prev) =>
+      prev.some((x) => x.toLowerCase() === v.toLowerCase()) ? prev : [...prev, v],
+    )
+    await rememberMachineFieldOption('category', v)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
   }
 
@@ -563,6 +571,11 @@ export function MachineTable({
     await Promise.all(
       targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: next })),
     )
+    setExtraCategories((prev) => {
+      const without = prev.filter((x) => x.toLowerCase() !== from.trim().toLowerCase())
+      if (!without.some((x) => x.toLowerCase() === next.toLowerCase())) without.push(next)
+      return without
+    })
     await renameMachineFieldOption('category', from, next)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
@@ -579,6 +592,9 @@ export function MachineTable({
     )
     await Promise.all(
       targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: null })),
+    )
+    setExtraCategories((prev) =>
+      prev.filter((x) => x.toLowerCase() !== category.trim().toLowerCase()),
     )
     await forgetMachineFieldOption('category', category)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
@@ -1090,13 +1106,16 @@ export function MachineTable({
             onRename={(from, to) => renameCategory(from, to)}
             onDelete={(cat) => deleteCategory(cat)}
             onChange={(c) => {
+              const next = c.trim()
               if (checkedList.length > 0) {
                 void (async () => {
-                  const next = c.trim() || null
                   try {
                     await Promise.all(
                       checkedList.map((m) =>
-                        updateMachine.mutateAsync({ id: m.id, category: next }),
+                        updateMachine.mutateAsync({
+                          id: m.id,
+                          category: next || null,
+                        }),
                       ),
                     )
                     if (next) await rememberCategory(next)
@@ -1109,9 +1128,9 @@ export function MachineTable({
                     flash(e instanceof Error ? e.message : 'Kategorie fehlgeschlagen')
                   }
                 })()
-              } else if (c.trim()) {
-                void rememberCategory(c.trim()).then(() => {
-                  flash(`Kategorie „${c.trim()}“ angelegt`)
+              } else if (next) {
+                void rememberCategory(next).then(() => {
+                  flash(`Ordner „${next}“ angelegt – Maschinen auf den Ordner ziehen`)
                 })
               }
             }}
@@ -1347,7 +1366,28 @@ export function MachineTable({
                     </td>
                   </tr>
                   {!collapsed &&
-                    group.machines.map((m) => (
+                    (group.machines.length === 0 ? (
+                      <tr className="bg-kwd-paper/50">
+                        <td
+                          colSpan={11}
+                          className="text-kwd-muted px-8 py-2 text-xs"
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            setDragOverCategory(group.key)
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            if (dragId) void moveMachinesToCategory(group.key, dragId)
+                            setDragId(null)
+                            setDragOverId(null)
+                            setDragOverCategory(null)
+                          }}
+                        >
+                          Leer – Maschinen hierher ziehen oder markieren + Kategorie zuweisen
+                        </td>
+                      </tr>
+                    ) : (
+                      group.machines.map((m) => (
                       <MachineRow
                         key={m.id}
                         machine={m}
@@ -1377,6 +1417,7 @@ export function MachineTable({
                           setDragOverCategory(null)
                         }}
                       />
+                      ))
                     ))}
                 </Fragment>
               )
@@ -1390,6 +1431,9 @@ export function MachineTable({
                   categorySuggestions={categorySuggestions}
                   onRenameCategory={(from, to) => renameCategory(from, to)}
                   onDeleteCategory={(cat) => deleteCategory(cat)}
+                  onCategoryPicked={(c) => {
+                    void rememberCategory(c)
+                  }}
                   selectedField={selectedCell?.row === i ? selectedCell.field : null}
                   onSelectField={(field) => setSelectedCell({ row: i, field })}
                   onChange={(v) => {
