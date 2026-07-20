@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { addDaysIso, maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
+import {
+  addDaysIso,
+  formatDurationDays,
+  maintenanceDueClass,
+  maintenanceDueTone,
+  splitDurationInput,
+  type DurationUnit,
+} from '../../lib/maintenanceDue'
 import { insertLifecycleEntry } from '../../lib/insertLifecycleEntry'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
+import { DurationUnitField, parseDurationInput } from '../ui/DurationUnitField'
 
 interface ChecklistPanelProps {
   taskId: string
@@ -31,7 +39,9 @@ export function ChecklistPanel({
   const queryClient = useQueryClient()
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState('')
-  const [durationDays, setDurationDays] = useState(String(frequencyDays || 90))
+  const initialDuration = splitDurationInput(frequencyDays)
+  const [durationValue, setDurationValue] = useState(initialDuration.value)
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>(initialDuration.unit)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,17 +67,20 @@ export function ChecklistPanel({
   }, [items])
 
   useEffect(() => {
-    setDurationDays(String(frequencyDays || 90))
+    const next = splitDurationInput(frequencyDays)
+    setDurationValue(next.value)
+    setDurationUnit(next.unit)
   }, [frequencyDays])
 
   const hasSteps = Boolean(items && items.length > 0)
   const allChecked = hasSteps ? items!.every((i) => checked[i.id]) : true
-  const days = Math.max(1, Math.round(Number(durationDays) || frequencyDays || 90))
+  const parsed = parseDurationInput(durationValue, durationUnit)
+  const days = parsed.ok ? parsed.days : Math.max(1, Math.round(frequencyDays || 90))
   const previewNext = addDaysIso(new Date().toISOString(), days)
-  const canComplete = allChecked && !submitting
+  const canComplete = allChecked && !submitting && parsed.ok
 
   async function handleComplete() {
-    if (!canComplete) return
+    if (!canComplete || !parsed.ok) return
     setSubmitting(true)
     setError(null)
 
@@ -171,7 +184,9 @@ export function ChecklistPanel({
               {currentTone === 'soon' && ' · bald'}
             </span>
           </p>
-          <p className="text-kwd-muted mt-1">Bisheriges Intervall: {frequencyDays} Tage</p>
+          <p className="text-kwd-muted mt-1">
+            Bisheriges Intervall: {formatDurationDays(frequencyDays)}
+          </p>
         </div>
 
         {isLoading && <p className="text-kwd-muted">Lade Checkliste…</p>}
@@ -208,20 +223,22 @@ export function ChecklistPanel({
           ))}
         </ul>
 
-        <label className="mt-6 block">
-          <span className="text-kwd-muted text-sm font-medium">Dauer bis zur nächsten Wartung (Tage)</span>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={durationDays}
-            onChange={(e) => setDurationDays(e.target.value)}
-            className="border-kwd-border bg-kwd-surface mt-1 min-h-[48px] w-full border px-4"
-          />
-          <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
-            Nächste Wartung nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
-          </p>
-        </label>
+        <DurationUnitField
+          label="Dauer bis zur nächsten Wartung"
+          value={durationValue}
+          unit={durationUnit}
+          onValueChange={setDurationValue}
+          onUnitChange={setDurationUnit}
+          className="mt-6 block"
+          hint={
+            <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
+              Nächste Wartung nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
+              {parsed.ok && durationUnit === 'years' && (
+                <span> · gespeichert als {formatDurationDays(days)}</span>
+              )}
+            </p>
+          }
+        />
 
         <label className="mt-4 block">
           <span className="text-kwd-muted text-sm font-medium">Notizen (optional)</span>

@@ -26,3 +26,37 @@ export function addDaysIso(dateStr: string, days: number): string {
   d.setDate(d.getDate() + days)
   return d.toISOString().slice(0, 10)
 }
+
+/** Kalenderjahr ≈ 365 Tage (für Speicherung als duration_days / frequency_days) */
+export const DAYS_PER_YEAR = 365
+
+export type DurationUnit = 'days' | 'years'
+
+export function toDurationDays(value: number, unit: DurationUnit): number {
+  const n = Math.max(0, Math.round(value))
+  if (unit === 'years') return n * DAYS_PER_YEAR
+  return n
+}
+
+/** Anzeige: ganze Jahre als „X Jahr(e)“, sonst Tage */
+export function formatDurationDays(days: number | null | undefined): string {
+  if (days == null || !Number.isFinite(days) || days <= 0) return '–'
+  const d = Math.round(days)
+  if (d >= DAYS_PER_YEAR && d % DAYS_PER_YEAR === 0) {
+    const y = d / DAYS_PER_YEAR
+    return y === 1 ? '1 Jahr' : `${y} Jahre`
+  }
+  return d === 1 ? '1 Tag' : `${d} Tage`
+}
+
+/** Startwert für Eingabe: wenn Intervall ganze Jahre, Einheit „Jahre“ */
+export function splitDurationInput(days: number | null | undefined): {
+  value: string
+  unit: DurationUnit
+} {
+  const d = Math.max(1, Math.round(days || 90))
+  if (d >= DAYS_PER_YEAR && d % DAYS_PER_YEAR === 0) {
+    return { value: String(d / DAYS_PER_YEAR), unit: 'years' }
+  }
+  return { value: String(d), unit: 'days' }
+}

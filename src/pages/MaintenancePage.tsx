@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
-import { maintenanceDueTone } from '../lib/maintenanceDue'
+import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
 import { supabase } from '../lib/supabase'
 
 interface ActiveTask {
@@ -86,7 +86,7 @@ export default function MaintenancePage() {
                   {tone === 'overdue' && ' · überfällig'}
                   {tone === 'soon' && ' · bald'}
                 </span>
-                <span className="text-kwd-muted">Dauer: {task.frequency_days} Tage</span>
+                <span className="text-kwd-muted">Dauer: {formatDurationDays(task.frequency_days)}</span>
               </div>
               <button
                 type="button"

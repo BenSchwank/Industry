@@ -11,8 +11,15 @@ import {
   type LifecyclePhoto,
 } from '../../hooks/useLifecyclePhotos'
 import { formatSupabaseError } from '../../lib/formatError'
-import { addDaysIso, maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
+import {
+  addDaysIso,
+  formatDurationDays,
+  maintenanceDueClass,
+  maintenanceDueTone,
+  type DurationUnit,
+} from '../../lib/maintenanceDue'
 import type { LifecycleEntryType } from '../../types/database'
+import { DurationUnitField, parseDurationInput } from '../ui/DurationUnitField'
 import { Tip } from '../ui/Tip'
 import {
   LifecyclePhotoPicker,
@@ -63,7 +70,8 @@ export function MachineLifecyclePanel({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [occurredAt, setOccurredAt] = useState(new Date().toISOString().slice(0, 10))
-  const [durationDays, setDurationDays] = useState('90')
+  const [durationValue, setDurationValue] = useState('90')
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>('days')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -101,15 +109,17 @@ export function MachineLifecyclePanel({
     setTitle(type === 'maintenance' ? 'Wartung' : '')
     setDescription('')
     setOccurredAt(new Date().toISOString().slice(0, 10))
-    setDurationDays('90')
+    setDurationValue('90')
+    setDurationUnit('days')
     setPendingPhotos([])
     setError(null)
     setShowForm(true)
   }
 
+  const parsedDuration = parseDurationInput(durationValue, durationUnit)
   const nextDuePreview =
-    entryType === 'maintenance' && Number(durationDays) > 0
-      ? addDaysIso(occurredAt, Number(durationDays))
+    entryType === 'maintenance' && parsedDuration.ok
+      ? addDaysIso(occurredAt, parsedDuration.days)
       : null
 
   function addPendingFiles(list: FileList | null) {
@@ -133,18 +143,16 @@ export function MachineLifecyclePanel({
       setError('Titel ist Pflicht.')
       return
     }
+    let days: number | null = null
     if (entryType === 'maintenance') {
-      const days = Number(durationDays)
-      if (!Number.isFinite(days) || days < 1) {
-        setError('Bitte die Dauer der Wartung in Tagen angeben (mind. 1).')
+      const parsed = parseDurationInput(durationValue, durationUnit)
+      if (!parsed.ok) {
+        setError('Bitte die Dauer angeben (mind. 1 Tag bzw. 1 Jahr).')
         return
       }
+      days = parsed.days
     }
     try {
-      const days =
-        entryType === 'maintenance' && Number(durationDays) > 0
-          ? Math.round(Number(durationDays))
-          : null
       const entry = await addEntry.mutateAsync({
         machine_id: machineId,
         entry_type: entryType,
@@ -296,7 +304,7 @@ export function MachineLifecyclePanel({
 
         <Tip>
           <p className="text-kwd-muted border-kwd-border border-b px-3 py-2 text-xs">
-            Wartung: Dauer angeben → nächste Fälligkeit wird gesetzt (gelb ≤ 3 Monate, rot überfällig).
+            Wartung: Dauer in Tagen oder Jahren → nächste Fälligkeit (gelb ≤ 3 Monate, rot überfällig).
           </p>
         </Tip>
 
@@ -337,26 +345,33 @@ export function MachineLifecyclePanel({
                 />
               </label>
               {entryType === 'maintenance' && (
-                <label className="block">
-                  <span className="kwd-kpi-label">Dauer der Wartung (Tage) *</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={durationDays}
-                    onChange={(e) => setDurationDays(e.target.value)}
-                    required
-                    placeholder="z.B. 90"
-                    className={fieldCls}
-                  />
-                  {nextDuePreview && (
-                    <p className={`mt-1 text-xs ${maintenanceDueClass(nextDuePreview) || 'text-kwd-muted'}`}>
-                      Nächste Wartung: {new Date(nextDuePreview).toLocaleDateString('de-DE')}
-                      {maintenanceDueTone(nextDuePreview) === 'soon' && ' · bald fällig'}
-                      {maintenanceDueTone(nextDuePreview) === 'overdue' && ' · überfällig'}
-                    </p>
-                  )}
-                </label>
+                <DurationUnitField
+                  label="Dauer bis zur nächsten Wartung *"
+                  value={durationValue}
+                  unit={durationUnit}
+                  onValueChange={setDurationValue}
+                  onUnitChange={setDurationUnit}
+                  required
+                  className="block"
+                  inputClassName={fieldCls}
+                  hint={
+                    nextDuePreview ? (
+                      <p
+                        className={`mt-1 text-xs ${maintenanceDueClass(nextDuePreview) || 'text-kwd-muted'}`}
+                      >
+                        Nächste Wartung: {new Date(nextDuePreview).toLocaleDateString('de-DE')}
+                        {maintenanceDueTone(nextDuePreview) === 'soon' && ' · bald fällig'}
+                        {maintenanceDueTone(nextDuePreview) === 'overdue' && ' · überfällig'}
+                        {parsedDuration.ok && durationUnit === 'years' && (
+                          <span className="text-kwd-muted">
+                            {' '}
+                            ({formatDurationDays(parsedDuration.days)})
+                          </span>
+                        )}
+                      </p>
+                    ) : undefined
+                  }
+                />
               )}
               <label className="block sm:col-span-2">
                 <span className="kwd-kpi-label">Titel *</span>
@@ -492,7 +507,7 @@ export function MachineLifecyclePanel({
                           <p className="mt-0.5 text-sm">
                             {item.duration_days != null && (
                               <span className="text-kwd-muted">
-                                Dauer: {item.duration_days} Tage
+                                Dauer: {formatDurationDays(item.duration_days)}
                               </span>
                             )}
                             {item.duration_days != null && item.next_due_date && ' · '}
