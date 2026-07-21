@@ -3,12 +3,12 @@ import { enqueueAiAnalysis, getAiQueueStatus } from '../../lib/aiAnalysisQueue'
 import { formatFileSize } from '../../lib/pdfAnalysis'
 import {
   useAnalyzeMachineAttachment,
-  useAttachmentSignedUrl,
   useDeleteMachineAttachment,
   useMachineAttachments,
   useUploadMachineAttachment,
   type MachineAttachment,
 } from '../../hooks/useMachineAttachments'
+import { SecurePdfViewer } from './SecurePdfViewer'
 
 interface MachineAttachmentsPanelProps {
   machineId: string
@@ -34,9 +34,6 @@ export function MachineAttachmentsPanel({
   const remove = useDeleteMachineAttachment()
 
   const selected = attachments.find((a) => a.id === selectedId) ?? attachments[0] ?? null
-  const { data: signedUrl, isLoading: urlLoading } = useAttachmentSignedUrl(
-    selected?.storage_path ?? null,
-  )
 
   async function handleFileChange(files: FileList | null) {
     if (!files?.length) return
@@ -135,6 +132,9 @@ export function MachineAttachmentsPanel({
       </div>
 
       <div className="flex flex-col gap-3 p-3">
+        <p className="text-kwd-muted text-xs">
+          Unterlagen nur in der Software ansehen – kein Download, kein Öffnen in neuem Tab.
+        </p>
         {queueStatus.length > 0 && (
           <p className="bg-kwd-primary/10 text-kwd-primary border-kwd-primary/30 border px-3 py-2 text-sm font-medium">
             {queueStatus.some((j) => j.status === 'processing')
@@ -188,7 +188,6 @@ export function MachineAttachmentsPanel({
 
             {selected && (
               <div className="flex min-w-0 flex-col gap-3">
-                {/* Aktionsleiste – klar klickbar, über dem PDF */}
                 <div className="border-kwd-border bg-kwd-surface relative z-10 flex flex-wrap gap-2 border p-2">
                   <p className="mr-auto self-center truncate text-sm font-semibold">
                     {selected.filename}
@@ -212,16 +211,6 @@ export function MachineAttachmentsPanel({
                         ? 'Neu analysieren'
                         : 'Analysieren'}
                   </button>
-                  {signedUrl && (
-                    <a
-                      href={signedUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="kwd-btn inline-flex items-center"
-                    >
-                      In neuem Tab
-                    </a>
-                  )}
                   <button
                     type="button"
                     onClick={() => void handleDelete(selected)}
@@ -233,19 +222,13 @@ export function MachineAttachmentsPanel({
                 </div>
 
                 <div className="border-kwd-border bg-kwd-bg relative z-0 overflow-hidden border">
-                  {urlLoading && (
-                    <p className="text-kwd-muted p-8 text-center text-sm">PDF wird geladen…</p>
-                  )}
-                  {signedUrl && !urlLoading && (
-                    <iframe
-                      title={selected.filename}
-                      src={signedUrl}
-                      className="h-[min(48vh,480px)] w-full"
-                    />
-                  )}
+                  <SecurePdfViewer
+                    key={selected.id}
+                    storagePath={selected.storage_path}
+                    filename={selected.filename}
+                  />
                 </div>
 
-                {/* Große Analyse-Fläche */}
                 <article className="border-kwd-border bg-kwd-surface border p-4">
                   <h4 className="text-base font-bold tracking-tight">Dokument-Analyse</h4>
                   {!selected.analysis_summary && !selected.analyzed_at ? (

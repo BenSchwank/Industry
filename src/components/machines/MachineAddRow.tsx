@@ -198,20 +198,20 @@ export function MachineAddRow({
   return (
     <tr
       className={`border-kwd-border h-9 border-b ${
-        hasContent ? 'bg-kwd-primary/10' : 'bg-kwd-paper hover:bg-kwd-surface-light'
+        hasContent ? 'bg-kwd-primary/10' : 'bg-kwd-paper/40 hover:bg-kwd-surface-light'
       }`}
       onKeyDown={handleKeyDown}
     >
-      <td className="border-kwd-border border px-2" />
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="w-12 px-1" />
+      <td className="px-1 py-0.5">
         {cell(
           'barcode',
-          <div className="flex gap-1">
+          <div className="flex min-w-[7rem] gap-1">
             <input
               value={values.barcode}
               onChange={(e) => patch('barcode', e.target.value)}
               onFocus={() => onSelectField('barcode')}
-              placeholder=""
+              placeholder="Scan-Code"
               className={`${inputCls} font-mono text-xs`}
             />
             <button
@@ -225,7 +225,7 @@ export function MachineAddRow({
           </div>,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'name',
           <input
@@ -238,7 +238,7 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+      <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
         <CategoryPickerButton
           value={values.category}
           suggestions={categorySuggestions}
@@ -252,7 +252,7 @@ export function MachineAddRow({
           onDelete={onDeleteCategory}
         />
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'location',
           <input
@@ -265,7 +265,7 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'status',
           <select
@@ -282,10 +282,8 @@ export function MachineAddRow({
           </select>,
         )}
       </td>
-      <td className="border-kwd-border text-kwd-muted border px-2 py-0.5 text-center text-xs">
-        –
-      </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="text-kwd-muted px-2 py-0.5 text-center text-xs">–</td>
+      <td className="px-1 py-0.5">
         {cell(
           'lastMaintenance',
           <input
@@ -297,7 +295,7 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'nextMaintenance',
           <input
@@ -309,7 +307,7 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'lastRepair',
           <input
@@ -321,7 +319,7 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
+      <td className="px-1 py-0.5">
         {cell(
           'warrantyUntil',
           <input
@@ -333,14 +331,16 @@ export function MachineAddRow({
           />,
         )}
       </td>
-      <td className="border-kwd-border border px-1 py-0.5">
-        <div className="flex items-center gap-1">
+      <td className="px-1 py-0.5 text-right">
+        <div className="flex items-center justify-end gap-1">
           {(hasContent || !blank) && (
             <>
               {saving ? (
                 <span className="text-kwd-muted text-[10px]">…</span>
               ) : (
-                <span className="text-kwd-muted text-[10px]">↵</span>
+                <span className="text-kwd-muted text-[10px]" title="Enter = speichern">
+                  ↵
+                </span>
               )}
               {hasContent && (
                 <button

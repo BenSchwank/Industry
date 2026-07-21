@@ -38,22 +38,6 @@ export function useMachineAttachments(machineId: string | null) {
   })
 }
 
-export function useAttachmentSignedUrl(storagePath: string | null) {
-  return useQuery({
-    queryKey: ['attachment-url', storagePath],
-    enabled: Boolean(storagePath),
-    queryFn: async () => {
-      const { data, error } = await supabase.storage
-        .from(BUCKET)
-        .createSignedUrl(storagePath!, 3600)
-
-      if (error) throw new Error(formatSupabaseError(error))
-      return data.signedUrl
-    },
-    staleTime: 1000 * 60 * 50,
-  })
-}
-
 export function useUploadMachineAttachment() {
   const queryClient = useQueryClient()
 

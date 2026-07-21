@@ -297,6 +297,7 @@ function MachineRow({
       }}
       onDragOver={(e) => {
         e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
         onDragOver(m.id)
       }}
       onDrop={(e) => {
@@ -310,6 +311,7 @@ function MachineRow({
         draggable
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', m.id)
           onDragStart(m.id)
         }}
         onDragEnd={onDragEnd}
@@ -638,11 +640,18 @@ export function MachineTable({
     )
   }
 
-  async function moveMachinesToCategory(categoryKey: string, sourceId: string) {
+  async function moveMachinesToCategory(categoryKey: string, sourceId?: string) {
     const movingIds =
-      checkedIds.has(sourceId) && checkedIds.size > 0
+      sourceId && checkedIds.has(sourceId) && checkedIds.size > 0
         ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
-        : [sourceId]
+        : sourceId
+          ? [sourceId]
+          : checkedList.map((m) => m.id)
+
+    if (movingIds.length === 0) {
+      flash('Zuerst Geräte markieren (Häkchen) oder per ⋮⋮ ziehen')
+      return
+    }
 
     const nextCategory = categoryKey === UNCATEGORIZED_LABEL ? null : categoryKey
 
@@ -655,11 +664,13 @@ export function MachineTable({
           return updateMachine.mutateAsync({ id, category: nextCategory })
         }),
       )
+      if (nextCategory) await rememberCategory(nextCategory)
       flash(
         movingIds.length === 1
           ? `Kategorie → ${nextCategory ?? UNCATEGORIZED_LABEL}`
           : `${movingIds.length} → ${nextCategory ?? UNCATEGORIZED_LABEL}`,
       )
+      setCheckedIds(new Set())
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Kategorie konnte nicht gesetzt werden')
     }
@@ -1261,8 +1272,8 @@ export function MachineTable({
         </div>
         <Tip>
           <p className="text-kwd-muted text-xs">
-            Geräte zwischen Ordnern: ziehen auf Ordnerkopf / anderes Gerät, oder Spalte Kategorie.
-            Gleicher Ordner: Ziehen ändert Reihenfolge & Standort.
+            In Ordner: Häkchen + „X hierher“, oder ⋮⋮ auf Ordnerkopf / Drop-Zone ziehen. Neue
+            Eingabezeilen stehen unten getrennt – dort Kategorie setzen.
           </p>
         </Tip>
       </div>
@@ -1366,13 +1377,17 @@ export function MachineTable({
                     }`}
                     onDragOver={(e) => {
                       e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
                       setDragOverCategory(group.key)
                     }}
-                    onDragLeave={() => {
+                    onDragLeave={(e) => {
+                      const related = e.relatedTarget as Node | null
+                      if (related && e.currentTarget.contains(related)) return
                       setDragOverCategory((cur) => (cur === group.key ? null : cur))
                     }}
                     onDrop={(e) => {
                       e.preventDefault()
+                      e.stopPropagation()
                       if (dragId) void moveMachinesToCategory(group.key, dragId)
                       setDragId(null)
                       setDragOverId(null)
@@ -1380,7 +1395,7 @@ export function MachineTable({
                     }}
                   >
                     <td colSpan={12} className="px-2 py-1.5">
-                      <div className="flex w-full items-center gap-2">
+                      <div className="flex w-full flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => toggleCategoryCollapsed(group.key)}
@@ -1395,6 +1410,16 @@ export function MachineTable({
                             {group.machines.length}
                           </span>
                         </button>
+                        {checkedList.length > 0 && group.key !== UNCATEGORIZED_LABEL && (
+                          <button
+                            type="button"
+                            onClick={() => void moveMachinesToCategory(group.key)}
+                            className="kwd-btn kwd-btn-primary shrink-0 px-2 text-xs"
+                            title="Markierte Geräte in diesen Ordner verschieben"
+                          >
+                            {checkedList.length} hierher
+                          </button>
+                        )}
                         <CategoryPickerButton
                           value={group.key === UNCATEGORIZED_LABEL ? '' : group.key}
                           suggestions={categorySuggestions}
@@ -1440,23 +1465,59 @@ export function MachineTable({
                   </tr>
                   {!collapsed &&
                     (group.machines.length === 0 ? (
-                      <tr className="bg-kwd-paper/50">
-                        <td
-                          colSpan={12}
-                          className="text-kwd-muted px-8 py-2 text-xs"
-                          onDragOver={(e) => {
-                            e.preventDefault()
-                            setDragOverCategory(group.key)
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            if (dragId) void moveMachinesToCategory(group.key, dragId)
-                            setDragId(null)
-                            setDragOverId(null)
-                            setDragOverCategory(null)
-                          }}
-                        >
-                          Leer – Maschinen hierher ziehen oder markieren + Kategorie zuweisen
+                      <tr
+                        className={
+                          dropActive
+                            ? 'bg-kwd-primary/20'
+                            : 'bg-kwd-paper/50'
+                        }
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                          setDragOverCategory(group.key)
+                        }}
+                        onDragLeave={(e) => {
+                          const related = e.relatedTarget as Node | null
+                          if (related && e.currentTarget.contains(related)) return
+                          setDragOverCategory((cur) => (cur === group.key ? null : cur))
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (dragId) void moveMachinesToCategory(group.key, dragId)
+                          else if (checkedList.length > 0) void moveMachinesToCategory(group.key)
+                          setDragId(null)
+                          setDragOverId(null)
+                          setDragOverCategory(null)
+                        }}
+                      >
+                        <td colSpan={12} className="px-4 py-3">
+                          <div
+                            className={`border-kwd-border flex flex-col items-center justify-center gap-2 border border-dashed px-4 py-5 ${
+                              dropActive
+                                ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                                : 'text-kwd-muted'
+                            }`}
+                          >
+                            <p className="text-center text-xs font-medium">
+                              {dropActive
+                                ? 'Loslassen → in diesen Ordner'
+                                : 'Leer – Geräte mit ⋮⋮ hierher ziehen'}
+                            </p>
+                            {checkedList.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => void moveMachinesToCategory(group.key)}
+                                className="kwd-btn kwd-btn-primary text-xs"
+                              >
+                                {checkedList.length} Markierte hierher verschieben
+                              </button>
+                            ) : (
+                              <p className="text-center text-[11px]">
+                                Oder Häkchen setzen und oben „Kategorie“ wählen / hier „hierher“
+                              </p>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ) : (
@@ -1499,6 +1560,14 @@ export function MachineTable({
                 </Fragment>
               )
             })}
+            {showAddRow && (
+              <tr className="bg-kwd-surface border-kwd-border border-y">
+                <td colSpan={12} className="text-kwd-muted px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase">
+                  Neue Maschinen anlegen · Kategorie in der Spalte „Kategorie“ setzen (sonst ohne
+                  Ordner)
+                </td>
+              </tr>
+            )}
             {showAddRow &&
               activeDrafts.map((draft, i) => (
                 <MachineAddRow
