@@ -17,7 +17,7 @@ export const DESKTOP_NAV: { view: AppView; label: string }[] = [
   { view: 'machines', label: 'Maschinen' },
   { view: 'inventory', label: 'Lager' },
   { view: 'tickets', label: 'Störungen' },
-  { view: 'maintenance', label: 'Wartung' },
+  { view: 'maintenance', label: 'Reparaturen' },
   { view: 'messages', label: 'Nachrichten' },
   { view: 'import', label: 'QS1 Import' },
 ]

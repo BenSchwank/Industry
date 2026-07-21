@@ -556,7 +556,7 @@ function MachineStammdatenForm({
   async function completeMaintenanceNow() {
     if (
       !window.confirm(
-        `Wartung für „${machine.name}“ jetzt als erledigt markieren?`,
+        `Hauptuntersuchung für „${machine.name}“ jetzt als erledigt markieren?`,
       )
     ) {
       return
@@ -567,7 +567,7 @@ function MachineStammdatenForm({
     try {
       const result = await quickComplete.mutateAsync({ machineId: machine.id })
       setMessage(
-        `Wartung erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+        `HU erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')
@@ -603,7 +603,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="Nächste Wartung"
+          label="Nächste HU"
           value={formatDate(machine.next_maintenance_at)}
           hint={
             maintenanceOverdue
@@ -617,7 +617,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="Letzte Wartung"
+          label="Letzte HU"
           value={formatDate(machine.last_maintenance_at)}
           compact={compact}
         />
@@ -634,9 +634,9 @@ function MachineStammdatenForm({
           disabled={completing || quickComplete.isPending}
           onClick={() => void completeMaintenanceNow()}
           className="kwd-btn kwd-btn-primary min-h-[40px]"
-          title="Wartung sofort abschließen – ohne Wartungsplaner"
+          title="Hauptuntersuchung sofort abschließen"
         >
-          {completing ? 'Speichern…' : 'Wartung erledigt'}
+          {completing ? 'Speichern…' : 'HU erledigt'}
         </button>
       </div>
 

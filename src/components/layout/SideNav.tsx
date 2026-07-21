@@ -9,7 +9,7 @@ const SHORT: Record<string, string> = {
   machines: 'Masch.',
   inventory: 'Lager',
   tickets: 'Stör.',
-  maintenance: 'Wart.',
+  maintenance: 'Rep.',
   messages: 'Nachr.',
   import: 'QS1',
   users: 'Nutzer',

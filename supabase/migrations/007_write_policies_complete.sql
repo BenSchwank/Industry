@@ -24,3 +24,8 @@ DROP POLICY IF EXISTS "Anon insert checklist_items" ON maintenance_checklist_ite
 CREATE POLICY "Anon insert maintenance_tasks" ON maintenance_tasks FOR INSERT TO anon WITH CHECK (true);
 CREATE POLICY "Anon update maintenance_tasks" ON maintenance_tasks FOR UPDATE TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Anon insert checklist_items" ON maintenance_checklist_items FOR INSERT TO anon WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Anon delete maintenance_tasks" ON maintenance_tasks;
+CREATE POLICY "Anon delete maintenance_tasks" ON maintenance_tasks FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "Anon delete checklist_items" ON maintenance_checklist_items;
+CREATE POLICY "Anon delete checklist_items" ON maintenance_checklist_items FOR DELETE TO anon USING (true);

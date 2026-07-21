@@ -391,7 +391,7 @@ function MachineRow({
               disabled={completing}
               onClick={() => onQuickComplete?.(m)}
               className="kwd-btn kwd-btn-primary px-1.5 py-0.5 text-[10px] font-bold"
-              title="Wartung sofort als erledigt markieren"
+              title="Hauptuntersuchung sofort als erledigt markieren"
             >
               {completing ? '…' : '✓'}
             </button>
@@ -553,7 +553,7 @@ export function MachineTable({
   async function handleQuickComplete(m: MachineWithStats) {
     if (
       !window.confirm(
-        `Wartung für „${m.name}“ jetzt als erledigt markieren?\n\nNächste Fälligkeit wird aus dem Intervall berechnet.`,
+        `Hauptuntersuchung für „${m.name}“ jetzt als erledigt markieren?\n\nNächste Fälligkeit wird aus dem Intervall berechnet.`,
       )
     ) {
       return
@@ -562,7 +562,7 @@ export function MachineTable({
     try {
       const result = await quickComplete.mutateAsync({ machineId: m.id })
       flash(
-        `Wartung erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+        `HU erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
       )
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')
@@ -1339,9 +1339,9 @@ export function MachineTable({
               />
               <th>Status</th>
               <th className="min-w-[100px]">Docs / Plan</th>
-              <th>Letzte Wartung</th>
+              <th>Letzte HU</th>
               <SortableTh
-                label="Nächste Wartung"
+                label="Nächste HU"
                 column="next_maintenance"
                 sortBy={sortBy}
                 sortDescending={sortDescending}

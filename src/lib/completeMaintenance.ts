@@ -20,14 +20,14 @@ export interface QuickCompleteResult {
 }
 
 /**
- * Wartung in einem Schritt abschließen:
+ * Hauptuntersuchung in einem Schritt abschließen:
  * Completion + Task-Update (falls vorhanden) + Lebenszyklus-Eintrag.
  */
 export async function completeMaintenanceQuick(
   input: QuickCompleteInput,
 ): Promise<QuickCompleteResult> {
   let taskId = input.taskId ?? null
-  let title = input.taskTitle?.trim() || 'Wartung'
+  let title = input.taskTitle?.trim() || 'Hauptuntersuchung'
   let frequencyDays = input.frequencyDays ?? 90
 
   if (!taskId) {
@@ -45,7 +45,7 @@ export async function completeMaintenanceQuick(
       title = task.title || title
       frequencyDays = task.frequency_days || frequencyDays
     } else {
-      // Keine Task → Dauer aus letztem Lebenszyklus-Wartungseintrag
+      // Keine Task → Dauer aus letztem Lebenszyklus-HU-Eintrag
       const { data: life } = await supabase
         .from('machine_lifecycle_entries')
         .select('duration_days, title')

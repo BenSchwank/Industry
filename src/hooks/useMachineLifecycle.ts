@@ -46,14 +46,14 @@ async function syncMaintenanceTask(
       .update({
         frequency_days: frequencyDays,
         next_due_date: nextDueDate,
-        title: 'Wartung',
+        title: 'Hauptuntersuchung',
       })
       .eq('id', existing[0].id)
     if (error) throw error
   } else {
     const { error } = await supabase.from('maintenance_tasks').insert({
       machine_id: machineId,
-      title: 'Wartung',
+      title: 'Hauptuntersuchung',
       frequency_days: frequencyDays,
       next_due_date: nextDueDate,
     })
@@ -199,7 +199,7 @@ export function useMachineTimeline(machineId: string | null) {
           id: c.id,
           source: 'completion',
           entry_type: 'maintenance',
-          title: task?.title ?? 'Wartung abgeschlossen',
+          title: task?.title ?? 'Hauptuntersuchung abgeschlossen',
           description: c.notes,
           occurred_at: c.completed_at,
           created_by_username: c.completed_by ? (names.get(c.completed_by) ?? null) : null,

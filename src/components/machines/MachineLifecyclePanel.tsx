@@ -28,14 +28,14 @@ import {
 } from './LifecyclePhotos'
 
 const ENTRY_TYPES: { value: LifecycleEntryType; label: string }[] = [
-  { value: 'maintenance', label: 'Wartung' },
+  { value: 'maintenance', label: 'Hauptuntersuchung' },
   { value: 'repair', label: 'Reparatur' },
   { value: 'inspection', label: 'Inspektion' },
   { value: 'note', label: 'Notiz' },
 ]
 
 const LIST_SECTIONS: { type: string; label: string }[] = [
-  { type: 'maintenance', label: 'Wartungen' },
+  { type: 'maintenance', label: 'Hauptuntersuchungen' },
   { type: 'repair', label: 'Reparaturen' },
   { type: 'inspection', label: 'Inspektionen' },
   { type: 'ticket', label: 'Störungen' },
@@ -106,7 +106,7 @@ export function MachineLifecyclePanel({
 
   function openForm(type: LifecycleEntryType = 'maintenance') {
     setEntryType(type)
-    setTitle(type === 'maintenance' ? 'Wartung' : '')
+    setTitle(type === 'maintenance' ? 'Hauptuntersuchung' : '')
     setDescription('')
     setOccurredAt(new Date().toISOString().slice(0, 10))
     setDurationValue('90')
@@ -286,7 +286,7 @@ export function MachineLifecyclePanel({
                   onClick={() => openForm('maintenance')}
                   className="kwd-btn kwd-btn-primary"
                 >
-                  + Wartung
+                  + Hauptuntersuchung
                 </button>
                 <button type="button" onClick={() => openForm('repair')} className="kwd-btn">
                   + Reparatur
@@ -304,7 +304,8 @@ export function MachineLifecyclePanel({
 
         <Tip>
           <p className="text-kwd-muted border-kwd-border border-b px-3 py-2 text-xs">
-            Wartung: Dauer in Tagen oder Jahren → nächste Fälligkeit (gelb ≤ 3 Monate, rot überfällig).
+            Hauptuntersuchung: Dauer in Tagen oder Jahren → nächste Fälligkeit (gelb ≤ 3 Monate, rot
+            überfällig).
           </p>
         </Tip>
 
@@ -312,7 +313,7 @@ export function MachineLifecyclePanel({
           <form onSubmit={handleSubmit} className="border-kwd-border border-b p-3">
             <p className="mb-2 text-sm font-semibold">
               {entryType === 'maintenance'
-                ? 'Wartung hinzufügen'
+                ? 'Hauptuntersuchung hinzufügen'
                 : `${ENTRY_TYPES.find((t) => t.value === entryType)?.label ?? 'Eintrag'} hinzufügen`}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -334,7 +335,7 @@ export function MachineLifecyclePanel({
               )}
               <label className={`block ${entryType === 'maintenance' ? '' : ''}`}>
                 <span className="kwd-kpi-label">
-                  {entryType === 'maintenance' ? 'Wartungsdatum' : 'Datum'}
+                  {entryType === 'maintenance' ? 'Untersuchungsdatum' : 'Datum'}
                 </span>
                 <input
                   type="date"
@@ -346,7 +347,7 @@ export function MachineLifecyclePanel({
               </label>
               {entryType === 'maintenance' && (
                 <DurationUnitField
-                  label="Dauer bis zur nächsten Wartung *"
+                  label="Dauer bis zur nächsten Hauptuntersuchung *"
                   value={durationValue}
                   unit={durationUnit}
                   onValueChange={setDurationValue}
@@ -359,7 +360,7 @@ export function MachineLifecyclePanel({
                       <p
                         className={`mt-1 text-xs ${maintenanceDueClass(nextDuePreview) || 'text-kwd-muted'}`}
                       >
-                        Nächste Wartung: {new Date(nextDuePreview).toLocaleDateString('de-DE')}
+                        Nächste HU: {new Date(nextDuePreview).toLocaleDateString('de-DE')}
                         {maintenanceDueTone(nextDuePreview) === 'soon' && ' · bald fällig'}
                         {maintenanceDueTone(nextDuePreview) === 'overdue' && ' · überfällig'}
                         {parsedDuration.ok && durationUnit === 'years' && (
@@ -381,7 +382,7 @@ export function MachineLifecyclePanel({
                   required
                   placeholder={
                     entryType === 'maintenance'
-                      ? 'z.B. Jahreswartung, Ölwechsel…'
+                      ? 'z.B. Jahres-HU, TÜV…'
                       : 'z.B. Lager getauscht…'
                   }
                   className={fieldCls}
@@ -450,7 +451,7 @@ export function MachineLifecyclePanel({
 
         {!isLoading && timeline.length === 0 && (
           <p className="text-kwd-muted px-4 py-8 text-center text-sm">
-            Noch keine Einträge – „+ Wartung“ nutzen und Dauer bis zur nächsten Wartung angeben.
+            Noch keine Einträge – „+ Hauptuntersuchung“ nutzen und Dauer bis zur nächsten HU angeben.
           </p>
         )}
       </section>

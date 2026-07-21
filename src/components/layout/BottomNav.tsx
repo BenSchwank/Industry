@@ -4,7 +4,7 @@ const MOBILE_QUICK: { view: AppView; label: string }[] = [
   { view: 'overview', label: 'Start' },
   { view: 'scanner', label: 'Scan' },
   { view: 'tickets', label: 'Störung' },
-  { view: 'maintenance', label: 'Wartung' },
+  { view: 'maintenance', label: 'Reparaturen' },
   { view: 'more', label: 'Mehr' },
 ]
 

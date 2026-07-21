@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
+import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
 import { useQuickCompleteMaintenance } from '../hooks/useQuickCompleteMaintenance'
 import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
 import { supabase } from '../lib/supabase'
@@ -20,6 +21,7 @@ export default function MaintenancePage() {
   const [toast, setToast] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const quickComplete = useQuickCompleteMaintenance()
+  const deleteTasks = useDeleteMaintenanceTasks()
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['maintenance-tasks'],
@@ -63,18 +65,43 @@ export default function MaintenancePage() {
     }
   }
 
+  async function handleDelete(task: {
+    id: string
+    title: string
+    machines: { name: string; barcode: string } | null
+  }) {
+    const name = task.machines?.name ?? 'Unbekannt'
+    if (
+      !window.confirm(
+        `Aufgabe „${task.title}“ für „${name}“ wirklich entfernen?\n\nKein Abschluss – die Planung verschwindet dauerhaft.`,
+      )
+    ) {
+      return
+    }
+    setBusyId(task.id)
+    try {
+      await deleteTasks.mutateAsync([task.id])
+      if (activeTask?.id === task.id) setActiveTask(null)
+      flash('Aufgabe entfernt')
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Löschen fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (isLoading) {
-    return <p className="text-kwd-muted p-4">Lade Wartungsplan…</p>
+    return <p className="text-kwd-muted p-4">Lade Reparaturen…</p>
   }
 
   return (
     <>
       <div className="flex flex-col gap-4 p-4">
         <header>
-          <h2 className="text-xl font-bold">Wartungsplaner</h2>
+          <h2 className="text-xl font-bold">Reparaturen</h2>
           <p className="text-kwd-muted mt-1 text-sm">
-            <strong>Erledigt</strong> = sofort abschließen · <strong>Details</strong> = Checkliste /
-            Notizen. Gelb ≤ 3 Monate · Rot = überfällig.
+            Größere Arbeiten · <strong>Erledigt</strong> schließt ab · <strong>Entfernen</strong>{' '}
+            löscht die Planung. Hauptuntersuchungen gehören in die Maschinenliste.
           </p>
         </header>
 
@@ -86,10 +113,10 @@ export default function MaintenancePage() {
 
         {tasks?.length === 0 && (
           <div className="bg-kwd-surface rounded-xl p-6 text-center">
-            <p className="text-kwd-muted">Keine Wartungsaufgaben geplant.</p>
+            <p className="text-kwd-muted">Keine Reparatur-Aufgaben geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
-              In der Maschinenakte unter Lebenszyklus „+ Wartung“ mit Dauer anlegen – dann erscheint
-              die Aufgabe hier. Oder in der Maschinenliste bei „Nächste Wartung“ auf ✓ tippen.
+              In der Maschinenakte unter Lebenszyklus „+ Reparatur“ eintragen. Fällige
+              Hauptuntersuchungen siehst du in der Maschinenliste (Spalte „Nächste HU“).
             </p>
           </div>
         )}
@@ -111,9 +138,28 @@ export default function MaintenancePage() {
                     : 'bg-kwd-surface border-kwd-border border'
               }`}
             >
-              <p className="text-kwd-primary text-xs font-bold">{machine?.barcode}</p>
-              <h3 className="font-bold">{task.title}</h3>
-              <p className="text-kwd-muted text-sm">{machine?.name}</p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-kwd-primary text-xs font-bold">{machine?.barcode}</p>
+                  <h3 className="font-bold">{task.title}</h3>
+                  <p className="text-kwd-muted text-sm">{machine?.name}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy || deleteTasks.isPending}
+                  onClick={() =>
+                    void handleDelete({
+                      id: task.id,
+                      title: task.title,
+                      machines: machine,
+                    })
+                  }
+                  className="kwd-btn kwd-btn-danger shrink-0 px-2 text-xs"
+                  title="Aufgabe entfernen (ohne Abschluss)"
+                >
+                  Entfernen
+                </button>
+              </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span
                   className={
@@ -180,6 +226,10 @@ export default function MaintenancePage() {
           frequencyDays={activeTask.frequency_days}
           nextDueDate={activeTask.next_due_date}
           onClose={() => setActiveTask(null)}
+          onDeleted={() => {
+            setActiveTask(null)
+            flash('Aufgabe entfernt')
+          }}
         />
       )}
     </>

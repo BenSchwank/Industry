@@ -8,7 +8,7 @@ const QUICK_LINKS: { view: AppView; label: string; desc: string }[] = [
   { view: 'messages', label: 'Nachrichten', desc: 'Wartung & Docs' },
   { view: 'inventory', label: 'Lager', desc: 'Bestand & FIFO' },
   { view: 'tickets', label: 'Störungen', desc: 'Meldungen' },
-  { view: 'maintenance', label: 'Wartung', desc: 'Fälligkeiten' },
+  { view: 'maintenance', label: 'Reparaturen', desc: 'Größere Arbeiten' },
 ]
 
 export default function OverviewPage() {
@@ -40,7 +40,7 @@ export default function OverviewPage() {
             onClick={() => setActiveView('tickets')}
           />
           <Kpi
-            label="Wartung überfällig"
+            label="HU überfällig"
             value={isLoading ? '…' : stats?.overdueMaintenance}
             alert={(stats?.overdueMaintenance ?? 0) > 0}
             onClick={() => setActiveView('maintenance')}

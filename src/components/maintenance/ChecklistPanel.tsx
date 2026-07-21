@@ -11,6 +11,7 @@ import {
 import { insertLifecycleEntry } from '../../lib/insertLifecycleEntry'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
+import { useDeleteMaintenanceTasks } from '../../hooks/useDeleteMaintenanceTasks'
 import { DurationUnitField, parseDurationInput } from '../ui/DurationUnitField'
 
 interface ChecklistPanelProps {
@@ -22,6 +23,8 @@ interface ChecklistPanelProps {
   frequencyDays: number
   nextDueDate: string
   onClose: () => void
+  /** Nach erfolgreichem Entfernen der Aufgabe */
+  onDeleted?: () => void
 }
 
 export function ChecklistPanel({
@@ -33,10 +36,12 @@ export function ChecklistPanel({
   frequencyDays,
   nextDueDate,
   onClose,
+  onDeleted,
 }: ChecklistPanelProps) {
   const user = useAuthStore((s) => s.user)
   const profile = useAuthStore((s) => s.profile)
   const queryClient = useQueryClient()
+  const deleteTasks = useDeleteMaintenanceTasks()
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [notes, setNotes] = useState('')
   const initialDuration = splitDurationInput(frequencyDays)
@@ -125,7 +130,7 @@ export function ChecklistPanel({
       const life = await insertLifecycleEntry({
         machine_id: machineId,
         entry_type: 'maintenance',
-        title: taskTitle || 'Wartung',
+        title: taskTitle || 'Reparatur',
         description: notes.trim() || null,
         occurred_at: new Date().toISOString(),
         created_by: user?.id ?? null,
@@ -152,6 +157,26 @@ export function ChecklistPanel({
 
   function toggleItem(id: string) {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        `Aufgabe „${taskTitle}“ für „${machineName}“ wirklich entfernen?\n\nKein Abschluss – die Planung verschwindet dauerhaft.`,
+      )
+    ) {
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await deleteTasks.mutateAsync([taskId])
+      onDeleted?.()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Löschen fehlgeschlagen')
+      setSubmitting(false)
+    }
   }
 
   const currentTone = maintenanceDueTone(nextDueDate)
@@ -193,7 +218,7 @@ export function ChecklistPanel({
 
         {!isLoading && !hasSteps && (
           <p className="bg-kwd-surface-light text-kwd-muted mb-4 rounded-xl px-3 py-3 text-sm">
-            Keine Checklisten-Schritte – du kannst die Wartung trotzdem mit Notizen und Dauer
+            Keine Checklisten-Schritte – du kannst die Reparatur trotzdem mit Notizen und Dauer
             abschließen.
           </p>
         )}
@@ -224,7 +249,7 @@ export function ChecklistPanel({
         </ul>
 
         <DurationUnitField
-          label="Dauer bis zur nächsten Wartung"
+          label="Dauer bis zur nächsten Fälligkeit"
           value={durationValue}
           unit={durationUnit}
           onValueChange={setDurationValue}
@@ -232,7 +257,7 @@ export function ChecklistPanel({
           className="mt-6 block"
           hint={
             <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
-              Nächste Wartung nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
+              Nächste Fälligkeit nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
               {parsed.ok && durationUnit === 'years' && (
                 <span> · gespeichert als {formatDurationDays(days)}</span>
               )}
@@ -261,7 +286,15 @@ export function ChecklistPanel({
           onClick={() => void handleComplete()}
           className="bg-kwd-primary min-h-[56px] w-full rounded-xl text-lg font-bold text-white disabled:opacity-40"
         >
-          {submitting ? 'Speichern…' : 'Wartung abschließen'}
+          {submitting ? 'Speichern…' : 'Reparatur abschließen'}
+        </button>
+        <button
+          type="button"
+          disabled={submitting || deleteTasks.isPending}
+          onClick={() => void handleDelete()}
+          className="kwd-btn kwd-btn-danger mt-2 min-h-[44px] w-full"
+        >
+          Aufgabe entfernen
         </button>
         {hasSteps && !allChecked && (
           <p className="text-kwd-muted mt-2 text-center text-xs">

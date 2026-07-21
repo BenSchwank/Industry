@@ -70,5 +70,17 @@ FROM public.machines
 WHERE location IS NOT NULL AND trim(location) <> ''
 ON CONFLICT (field_type, value) DO NOTHING;
 
+-- 6) Aufgaben löschen (Reparaturen-Seite)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.maintenance_tasks TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.maintenance_checklist_items TO anon, authenticated;
+
+DROP POLICY IF EXISTS "Anon delete maintenance_tasks" ON public.maintenance_tasks;
+CREATE POLICY "Anon delete maintenance_tasks" ON public.maintenance_tasks
+  FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "Anon delete checklist_items" ON public.maintenance_checklist_items;
+CREATE POLICY "Anon delete checklist_items" ON public.maintenance_checklist_items
+  FOR DELETE TO anon USING (true);
+
 -- Danach ggf. Schema-Cache neu laden: Dashboard → Settings → API → Reload schema
 -- oder kurz warten / Projekt neu laden.

@@ -31,8 +31,8 @@ interface MachineFiltersProps {
 const QUICK_FILTERS: { value: MachineDateFilter; label: string; short: string }[] = [
   { value: 'all', label: 'Alle', short: 'Alle' },
   { value: 'open_problems', label: 'Offene Störungen', short: 'Störungen' },
-  { value: 'maintenance_overdue', label: 'Wartung überfällig', short: 'Überfällig' },
-  { value: 'maintenance_due_soon', label: 'Wartung ≤ 7 Tage', short: '≤7 Tage' },
+  { value: 'maintenance_overdue', label: 'HU überfällig', short: 'Überfällig' },
+  { value: 'maintenance_due_soon', label: 'HU ≤ 7 Tage', short: '≤7 Tage' },
   { value: 'warranty_expired', label: 'Garantie abgelaufen', short: 'Garantie' },
   { value: 'repair_recent', label: 'Reparatur (30 Tage)', short: 'Reparatur' },
 ]
@@ -42,7 +42,7 @@ const SORT_OPTIONS: { value: MachineSortBy; label: string }[] = [
   { value: 'name', label: 'Name' },
   { value: 'category', label: 'Kategorie' },
   { value: 'location', label: 'Standort' },
-  { value: 'next_maintenance', label: 'Nächste Wartung' },
+  { value: 'next_maintenance', label: 'Nächste HU' },
 ]
 
 const filterInputCls =
