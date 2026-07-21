@@ -136,6 +136,15 @@ export default function MachinesPage() {
           <div className="kwd-toolbar shrink-0 flex-wrap gap-2">
             <strong className="text-sm tracking-wide uppercase">Maschinen</strong>
 
+            <button
+              type="button"
+              onClick={() => setShowPlanPhotoImport(true)}
+              className="kwd-btn kwd-btn-primary order-2 min-h-[40px] w-full sm:order-none sm:w-auto"
+              title="Hallenplan oder Anlagenliste fotografieren – KI liest Maschinen aus"
+            >
+              📷 Plan fotografieren
+            </button>
+
             <input
               type="search"
               value={searchQuery}
@@ -205,12 +214,12 @@ export default function MachinesPage() {
               <button
                 type="button"
                 onClick={() => setShowPlanPhotoImport(true)}
-                className="kwd-btn"
+                className="kwd-btn hidden sm:inline-flex"
                 title="Hallenplan fotografieren und Maschinen erkennen"
               >
                 Plan-Foto
               </button>
-              <button type="button" onClick={() => setShowQs1Import(true)} className="kwd-btn">
+              <button type="button" onClick={() => setShowQs1Import(true)} className="kwd-btn hidden sm:inline-flex">
                 QS1
               </button>
             </div>
@@ -243,8 +252,8 @@ export default function MachinesPage() {
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
-              Fortlaufend/Endlos · Button „Kategorie“: wählen / neu / ✎ umbenennen / ✕ löschen · Ordner
-              ▶/▼ · Spaltenkopf sortiert
+              📷 <strong>Plan fotografieren</strong> (orange): Maschinenliste aus Foto · Kategorie:
+              wählen / neu / umbenennen / löschen · Ordner ▶/▼
             </p>
           )}
           <div
@@ -283,6 +292,7 @@ export default function MachinesPage() {
                 onAddSaved={() => {
                   setShowAddRow(true)
                 }}
+                onOpenPlanPhoto={() => setShowPlanPhotoImport(true)}
               />
             </div>
           </div>

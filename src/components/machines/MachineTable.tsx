@@ -95,6 +95,7 @@ interface MachineTableProps {
   onOpenFullscreen?: (id: string) => void
   onAddCancel: () => void
   onAddSaved: (id: string) => void
+  onOpenPlanPhoto?: () => void
 }
 
 function DocsCell({ machine: m }: { machine: MachineWithStats }) {
@@ -450,6 +451,7 @@ export function MachineTable({
   onSelect,
   onOpenFullscreen,
   onAddSaved,
+  onOpenPlanPhoto,
 }: MachineTableProps) {
   const queryClient = useQueryClient()
   const categoryAddRowRefs = useRef<Map<string, MachineAddRowHandle>>(new Map())
@@ -1237,6 +1239,17 @@ export function MachineTable({
             }}
           />
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
+          {onOpenPlanPhoto && (
+            <button
+              type="button"
+              onClick={onOpenPlanPhoto}
+              disabled={bulkCreate.isPending}
+              className="kwd-btn kwd-btn-primary sm:hidden"
+              title="Hallenplan mit dem Handy fotografieren"
+            >
+              📷 Plan fotografieren
+            </button>
+          )}
           <button
             type="button"
             onClick={async () => {
@@ -1306,8 +1319,9 @@ export function MachineTable({
         </div>
         <Tip>
           <p className="text-kwd-muted text-xs">
-            Jeder Ordner hat unten eine Eingabezeile – Geräte landen direkt in der Kategorie
-            (Enter speichern). Verschieben: Häkchen + „hierher“ oder ⋮⋮ ziehen.
+            <strong className="text-kwd-text">📷 Plan fotografieren</strong> (oben orange): Liste aus
+            Foto erkennen · Jeder Ordner hat unten eine Eingabezeile · Verschieben: Häkchen + „hierher“
+            oder ⋮⋮ ziehen
           </p>
         </Tip>
       </div>

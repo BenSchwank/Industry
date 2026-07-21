@@ -4,6 +4,7 @@ import { analyzePlanPhotoWithAi, type PlanPhotoMachine } from '../../lib/aiPlanP
 import { suggestMachineBarcode } from '../../lib/barcode'
 import { preparePlanPhotoForAnalysis } from '../../lib/planPhotoImage'
 import { useBulkCreateMachines, type MachineInput } from '../../hooks/useMachines'
+import { useIsMobile } from '../../hooks/usePlatform'
 import { CategoryPickerButton } from './CategoryPickerButton'
 
 type Step = 'capture' | 'analyzing' | 'preview' | 'done'
@@ -35,8 +36,10 @@ export function PlanPhotoImportModal({
 }: PlanPhotoImportModalProps) {
   const queryClient = useQueryClient()
   const bulkCreate = useBulkCreateMachines()
+  const isMobile = useIsMobile()
   const cameraRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const autoCameraTriggered = useRef(false)
 
   const [step, setStep] = useState<Step>('capture')
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +56,13 @@ export function PlanPhotoImportModal({
       if (previewUrl) URL.revokeObjectURL(previewUrl)
     }
   }, [previewUrl])
+
+  useEffect(() => {
+    if (step !== 'capture' || !isMobile || autoCameraTriggered.current) return
+    autoCameraTriggered.current = true
+    const timer = window.setTimeout(() => cameraRef.current?.click(), 350)
+    return () => window.clearTimeout(timer)
+  }, [step, isMobile])
 
   async function handlePhoto(file: File) {
     setError(null)
