@@ -70,6 +70,9 @@ interface MachineAddRowProps {
   onRenameCategory?: (from: string, to: string) => void | Promise<void>
   onDeleteCategory?: (category: string) => void | Promise<void>
   onCategoryPicked?: (category: string) => void
+  /** Ordner-Zeile: Kategorie ist fest (z. B. am Ende jedes Ordners) */
+  fixedCategory?: string
+  fixedCategoryLabel?: string
 }
 
 export const EMPTY_DRAFT: MachineDraftValues = {
@@ -100,6 +103,8 @@ export function MachineAddRow({
   onRenameCategory,
   onDeleteCategory,
   onCategoryPicked,
+  fixedCategory,
+  fixedCategoryLabel,
 }: MachineAddRowProps) {
   const [local, setLocal] = useState<MachineDraftValues>(controlled ?? EMPTY_DRAFT)
   const values = controlled ?? local
@@ -239,18 +244,27 @@ export function MachineAddRow({
         )}
       </td>
       <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-        <CategoryPickerButton
-          value={values.category}
-          suggestions={categorySuggestions}
-          buttonLabel={values.category.trim() ? values.category : 'Kat.'}
-          title="Kategorie für diese neue Zeile"
-          onChange={(c) => {
-            patch('category', c)
-            if (c.trim()) onCategoryPicked?.(c.trim())
-          }}
-          onRename={onRenameCategory}
-          onDelete={onDeleteCategory}
-        />
+        {fixedCategory !== undefined ? (
+          <span
+            className="text-kwd-muted block truncate px-1 text-xs font-semibold"
+            title={fixedCategoryLabel ?? (fixedCategory || 'Ohne Kategorie')}
+          >
+            {fixedCategoryLabel ?? (fixedCategory.trim() || 'Ohne Kat.')}
+          </span>
+        ) : (
+          <CategoryPickerButton
+            value={values.category}
+            suggestions={categorySuggestions}
+            buttonLabel={values.category.trim() ? values.category : 'Kat.'}
+            title="Kategorie für diese neue Zeile"
+            onChange={(c) => {
+              patch('category', c)
+              if (c.trim()) onCategoryPicked?.(c.trim())
+            }}
+            onRename={onRenameCategory}
+            onDelete={onDeleteCategory}
+          />
+        )}
       </td>
       <td className="px-1 py-0.5">
         {cell(

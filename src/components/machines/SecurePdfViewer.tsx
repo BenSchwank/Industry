@@ -70,7 +70,7 @@ export function SecurePdfViewer({ storagePath, filename, className = '' }: Secur
         const data = bytes.slice(0)
         const doc = await pdfjs.getDocument({ data }).promise
         if (cancelled) {
-          await doc.destroy()
+          void doc.cleanup()
           return
         }
         docRef.current = doc
@@ -85,7 +85,7 @@ export function SecurePdfViewer({ storagePath, filename, className = '' }: Secur
 
     return () => {
       cancelled = true
-      void docRef.current?.destroy()
+      void docRef.current?.cleanup()
       docRef.current = null
     }
   }, [bytes])

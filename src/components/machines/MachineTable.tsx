@@ -43,9 +43,6 @@ import {
   type MachineDraftValues,
 } from './MachineAddRow'
 
-const INITIAL_BLANK_ROWS = 48
-const BLANK_PAD = 24
-
 const STATUS_LABEL: Record<MachineStatus, string> = {
   active: 'Aktiv',
   maintenance: 'In Wartung',
@@ -72,12 +69,15 @@ function dateCellClass(d: string | null, forMaintenance = false) {
   return ''
 }
 
-function makeBlankGrid(count: number): MachineDraftValues[] {
-  return Array.from({ length: count }, () => ({ ...EMPTY_DRAFT }))
-}
-
 function isBlankDraft(d: MachineDraftValues) {
   return !d.name.trim() && !d.location.trim() && !d.barcode.trim()
+}
+
+function defaultDraftForCategory(groupKey: string): MachineDraftValues {
+  return {
+    ...EMPTY_DRAFT,
+    category: groupKey === UNCATEGORIZED_LABEL ? '' : groupKey,
+  }
 }
 
 interface MachineTableProps {
@@ -436,29 +436,20 @@ export function MachineTable({
   onAddSaved,
 }: MachineTableProps) {
   const queryClient = useQueryClient()
-  const addRowRef = useRef<MachineAddRowHandle | null>(null)
+  const categoryAddRowRefs = useRef<Map<string, MachineAddRowHandle>>(new Map())
   const tableFocusRef = useRef<HTMLDivElement>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [bulkPending, setBulkPending] = useState<{
     count: number
     rows: ParsedMachinePaste[]
   } | null>(null)
-  const tableListMode = usePreferencesStore((s) => s.tableListMode)
-  const setTableListMode = usePreferencesStore((s) => s.setTableListMode)
   const machineOrder = usePreferencesStore((s) => s.machineOrder)
   const setMachineOrder = usePreferencesStore((s) => s.setMachineOrder)
-  const infinite = tableListMode === 'infinite'
 
-  /** Viele leere Canvas-Zeilen (nur Endlos-Modus) */
-  const [gridRows, setGridRows] = useState<MachineDraftValues[]>(() =>
-    makeBlankGrid(INITIAL_BLANK_ROWS),
-  )
-  /** Fortlaufend: nur Zeilen nach der letzten */
-  const [continuousRows, setContinuousRows] = useState<MachineDraftValues[]>([
-    { ...EMPTY_DRAFT },
-  ])
-  const [selectedCell, setSelectedCell] = useState<{
-    row: number
+  /** Eingabezeile pro Kategorie-Ordner */
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<string, MachineDraftValues>>({})
+  const [selectedCategoryCell, setSelectedCategoryCell] = useState<{
+    categoryKey: string
     field: DraftField
   } | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
@@ -479,6 +470,27 @@ export function MachineTable({
   const [extraCategories, setExtraCategories] = useState<string[]>([])
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const lastCheckedId = useRef<string | null>(null)
+
+  function getCategoryDraft(groupKey: string): MachineDraftValues {
+    return categoryDrafts[groupKey] ?? defaultDraftForCategory(groupKey)
+  }
+
+  function updateCategoryDraft(groupKey: string, values: MachineDraftValues) {
+    setCategoryDrafts((prev) => ({ ...prev, [groupKey]: values }))
+  }
+
+  function resetCategoryDraft(groupKey: string) {
+    setCategoryDrafts((prev) => {
+      const next = { ...prev }
+      delete next[groupKey]
+      return next
+    })
+  }
+
+  function resetAllCategoryDrafts() {
+    setCategoryDrafts({})
+    setSelectedCategoryCell(null)
+  }
 
   const orderedMachines = useMemo(() => {
     if (!useManualOrder || machineOrder.length === 0) return machines
@@ -507,8 +519,10 @@ export function MachineTable({
     }
   }
 
-  const activeDrafts = infinite ? gridRows : continuousRows
-  const setActiveDrafts = infinite ? setGridRows : setContinuousRows
+  const categoryDraftValues = useMemo(
+    () => Object.values(categoryDrafts),
+    [categoryDrafts],
+  )
 
   const { data: fieldOptions } = useMachineFieldOptions()
 
@@ -518,9 +532,9 @@ export function MachineTable({
         ...extraCategories,
         ...(fieldOptions?.categories ?? []),
         ...machines.map((m) => m.category ?? ''),
-        ...activeDrafts.map((d) => d.category),
+        ...categoryDraftValues.map((d) => d.category),
       ]),
-    [machines, activeDrafts, fieldOptions?.categories, extraCategories],
+    [machines, categoryDraftValues, fieldOptions?.categories, extraCategories],
   )
 
   const locationSuggestions = useMemo(
@@ -528,9 +542,9 @@ export function MachineTable({
       machineLocationSuggestions([
         ...(fieldOptions?.locations ?? []),
         ...machines.map((m) => m.location ?? ''),
-        ...activeDrafts.map((d) => d.location),
+        ...categoryDraftValues.map((d) => d.location),
       ]),
-    [machines, activeDrafts, fieldOptions?.locations],
+    [machines, categoryDraftValues, fieldOptions?.locations],
   )
 
   const categoryGroups = useMemo(
@@ -684,15 +698,19 @@ export function MachineTable({
     [orderedMachines, checkedIds],
   )
   const filledDrafts = useMemo(
-    () => activeDrafts.filter((d) => !isBlankDraft(d)),
-    [activeDrafts],
+    () =>
+      categoryGroups
+        .map((g) => ({
+          groupKey: g.key,
+          draft: getCategoryDraft(g.key),
+        }))
+        .filter(({ draft }) => !isBlankDraft(draft)),
+    [categoryGroups, categoryDrafts],
   )
 
   useEffect(() => {
     if (!showAddRow) {
-      setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
-      setContinuousRows([{ ...EMPTY_DRAFT }])
-      setSelectedCell(null)
+      resetAllCategoryDrafts()
       setDraftError(null)
     }
   }, [showAddRow])
@@ -713,33 +731,6 @@ export function MachineTable({
       return next.size === prev.size ? prev : next
     })
   }, [flatIds])
-
-  // Endlos: am Ende nachfüllen
-  useEffect(() => {
-    if (!infinite) return
-    const tail = gridRows.slice(-8)
-    if (tail.some((d) => !isBlankDraft(d))) {
-      setGridRows((prev) => [...prev, ...makeBlankGrid(BLANK_PAD)])
-    }
-  }, [gridRows, infinite])
-
-  // Fortlaufend: genau eine leere Zeile nach der letzten
-  useEffect(() => {
-    if (infinite) return
-    const last = continuousRows[continuousRows.length - 1]
-    if (!last || !isBlankDraft(last)) {
-      setContinuousRows((prev) => [...prev, { ...EMPTY_DRAFT }])
-      return
-    }
-    // Extra-Leerzeilen am Ende entfernen (nur eine behalten)
-    let cut = continuousRows.length
-    while (cut > 1 && isBlankDraft(continuousRows[cut - 1]) && isBlankDraft(continuousRows[cut - 2])) {
-      cut -= 1
-    }
-    if (cut !== continuousRows.length) {
-      setContinuousRows((prev) => prev.slice(0, cut))
-    }
-  }, [continuousRows, infinite])
 
   useEffect(() => {
     if (!moreOpen) return
@@ -921,63 +912,75 @@ export function MachineTable({
     }
   }
 
-  function handleFillDown(sourceRow: number, field: DraftField, rowCount: number) {
-    if (rowCount <= 0) return
-    setActiveDrafts((prev) => {
-      const next = [...prev]
-      while (next.length <= sourceRow + rowCount) next.push({ ...EMPTY_DRAFT })
-      const source = next[sourceRow] ?? EMPTY_DRAFT
-      const value = source[field]
-      for (let i = 1; i <= rowCount; i++) {
-        const cur = next[sourceRow + i] ?? { ...EMPTY_DRAFT }
-        const updated: MachineDraftValues = { ...cur, [field]: value }
-        if (field === 'barcode' && typeof value === 'string' && value.trim()) {
-          updated.barcode = suggestMachineBarcode(cur.name || source.name || 'MASCHINE')
-        }
-        next[sourceRow + i] = updated
-      }
-      return next
-    })
-    setSelectedCell({ row: sourceRow + rowCount, field })
-    flash(`${rowCount} Zelle${rowCount === 1 ? '' : 'n'} ausgefüllt`)
+  function handleFillDown(_categoryKey: string, _field: DraftField, _rowCount: number) {
+    // Pro Ordner nur eine Eingabezeile – kein Fill-Down über mehrere Zeilen
   }
 
-  function resetDrafts() {
-    setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
-    setContinuousRows([{ ...EMPTY_DRAFT }])
-    setSelectedCell(null)
+  async function saveCategoryDraft(groupKey: string) {
+    setDraftError(null)
+    const draft = getCategoryDraft(groupKey)
+    if (isBlankDraft(draft)) return
+
+    const withCategory: MachineDraftValues = {
+      ...draft,
+      category: groupKey === UNCATEGORIZED_LABEL ? draft.category.trim() : groupKey,
+    }
+
+    const err = validateDraft(withCategory)
+    if (err) {
+      setDraftError(err)
+      return
+    }
+
+    try {
+      const machine = await createMachine.mutateAsync(draftToInput(withCategory))
+      resetCategoryDraft(groupKey)
+      if (withCategory.category.trim()) await rememberCategory(withCategory.category.trim())
+      onAddSaved(machine.id)
+      flash(
+        groupKey === UNCATEGORIZED_LABEL
+          ? 'Maschine gespeichert'
+          : `Gespeichert in „${groupKey}"`,
+      )
+    } catch (e) {
+      setDraftError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen')
+    }
   }
 
   async function saveDrafts() {
     setDraftError(null)
-    const rows = filledDrafts
-    if (rows.length === 0) {
-      setDraftError('Mindestens Bezeichnung und Standort in einer Zeile eingeben')
+    if (filledDrafts.length === 0) {
+      setDraftError('Mindestens Bezeichnung und Standort in einer Ordner-Zeile eingeben')
       return
     }
-    for (const row of rows) {
-      const err = validateDraft(row)
+
+    const rows = filledDrafts.map(({ groupKey, draft }) => ({
+      groupKey,
+      input: draftToInput({
+        ...draft,
+        category: groupKey === UNCATEGORIZED_LABEL ? draft.category.trim() : groupKey,
+      }),
+    }))
+
+    for (const { draft, groupKey } of filledDrafts) {
+      const err = validateDraft({
+        ...draft,
+        category: groupKey === UNCATEGORIZED_LABEL ? draft.category.trim() : groupKey,
+      })
       if (err) {
         setDraftError(err)
         return
       }
     }
 
-    if (rows.length === 1) {
-      try {
-        const machine = await createMachine.mutateAsync(draftToInput(rows[0]))
-        resetDrafts()
-        onAddSaved(machine.id)
-        flash('Maschine gespeichert')
-      } catch (e) {
-        setDraftError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen')
-      }
+    if (filledDrafts.length === 1) {
+      await saveCategoryDraft(filledDrafts[0].groupKey)
       return
     }
 
-    const { results, errors } = await bulkCreate.mutateAsync(rows.map(draftToInput))
+    const { results, errors } = await bulkCreate.mutateAsync(rows.map((r) => r.input))
     if (results.length > 0) {
-      resetDrafts()
+      resetAllCategoryDrafts()
       onAddSaved(results[results.length - 1].id)
     }
     flash(
@@ -1005,31 +1008,34 @@ export function MachineTable({
       return true
     }
     if (mapped.length === 1) {
-      addRowRef.current?.fillFromPaste(parsed[0])
-      setActiveDrafts((prev) => {
-        const next = [...prev]
-        const idx = next.findIndex(isBlankDraft)
-        const i = idx >= 0 ? idx : 0
-        const mappedRow = mapPasteRowToMachine(parsed[0])
-        if (mappedRow) {
-          next[i] = {
-            ...EMPTY_DRAFT,
-            name: mappedRow.name,
-            category: mappedRow.category ?? '',
-            location: mappedRow.location ?? '',
-            barcode: mappedRow.barcode
-              ? normalizeBarcode(mappedRow.barcode)
-              : suggestMachineBarcode(mappedRow.name),
-            status: (mappedRow.status as MachineStatus) ?? 'active',
-            lastMaintenance: mappedRow.last_maintenance_at ?? '',
-            nextMaintenance: mappedRow.next_maintenance_at ?? '',
-            lastRepair: mappedRow.last_repair_at ?? '',
-            warrantyUntil: mappedRow.warranty_until ?? '',
-          }
-        }
-        return next
-      })
-      flash('1 Zeile übernommen – Enter speichert')
+      const targetKey =
+        selectedCategoryCell?.categoryKey ??
+        categoryGroups.find((g) => isBlankDraft(getCategoryDraft(g.key)))?.key ??
+        categoryGroups[0]?.key ??
+        UNCATEGORIZED_LABEL
+      const handle = categoryAddRowRefs.current.get(targetKey)
+      handle?.fillFromPaste(parsed[0])
+      const mappedRow = mapPasteRowToMachine(parsed[0])
+      if (mappedRow) {
+        updateCategoryDraft(targetKey, {
+          ...defaultDraftForCategory(targetKey),
+          name: mappedRow.name,
+          category:
+            targetKey === UNCATEGORIZED_LABEL
+              ? mappedRow.category ?? ''
+              : targetKey,
+          location: mappedRow.location ?? '',
+          barcode: mappedRow.barcode
+            ? normalizeBarcode(mappedRow.barcode)
+            : suggestMachineBarcode(mappedRow.name),
+          status: (mappedRow.status as MachineStatus) ?? 'active',
+          lastMaintenance: mappedRow.last_maintenance_at ?? '',
+          nextMaintenance: mappedRow.next_maintenance_at ?? '',
+          lastRepair: mappedRow.last_repair_at ?? '',
+          warrantyUntil: mappedRow.warranty_until ?? '',
+        })
+      }
+      flash(`1 Zeile in „${targetKey === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : targetKey}" – Enter speichert`)
       return true
     }
     void importBulk(mapped)
@@ -1136,33 +1142,6 @@ export function MachineTable({
             Löschen{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
           </button>
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
-          <button
-            type="button"
-            onClick={() => {
-              setTableListMode('continuous')
-              setContinuousRows([{ ...EMPTY_DRAFT }])
-              setSelectedCell(null)
-              setDraftError(null)
-            }}
-            className={`kwd-btn text-xs ${!infinite ? 'kwd-btn-primary' : ''}`}
-            title="Nur Zeile nach der letzten"
-          >
-            Fortlaufend
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setTableListMode('infinite')
-              setGridRows(makeBlankGrid(INITIAL_BLANK_ROWS))
-              setSelectedCell(null)
-              setDraftError(null)
-            }}
-            className={`kwd-btn text-xs ${infinite ? 'kwd-btn-primary' : ''}`}
-            title="Viele leere Zeilen"
-          >
-            Endlos
-          </button>
-          <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           <CategoryPickerButton
             value=""
             suggestions={categorySuggestions}
@@ -1197,7 +1176,7 @@ export function MachineTable({
                 })()
               } else if (next) {
                 void rememberCategory(next).then(() => {
-                  flash(`Ordner „${next}“ angelegt – Maschinen auf den Ordner ziehen`)
+                  flash(`Ordner „${next}“ angelegt – unten in der Kategorie anlegen`)
                 })
               }
             }}
@@ -1272,8 +1251,8 @@ export function MachineTable({
         </div>
         <Tip>
           <p className="text-kwd-muted text-xs">
-            In Ordner: Häkchen + „X hierher“, oder ⋮⋮ auf Ordnerkopf / Drop-Zone ziehen. Neue
-            Eingabezeilen stehen unten getrennt – dort Kategorie setzen.
+            Jeder Ordner hat unten eine Eingabezeile – Geräte landen direkt in der Kategorie
+            (Enter speichern). Verschieben: Häkchen + „hierher“ oder ⋮⋮ ziehen.
           </p>
         </Tip>
       </div>
@@ -1463,152 +1442,119 @@ export function MachineTable({
                       </div>
                     </td>
                   </tr>
-                  {!collapsed &&
-                    (group.machines.length === 0 ? (
-                      <tr
-                        className={
-                          dropActive
-                            ? 'bg-kwd-primary/20'
-                            : 'bg-kwd-paper/50'
-                        }
-                        onDragOver={(e) => {
-                          e.preventDefault()
-                          e.dataTransfer.dropEffect = 'move'
-                          setDragOverCategory(group.key)
-                        }}
-                        onDragLeave={(e) => {
-                          const related = e.relatedTarget as Node | null
-                          if (related && e.currentTarget.contains(related)) return
-                          setDragOverCategory((cur) => (cur === group.key ? null : cur))
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (dragId) void moveMachinesToCategory(group.key, dragId)
-                          else if (checkedList.length > 0) void moveMachinesToCategory(group.key)
-                          setDragId(null)
-                          setDragOverId(null)
-                          setDragOverCategory(null)
-                        }}
-                      >
-                        <td colSpan={12} className="px-4 py-3">
-                          <div
-                            className={`border-kwd-border flex flex-col items-center justify-center gap-2 border border-dashed px-4 py-5 ${
-                              dropActive
-                                ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
-                                : 'text-kwd-muted'
-                            }`}
-                          >
-                            <p className="text-center text-xs font-medium">
-                              {dropActive
-                                ? 'Loslassen → in diesen Ordner'
-                                : 'Leer – Geräte mit ⋮⋮ hierher ziehen'}
-                            </p>
-                            {checkedList.length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => void moveMachinesToCategory(group.key)}
-                                className="kwd-btn kwd-btn-primary text-xs"
-                              >
-                                {checkedList.length} Markierte hierher verschieben
-                              </button>
-                            ) : (
-                              <p className="text-center text-[11px]">
-                                Oder Häkchen setzen und oben „Kategorie“ wählen / hier „hierher“
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      group.machines.map((m) => (
-                      <MachineRow
-                        key={m.id}
-                        machine={m}
-                        selected={m.id === selectedId}
-                        checked={checkedIds.has(m.id)}
-                        searchQuery={searchQuery}
-                        dragOver={dragOverId === m.id && dragId !== m.id}
-                        completing={completingId === m.id}
-                        categorySuggestions={categorySuggestions}
-                        onSelect={onSelect}
-                        onToggleCheck={toggleCheck}
-                        onOpenFullscreen={onOpenFullscreen}
-                        onQuickComplete={(machine) => void handleQuickComplete(machine)}
-                        onCategoryChange={(id, c) => void setMachineCategory(id, c)}
-                        onRenameCategory={(from, to) => renameCategory(from, to)}
-                        onDeleteCategory={(cat) => deleteCategory(cat)}
-                        onDragStart={(id) => {
-                          setDragId(id)
-                          if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
-                        }}
-                        onDragOver={(id) => setDragOverId(id)}
-                        onDrop={(id) => {
-                          if (dragId) void moveMachinesOnto(id, dragId)
-                          setDragId(null)
-                          setDragOverId(null)
-                          setDragOverCategory(null)
-                        }}
-                        onDragEnd={() => {
-                          setDragId(null)
-                          setDragOverId(null)
-                          setDragOverCategory(null)
-                        }}
-                      />
-                      ))
-                    ))}
+                  {!collapsed && (
+                    <>
+                      {group.machines.map((m) => (
+                        <MachineRow
+                          key={m.id}
+                          machine={m}
+                          selected={m.id === selectedId}
+                          checked={checkedIds.has(m.id)}
+                          searchQuery={searchQuery}
+                          dragOver={dragOverId === m.id && dragId !== m.id}
+                          completing={completingId === m.id}
+                          categorySuggestions={categorySuggestions}
+                          onSelect={onSelect}
+                          onToggleCheck={toggleCheck}
+                          onOpenFullscreen={onOpenFullscreen}
+                          onQuickComplete={(machine) => void handleQuickComplete(machine)}
+                          onCategoryChange={(id, c) => void setMachineCategory(id, c)}
+                          onRenameCategory={(from, to) => renameCategory(from, to)}
+                          onDeleteCategory={(cat) => deleteCategory(cat)}
+                          onDragStart={(id) => {
+                            setDragId(id)
+                            if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
+                          }}
+                          onDragOver={(id) => setDragOverId(id)}
+                          onDrop={(id) => {
+                            if (dragId) void moveMachinesOnto(id, dragId)
+                            setDragId(null)
+                            setDragOverId(null)
+                            setDragOverCategory(null)
+                          }}
+                          onDragEnd={() => {
+                            setDragId(null)
+                            setDragOverId(null)
+                            setDragOverCategory(null)
+                          }}
+                        />
+                      ))}
+                      {group.machines.length === 0 && (
+                        <tr
+                          className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            setDragOverCategory(group.key)
+                          }}
+                          onDragLeave={(e) => {
+                            const related = e.relatedTarget as Node | null
+                            if (related && e.currentTarget.contains(related)) return
+                            setDragOverCategory((cur) => (cur === group.key ? null : cur))
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            if (dragId) void moveMachinesToCategory(group.key, dragId)
+                            else if (checkedList.length > 0) void moveMachinesToCategory(group.key)
+                            setDragId(null)
+                            setDragOverId(null)
+                            setDragOverCategory(null)
+                          }}
+                        >
+                          <td colSpan={12} className="text-kwd-muted px-4 py-1 text-[11px]">
+                            {dropActive
+                              ? 'Loslassen → in diesen Ordner'
+                              : 'Leer – Geräte ziehen oder unten direkt anlegen'}
+                          </td>
+                        </tr>
+                      )}
+                      {showAddRow && (
+                        <MachineAddRow
+                          key={`add-${group.key}`}
+                          values={getCategoryDraft(group.key)}
+                          blank
+                          fixedCategory={
+                            group.key === UNCATEGORIZED_LABEL ? '' : group.key
+                          }
+                          fixedCategoryLabel={group.label}
+                          categorySuggestions={categorySuggestions}
+                          onRenameCategory={(from, to) => renameCategory(from, to)}
+                          onDeleteCategory={(cat) => deleteCategory(cat)}
+                          onCategoryPicked={(c) => {
+                            void rememberCategory(c)
+                          }}
+                          selectedField={
+                            selectedCategoryCell?.categoryKey === group.key
+                              ? selectedCategoryCell.field
+                              : null
+                          }
+                          onSelectField={(field) =>
+                            setSelectedCategoryCell({ categoryKey: group.key, field })
+                          }
+                          onChange={(v) =>
+                            updateCategoryDraft(group.key, {
+                              ...v,
+                              category:
+                                group.key === UNCATEGORIZED_LABEL ? v.category : group.key,
+                            })
+                          }
+                          onFillDown={(field, n) => handleFillDown(group.key, field, n)}
+                          onSaveRequest={() => void saveCategoryDraft(group.key)}
+                          onCancel={() => resetCategoryDraft(group.key)}
+                          registerRef={(h) => {
+                            if (h) categoryAddRowRefs.current.set(group.key, h)
+                            else categoryAddRowRefs.current.delete(group.key)
+                          }}
+                          error={null}
+                          saving={createMachine.isPending || bulkCreate.isPending}
+                        />
+                      )}
+                    </>
+                  )}
                 </Fragment>
               )
             })}
-            {showAddRow && (
-              <tr className="bg-kwd-surface border-kwd-border border-y">
-                <td colSpan={12} className="text-kwd-muted px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase">
-                  Neue Maschinen anlegen · Kategorie in der Spalte „Kategorie“ setzen (sonst ohne
-                  Ordner)
-                </td>
-              </tr>
-            )}
-            {showAddRow &&
-              activeDrafts.map((draft, i) => (
-                <MachineAddRow
-                  key={`grid-${i}`}
-                  values={draft}
-                  blank={infinite}
-                  categorySuggestions={categorySuggestions}
-                  onRenameCategory={(from, to) => renameCategory(from, to)}
-                  onDeleteCategory={(cat) => deleteCategory(cat)}
-                  onCategoryPicked={(c) => {
-                    void rememberCategory(c)
-                  }}
-                  selectedField={selectedCell?.row === i ? selectedCell.field : null}
-                  onSelectField={(field) => setSelectedCell({ row: i, field })}
-                  onChange={(v) => {
-                    setActiveDrafts((prev) => {
-                      const next = [...prev]
-                      next[i] = v
-                      return next
-                    })
-                  }}
-                  onFillDown={(field, n) => handleFillDown(i, field, n)}
-                  onSaveRequest={() => void saveDrafts()}
-                  onCancel={() => {
-                    setActiveDrafts((prev) => {
-                      const next = [...prev]
-                      next[i] = { ...EMPTY_DRAFT }
-                      return next
-                    })
-                  }}
-                  registerRef={
-                    i === 0
-                      ? (h) => {
-                          addRowRef.current = h
-                        }
-                      : undefined
-                  }
-                  error={null}
-                  saving={createMachine.isPending || bulkCreate.isPending}
-                />
-              ))}
             {orderedMachines.length === 0 && !showAddRow && (
               <tr>
                 <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
