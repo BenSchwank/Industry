@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   copyToClipboard,
@@ -236,6 +236,20 @@ function SortableTh({
   )
 }
 
+function readDraggedMachineId(e: DragEvent, fallback: string | null): string | null {
+  const fromData = e.dataTransfer.getData('text/plain')?.trim()
+  return fromData || fallback
+}
+
+function isInteractiveDragTarget(target: EventTarget | null): boolean {
+  return Boolean(
+    target &&
+      (target as HTMLElement).closest?.(
+        'input, button, select, textarea, a, label, [data-no-drag]',
+      ),
+  )
+}
+
 function MachineRow({
   machine: m,
   selected,
@@ -272,7 +286,7 @@ function MachineRow({
   onDeleteCategory?: (category: string) => void | Promise<void>
   onDragStart: (id: string) => void
   onDragOver: (id: string) => void
-  onDrop: (id: string) => void
+  onDrop: (id: string, e: DragEvent) => void
   onDragEnd: () => void
 }) {
   const problemHit = searchQuery ? matchProblemSnippet(m, searchQuery) : null
@@ -283,6 +297,7 @@ function MachineRow({
 
   return (
     <tr
+      draggable
       className={`cursor-pointer transition-colors ${
         dragOver
           ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
@@ -295,6 +310,15 @@ function MachineRow({
         if (onOpenFullscreen) onOpenFullscreen(m.id)
         else onSelect(m.id)
       }}
+      onDragStart={(e) => {
+        if (isInteractiveDragTarget(e.target)) {
+          e.preventDefault()
+          return
+        }
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', m.id)
+        onDragStart(m.id)
+      }}
       onDragOver={(e) => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
@@ -302,20 +326,12 @@ function MachineRow({
       }}
       onDrop={(e) => {
         e.preventDefault()
-        onDrop(m.id)
+        e.stopPropagation()
+        onDrop(m.id, e)
       }}
+      onDragEnd={onDragEnd}
     >
-      <td
-        className="w-12 px-1"
-        onClick={(e) => e.stopPropagation()}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', m.id)
-          onDragStart(m.id)
-        }}
-        onDragEnd={onDragEnd}
-      >
+      <td className="w-12 px-1" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1">
           <input
             type="checkbox"
@@ -454,6 +470,7 @@ export function MachineTable({
   } | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
+  const dragIdRef = useRef<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set())
@@ -753,6 +770,44 @@ export function MachineTable({
   function flash(msg: string) {
     setToast(msg)
     window.setTimeout(() => setToast(null), 3000)
+  }
+
+  function beginDrag(id: string) {
+    dragIdRef.current = id
+    setDragId(id)
+    if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
+  }
+
+  function finishDrag() {
+    dragIdRef.current = null
+    setDragId(null)
+    setDragOverId(null)
+    setDragOverCategory(null)
+  }
+
+  function scheduleFinishDrag() {
+    window.setTimeout(() => finishDrag(), 0)
+  }
+
+  function handleCategoryDrop(e: DragEvent, categoryKey: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    const sourceId = readDraggedMachineId(e, dragIdRef.current)
+    if (sourceId) void moveMachinesToCategory(categoryKey, sourceId)
+    else if (checkedList.length > 0) void moveMachinesToCategory(categoryKey)
+    finishDrag()
+  }
+
+  function handleCategoryDragOver(e: DragEvent, categoryKey: string) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverCategory(categoryKey)
+  }
+
+  function handleCategoryDragLeave(e: DragEvent, categoryKey: string) {
+    const related = e.relatedTarget as Node | null
+    if (related && e.currentTarget.contains(related)) return
+    setDragOverCategory((cur) => (cur === categoryKey ? null : cur))
   }
 
   async function moveMachinesOnto(targetId: string, sourceId: string) {
@@ -1278,7 +1333,12 @@ export function MachineTable({
         tabIndex={0}
         className={`border-kwd-border border focus:outline focus:outline-2 focus:outline-[color-mix(in_srgb,var(--kwd-primary)_40%,transparent)] ${
           fillHeight ? 'min-h-[70vh]' : 'max-h-[calc(100vh-280px)] min-h-[320px] overflow-auto'
-        }`}
+        } ${dragId ? 'kwd-drag-active' : ''}`}
+        onDragOver={(e) => {
+          if (!dragIdRef.current) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+        }}
         onPaste={handlePaste}
       >
         <datalist id={MACHINE_CATEGORY_DATALIST_ID}>
@@ -1354,26 +1414,14 @@ export function MachineTable({
                         ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
                         : 'bg-kwd-surface/90'
                     }`}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'move'
-                      setDragOverCategory(group.key)
-                    }}
-                    onDragLeave={(e) => {
-                      const related = e.relatedTarget as Node | null
-                      if (related && e.currentTarget.contains(related)) return
-                      setDragOverCategory((cur) => (cur === group.key ? null : cur))
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (dragId) void moveMachinesToCategory(group.key, dragId)
-                      setDragId(null)
-                      setDragOverId(null)
-                      setDragOverCategory(null)
-                    }}
                   >
-                    <td colSpan={12} className="px-2 py-1.5">
+                    <td
+                      colSpan={12}
+                      className="px-2 py-1.5"
+                      onDragOver={(e) => handleCategoryDragOver(e, group.key)}
+                      onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
+                      onDrop={(e) => handleCategoryDrop(e, group.key)}
+                    >
                       <div className="flex w-full flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -1389,7 +1437,7 @@ export function MachineTable({
                             {group.machines.length}
                           </span>
                         </button>
-                        {checkedList.length > 0 && group.key !== UNCATEGORIZED_LABEL && (
+                        {checkedList.length > 0 && (
                           <button
                             type="button"
                             onClick={() => void moveMachinesToCategory(group.key)}
@@ -1461,46 +1509,22 @@ export function MachineTable({
                           onCategoryChange={(id, c) => void setMachineCategory(id, c)}
                           onRenameCategory={(from, to) => renameCategory(from, to)}
                           onDeleteCategory={(cat) => deleteCategory(cat)}
-                          onDragStart={(id) => {
-                            setDragId(id)
-                            if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
-                          }}
+                          onDragStart={(id) => beginDrag(id)}
                           onDragOver={(id) => setDragOverId(id)}
-                          onDrop={(id) => {
-                            if (dragId) void moveMachinesOnto(id, dragId)
-                            setDragId(null)
-                            setDragOverId(null)
-                            setDragOverCategory(null)
+                          onDrop={(id, e) => {
+                            const sourceId = readDraggedMachineId(e, dragIdRef.current)
+                            if (sourceId) void moveMachinesOnto(id, sourceId)
+                            finishDrag()
                           }}
-                          onDragEnd={() => {
-                            setDragId(null)
-                            setDragOverId(null)
-                            setDragOverCategory(null)
-                          }}
+                          onDragEnd={scheduleFinishDrag}
                         />
                       ))}
                       {group.machines.length === 0 && (
                         <tr
                           className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}
-                          onDragOver={(e) => {
-                            e.preventDefault()
-                            e.dataTransfer.dropEffect = 'move'
-                            setDragOverCategory(group.key)
-                          }}
-                          onDragLeave={(e) => {
-                            const related = e.relatedTarget as Node | null
-                            if (related && e.currentTarget.contains(related)) return
-                            setDragOverCategory((cur) => (cur === group.key ? null : cur))
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            if (dragId) void moveMachinesToCategory(group.key, dragId)
-                            else if (checkedList.length > 0) void moveMachinesToCategory(group.key)
-                            setDragId(null)
-                            setDragOverId(null)
-                            setDragOverCategory(null)
-                          }}
+                          onDragOver={(e) => handleCategoryDragOver(e, group.key)}
+                          onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
+                          onDrop={(e) => handleCategoryDrop(e, group.key)}
                         >
                           <td colSpan={12} className="text-kwd-muted px-4 py-1 text-[11px]">
                             {dropActive

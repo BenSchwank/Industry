@@ -169,23 +169,41 @@ export function useUpdateMachine() {
       id,
       ...input
     }: Partial<MachineInput> & { id: string }) => {
-      const { data, error } = await supabase
+      const payload = {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.location !== undefined ? { location: input.location.trim() } : {}),
+        ...(input.category !== undefined
+          ? { category: input.category?.trim() || null }
+          : {}),
+        ...(input.warranty_until !== undefined
+          ? { warranty_until: input.warranty_until || null }
+          : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.barcode !== undefined ? { barcode: normalizeBarcode(input.barcode) } : {}),
+      }
+
+      let { data, error } = await supabase
         .from('machines')
-        .update({
-          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-          ...(input.location !== undefined ? { location: input.location.trim() } : {}),
-          ...(input.category !== undefined
-            ? { category: input.category?.trim() || null }
-            : {}),
-          ...(input.warranty_until !== undefined
-            ? { warranty_until: input.warranty_until || null }
-            : {}),
-          ...(input.status !== undefined ? { status: input.status } : {}),
-          ...(input.barcode !== undefined ? { barcode: normalizeBarcode(input.barcode) } : {}),
-        })
+        .update(payload)
         .eq('id', id)
         .select()
         .single()
+
+      if (error && /category|schema cache/i.test(error.message) && input.category !== undefined) {
+        const { category: _c, ...withoutCategory } = payload
+        ;({ data, error } = await supabase
+          .from('machines')
+          .update(withoutCategory)
+          .eq('id', id)
+          .select()
+          .single())
+        if (!error) {
+          throw new Error(
+            'Kategorie-Spalte fehlt in Supabase. Bitte supabase/FIX_MACHINE_CATEGORY.sql ausführen.',
+          )
+        }
+      }
+
       if (error) throw new Error(formatSupabaseError(error))
       await rememberMachineFieldOptions({
         category: input.category,

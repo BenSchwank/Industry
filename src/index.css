@@ -297,4 +297,13 @@
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  /* Drag & Drop: Buttons/Inputs blockieren sonst Drop-Ziele in Ordner-Zeilen */
+  .kwd-drag-active button,
+  .kwd-drag-active input,
+  .kwd-drag-active select,
+  .kwd-drag-active textarea,
+  .kwd-drag-active a {
+    pointer-events: none;
+  }
 }
