@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { QS1ImportModal } from '../components/import/QS1ImportModal'
+import { PlanPhotoImportModal } from '../components/machines/PlanPhotoImportModal'
 import { MachineDetailPanel } from '../components/machines/MachineDetailPanel'
 import { MachineFilters } from '../components/machines/MachineFilters'
 import { MachineTable } from '../components/machines/MachineTable'
@@ -36,6 +37,7 @@ export default function MachinesPage() {
   const [sortDescending, setSortDescending] = useState(false)
   const [detailFullscreen, setDetailFullscreen] = useState(false)
   const [showQs1Import, setShowQs1Import] = useState(false)
+  const [showPlanPhotoImport, setShowPlanPhotoImport] = useState(false)
   const isDesktop = useIsDesktop()
   const showTips = usePreferencesStore((s) => s.showTips)
   const tableZoom = usePreferencesStore((s) => s.tableZoom)
@@ -121,6 +123,12 @@ export default function MachinesPage() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {showQs1Import && <QS1ImportModal onClose={() => setShowQs1Import(false)} />}
+      {showPlanPhotoImport && (
+        <PlanPhotoImportModal
+          categorySuggestions={categoryOptions}
+          onClose={() => setShowPlanPhotoImport(false)}
+        />
+      )}
 
       {/* Tabellen-Canvas – volle Viewport-Höhe, alle Maschinen scrollbar */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -193,6 +201,14 @@ export default function MachinesPage() {
                 onClick={() => setTableZoom(1)}
               >
                 100%
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPlanPhotoImport(true)}
+                className="kwd-btn"
+                title="Hallenplan fotografieren und Maschinen erkennen"
+              >
+                Plan-Foto
               </button>
               <button type="button" onClick={() => setShowQs1Import(true)} className="kwd-btn">
                 QS1
