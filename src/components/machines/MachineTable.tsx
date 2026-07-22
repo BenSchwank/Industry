@@ -13,6 +13,7 @@ import {
   UNCATEGORIZED_LABEL,
   groupMachinesByCategory,
   machineCategorySuggestions,
+  resolveCategoryKey,
 } from '../../lib/machineCategories'
 import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import {
@@ -203,6 +204,74 @@ function LocationCell({
   )
 }
 
+function CategoryCell({
+  machine: m,
+  suggestions,
+  onAssigned,
+}: {
+  machine: MachineWithStats
+  suggestions: string[]
+  onAssigned?: (category: string | null) => void
+}) {
+  const updateMachine = useUpdateMachine()
+  const current = m.category?.trim() || ''
+  const [value, setValue] = useState(current)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(m.category?.trim() || '')
+  }, [m.id, m.category])
+
+  async function commit() {
+    const typed = value.trim()
+    const canonical =
+      typed.toLowerCase() === UNCATEGORIZED_LABEL.toLowerCase()
+        ? ''
+        : resolveCategoryKey(typed, suggestions)
+    const next = canonical === UNCATEGORIZED_LABEL ? null : canonical || null
+    const prev = m.category?.trim() || null
+    if ((next ?? null) === prev) {
+      setValue(prev ?? '')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateMachine.mutateAsync({ id: m.id, category: next })
+      onAssigned?.(next)
+    } catch {
+      setValue(m.category?.trim() || '')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+      <input
+        list={MACHINE_CATEGORY_DATALIST_ID}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+          if (e.key === 'Escape') {
+            setValue(m.category?.trim() || '')
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+        placeholder={UNCATEGORIZED_LABEL}
+        disabled={saving}
+        className="bg-transparent text-kwd-muted h-7 w-full min-w-[6rem] border-0 px-1 text-xs focus:bg-kwd-paper focus:outline focus:outline-1 focus:outline-[var(--kwd-primary)]"
+        aria-label={`Kategorie für ${m.name}`}
+        title="Kategorie tippen oder wählen – Maschine wandert in den Ordner"
+      />
+    </td>
+  )
+}
+
 function SortableTh({
   label,
   column,
@@ -271,10 +340,12 @@ function MachineRow({
   searchQuery,
   dragOver,
   completing,
+  categorySuggestions,
   onSelect,
   onToggleCheck,
   onOpenFullscreen,
   onQuickComplete,
+  onCategoryAssigned,
   onDragStart,
   onDragOver,
   onDrop,
@@ -286,10 +357,12 @@ function MachineRow({
   searchQuery?: string
   dragOver: boolean
   completing?: boolean
+  categorySuggestions: string[]
   onSelect: (id: string) => void
   onToggleCheck: (id: string, shiftKey: boolean) => void
   onOpenFullscreen?: (id: string) => void
   onQuickComplete?: (machine: MachineWithStats) => void
+  onCategoryAssigned?: (category: string | null) => void
   onDragStart: (id: string) => void
   onDragOver: (id: string) => void
   onDrop: (id: string, e: DragEvent) => void
@@ -389,9 +462,11 @@ function MachineRow({
           )}
         </span>
       </td>
-      <td className="px-1 py-0.5 text-xs">
-        {m.category?.trim() || UNCATEGORIZED_LABEL}
-      </td>
+      <CategoryCell
+        machine={m}
+        suggestions={categorySuggestions}
+        onAssigned={onCategoryAssigned}
+      />
       <LocationCell machine={m} />
       <td>
         <span className={`inline-block px-2 py-0.5 text-xs font-semibold ${STATUS_CLS[m.status]}`}>
@@ -719,11 +794,14 @@ export function MachineTable({
       return
     }
 
-    const nextCategory = categoryKey === UNCATEGORIZED_LABEL ? null : categoryKey.trim()
+    const resolved = resolveCategoryKey(categoryKey, categorySuggestions)
+    const nextCategory = resolved === UNCATEGORIZED_LABEL ? null : resolved
     const toUpdate = uniqueIds.filter((id) => {
       const m = orderedMachines.find((x) => x.id === id)
       if (!m) return false
-      return (m.category?.trim() || null) !== nextCategory
+      const current = resolveCategoryKey(m.category, categorySuggestions)
+      const currentNorm = current === UNCATEGORIZED_LABEL ? null : current
+      return currentNorm !== nextCategory
     })
 
     if (toUpdate.length === 0) {
@@ -743,6 +821,12 @@ export function MachineTable({
         ),
       )
       if (nextCategory) await rememberCategory(nextCategory)
+      setCollapsedCategories((prev) => {
+        if (!nextCategory) return prev
+        const n = new Set(prev)
+        n.delete(nextCategory)
+        return n
+      })
       flash(
         toUpdate.length === 1
           ? `Kategorie → ${nextCategory ?? UNCATEGORIZED_LABEL}`
@@ -1597,10 +1681,21 @@ export function MachineTable({
                           searchQuery={searchQuery}
                           dragOver={dragOverId === m.id && dragId !== m.id}
                           completing={completingId === m.id}
+                          categorySuggestions={categorySuggestions}
                           onSelect={onSelect}
                           onToggleCheck={toggleCheck}
                           onOpenFullscreen={onOpenFullscreen}
                           onQuickComplete={(machine) => void handleQuickComplete(machine)}
+                          onCategoryAssigned={(cat) => {
+                            if (cat) {
+                              void rememberCategory(cat)
+                              setCollapsedCategories((prev) => {
+                                const n = new Set(prev)
+                                n.delete(cat)
+                                return n
+                              })
+                            }
+                          }}
                           onDragStart={(id) => beginDrag(id)}
                           onDragOver={(id) => setDragOverId(id)}
                           onDrop={(id, e) => {

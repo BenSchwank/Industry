@@ -4,6 +4,7 @@ import { normalizeBarcode } from '../lib/barcode'
 import { formatSupabaseError } from '../lib/formatError'
 import { applyMachineInitialDates } from '../lib/machineInitialDates'
 import { rememberMachineFieldOptions } from '../lib/machineFieldOptions'
+import type { MachineWithStats } from './useMachinesWithStats'
 import type { MachineStatus } from '../types/database'
 
 export interface MachineInput {
@@ -265,6 +266,23 @@ export function useUpdateMachine() {
         location: input.location,
       })
       return data
+    },
+    onMutate: async (input) => {
+      if (input.category === undefined) return undefined
+      await queryClient.cancelQueries({ queryKey: ['machines-with-stats'] })
+      const previous = queryClient.getQueryData<MachineWithStats[]>(['machines-with-stats'])
+      const nextCategory = input.category?.trim() || null
+      queryClient.setQueryData<MachineWithStats[]>(['machines-with-stats'], (old) =>
+        (old ?? []).map((m) =>
+          m.id === input.id ? { ...m, category: nextCategory } : m,
+        ),
+      )
+      return { previous }
+    },
+    onError: (_err, input, context) => {
+      if (input.category !== undefined && context?.previous) {
+        queryClient.setQueryData(['machines-with-stats'], context.previous)
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['machines'] })
