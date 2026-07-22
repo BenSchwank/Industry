@@ -1,22 +1,44 @@
 import type { MachineWithStats } from '../hooks/useMachinesWithStats'
 
-/** Keine festen Vorlagen – Kategorien entstehen nur durch eigene Eingaben */
+/** Kategorien aus dem Wartungsplan + eigene / bereits genutzte Werte */
 export const MACHINE_CATEGORY_DATALIST_ID = 'kwd-machine-category-suggestions'
 
 export const UNCATEGORIZED_LABEL = 'Ohne Kategorie'
+
+/**
+ * Ordner aus dem KWD-Wartungsplan (Foto/Aushang).
+ * Werden mit bestehenden Kategorien gemischt – gleicher Name = überschreiben/kanonisch.
+ * App-Seiten (Maschinen, Störungen, …) bleiben unverändert.
+ */
+export const DEFAULT_MACHINE_CATEGORIES = [
+  'Pfauter',
+  'Kompressoren',
+  'Hänel',
+  'DGS KSS',
+  'Farbanlagen',
+] as const
 
 export function formatMachineCategory(value: string | null | undefined): string {
   if (!value?.trim()) return UNCATEGORIZED_LABEL
   return value.trim()
 }
 
-/** Nur selbst angelegte / bereits genutzte Werte als Vorschlag */
+/** Nur selbst angelegte / bereits genutzte Werte als Vorschlag (+ Wartungsplan-Defaults) */
 export function machineCategorySuggestions(extra: Iterable<string> = []): string[] {
   const byLower = new Map<string, string>()
+
+  // Defaults zuerst → gleicher Name aus Extra überschreibt Schreibweise auf kanonisch
+  for (const v of DEFAULT_MACHINE_CATEGORIES) {
+    byLower.set(v.toLowerCase(), v)
+  }
   for (const v of extra) {
     const t = v.trim()
     if (!t || t.toLowerCase() === UNCATEGORIZED_LABEL.toLowerCase()) continue
     const lower = t.toLowerCase()
+    // Gleicher Name wie Default → Default-Schreibweise behalten
+    if (byLower.has(lower) && DEFAULT_MACHINE_CATEGORIES.some((d) => d.toLowerCase() === lower)) {
+      continue
+    }
     if (!byLower.has(lower)) byLower.set(lower, t)
   }
   return Array.from(byLower.values()).sort((a, b) => a.localeCompare(b, 'de'))

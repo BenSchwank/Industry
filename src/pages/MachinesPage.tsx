@@ -14,8 +14,9 @@ import {
   type MachineDateFilter,
   type MachineSortBy,
 } from '../hooks/useMachinesWithStats'
-import { machineCategorySuggestions } from '../lib/machineCategories'
-import { useMachineFieldOptions } from '../lib/machineFieldOptions'
+import { machineCategorySuggestions, DEFAULT_MACHINE_CATEGORIES } from '../lib/machineCategories'
+import { useMachineFieldOptions, rememberMachineFieldOption } from '../lib/machineFieldOptions'
+import { useQueryClient } from '@tanstack/react-query'
 import { machineLocationSuggestions } from '../lib/machineLocations'
 import { useIsDesktop } from '../hooks/usePlatform'
 import { useAppStore } from '../stores/appStore'
@@ -47,10 +48,12 @@ export default function MachinesPage() {
   const { data: machines, isLoading } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const { data: timeline, isLoading: timelineLoading } = useMachineTimeline(selectedId)
+  const queryClient = useQueryClient()
 
   const categoryOptions = useMemo(
     () =>
       machineCategorySuggestions([
+        ...DEFAULT_MACHINE_CATEGORIES,
         ...(fieldOptions?.categories ?? []),
         ...uniqueMachineCategories(machines ?? []),
       ]),
@@ -64,6 +67,23 @@ export default function MachinesPage() {
       ]),
     [machines, fieldOptions?.locations],
   )
+
+  // Wartungsplan-Kategorien merken – gleiche Namen werden kanonisch überschrieben, App-Seiten bleiben
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      for (const cat of DEFAULT_MACHINE_CATEGORIES) {
+        if (cancelled) return
+        await rememberMachineFieldOption('category', cat)
+      }
+      if (!cancelled) {
+        void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [queryClient])
 
   const filtered = useMemo(() => {
     const list = filterMachines(machines ?? [], {
