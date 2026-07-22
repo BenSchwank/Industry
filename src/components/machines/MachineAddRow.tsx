@@ -33,6 +33,10 @@ export type DraftField =
   | 'status'
   | 'lastMaintenance'
   | 'nextMaintenance'
+  | 'lastCuttingOil'
+  | 'nextCuttingOil'
+  | 'lastHydraulicOil'
+  | 'nextHydraulicOil'
   | 'lastRepair'
   | 'warrantyUntil'
 
@@ -46,6 +50,10 @@ export interface MachineDraftValues {
   status: MachineStatus
   lastMaintenance: string
   nextMaintenance: string
+  lastCuttingOil: string
+  nextCuttingOil: string
+  lastHydraulicOil: string
+  nextHydraulicOil: string
   lastRepair: string
   warrantyUntil: string
 }
@@ -87,6 +95,10 @@ export const EMPTY_DRAFT: MachineDraftValues = {
   status: 'active',
   lastMaintenance: '',
   nextMaintenance: '',
+  lastCuttingOil: '',
+  nextCuttingOil: '',
+  lastHydraulicOil: '',
+  nextHydraulicOil: '',
   lastRepair: '',
   warrantyUntil: '',
 }
@@ -166,6 +178,10 @@ export function MachineAddRow({
           : 'active',
       lastMaintenance: mapped.last_maintenance_at ?? '',
       nextMaintenance: mapped.next_maintenance_at ?? '',
+      lastCuttingOil: '',
+      nextCuttingOil: '',
+      lastHydraulicOil: '',
+      nextHydraulicOil: '',
       lastRepair: mapped.last_repair_at ?? '',
       warrantyUntil: mapped.warranty_until ?? '',
     }
@@ -334,6 +350,54 @@ export function MachineAddRow({
       </td>
       <td className="px-1 py-0.5">
         {cell(
+          'lastCuttingOil',
+          <input
+            type="date"
+            value={values.lastCuttingOil}
+            onChange={(e) => patch('lastCuttingOil', e.target.value)}
+            onFocus={() => onSelectField('lastCuttingOil')}
+            className={dateInputCls(values.lastCuttingOil)}
+          />,
+        )}
+      </td>
+      <td className="px-1 py-0.5">
+        {cell(
+          'nextCuttingOil',
+          <input
+            type="date"
+            value={values.nextCuttingOil}
+            onChange={(e) => patch('nextCuttingOil', e.target.value)}
+            onFocus={() => onSelectField('nextCuttingOil')}
+            className={dateInputCls(values.nextCuttingOil)}
+          />,
+        )}
+      </td>
+      <td className="px-1 py-0.5">
+        {cell(
+          'lastHydraulicOil',
+          <input
+            type="date"
+            value={values.lastHydraulicOil}
+            onChange={(e) => patch('lastHydraulicOil', e.target.value)}
+            onFocus={() => onSelectField('lastHydraulicOil')}
+            className={dateInputCls(values.lastHydraulicOil)}
+          />,
+        )}
+      </td>
+      <td className="px-1 py-0.5">
+        {cell(
+          'nextHydraulicOil',
+          <input
+            type="date"
+            value={values.nextHydraulicOil}
+            onChange={(e) => patch('nextHydraulicOil', e.target.value)}
+            onFocus={() => onSelectField('nextHydraulicOil')}
+            className={dateInputCls(values.nextHydraulicOil)}
+          />,
+        )}
+      </td>
+      <td className="px-1 py-0.5">
+        {cell(
           'lastRepair',
           <input
             type="date"
@@ -448,6 +512,10 @@ export function draftToInput(values: MachineDraftValues) {
     status: values.status,
     last_maintenance_at: values.lastMaintenance || null,
     next_maintenance_at: values.nextMaintenance || null,
+    last_cutting_oil_at: values.lastCuttingOil || null,
+    next_cutting_oil_at: values.nextCuttingOil || null,
+    last_hydraulic_oil_at: values.lastHydraulicOil || null,
+    next_hydraulic_oil_at: values.nextHydraulicOil || null,
     last_repair_at: values.lastRepair || null,
   }
 }

@@ -2,6 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { addDaysIso } from '../lib/maintenanceDue'
 import { parseLocation } from '../lib/machineLocationGroups'
 import { machineLocationSuggestions } from '../lib/machineLocations'
+import {
+  EMPTY_MACHINE_OIL_DATES,
+  oilDatesSelectFragment,
+  pickOilDates,
+  type MachineOilDates,
+} from '../lib/machineOilDates'
 import { supabase } from '../lib/supabase'
 import type { MachineStatus } from '../types/database'
 
@@ -21,6 +27,13 @@ export interface MachineWithStats {
   last_maintenance_at: string | null
   next_maintenance_at: string | null
   last_repair_at: string | null
+  last_cutting_oil_at: string | null
+  next_cutting_oil_at: string | null
+  last_hydraulic_oil_at: string | null
+  next_hydraulic_oil_at: string | null
+  last_maintenance_code: string | null
+  next_maintenance_code: string | null
+  last_hydraulic_code: string | null
   /** Offene Störungen */
   open_ticket_count: number
   /** Hochgeladene Dokumente */
@@ -108,14 +121,22 @@ export function useMachinesWithStats() {
   return useQuery({
     queryKey: ['machines-with-stats'],
     queryFn: async () => {
-      const machinesRes = await supabase
-        .from('machines')
-        .select(
-          'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at',
-        )
-        .order('name')
+      const baseCols =
+        'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at'
+      const withOil = `${baseCols}, ${oilDatesSelectFragment()}`
 
-      let machines: {
+      let machinesRes = await supabase.from('machines').select(withOil).order('name')
+      let oilColumnsAvailable = true
+
+      if (
+        machinesRes.error &&
+        /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(machinesRes.error.message)
+      ) {
+        oilColumnsAvailable = false
+        machinesRes = await supabase.from('machines').select(baseCols).order('name')
+      }
+
+      type MachineRow = {
         id: string
         barcode: string
         name: string
@@ -126,7 +147,9 @@ export function useMachinesWithStats() {
         status: MachineStatus
         external_source: string | null
         created_at: string
-      }[] = []
+      } & Partial<MachineOilDates>
+
+      let machines: MachineRow[] = []
 
       if (machinesRes.error) {
         const msg = machinesRes.error.message
@@ -164,6 +187,7 @@ export function useMachinesWithStats() {
               category: (m as { category?: string | null }).category ?? null,
             }))
           }
+          oilColumnsAvailable = false
         } else if (missingCategory) {
           const basic = await supabase
             .from('machines')
@@ -206,6 +230,7 @@ export function useMachinesWithStats() {
               category: null,
             }))
           }
+          oilColumnsAvailable = false
         } else {
           // Unbekannter Fehler → schrittweise ohne optionale Spalten, Kategorie nur droppen wenn nötig
           const fb = await supabase
@@ -235,14 +260,22 @@ export function useMachinesWithStats() {
           } else {
             throw machinesRes.error
           }
+          oilColumnsAvailable = false
         }
       } else {
         machines = (machinesRes.data ?? []).map((m) => ({
           ...m,
           label_name: (m as { label_name?: string | null }).label_name ?? null,
           category: (m as { category?: string | null }).category ?? null,
-        }))
+        })) as MachineRow[]
       }
+
+      const withOilDates = (m: MachineRow): MachineRow & MachineOilDates => ({
+        ...m,
+        ...(oilColumnsAvailable ? pickOilDates(m) : EMPTY_MACHINE_OIL_DATES),
+      })
+
+      machines = machines.map(withOilDates)
 
       if (machines.length === 0) return []
 

@@ -95,3 +95,19 @@ COMMENT ON COLUMN public.machines.label_name IS
 CREATE INDEX IF NOT EXISTS idx_machines_label_name
   ON public.machines (label_name)
   WHERE label_name IS NOT NULL;
+
+-- 8) Schneidöl / Hydrauliköl / Codes vom Wartungsplan-Aushang
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS last_cutting_oil_at DATE;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS next_cutting_oil_at DATE;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS last_hydraulic_oil_at DATE;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS next_hydraulic_oil_at DATE;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS last_maintenance_code TEXT;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS next_maintenance_code TEXT;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS last_hydraulic_code TEXT;

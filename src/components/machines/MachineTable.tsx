@@ -22,6 +22,7 @@ import {
 } from '../../lib/machineLocations'
 import { printMachineLabels } from '../../lib/printLabels'
 import { maintenanceDueClass, maintenanceDueTone } from '../../lib/maintenanceDue'
+import { formatDateWithCode } from '../../lib/machineOilDates'
 import {
   matchProblemSnippet,
   type MachineSortBy,
@@ -476,7 +477,7 @@ function MachineRow({
       <td>
         <DocsCell machine={m} />
       </td>
-      <td>{formatDate(m.last_maintenance_at)}</td>
+      <td>{formatDate(m.last_maintenance_at)}{m.last_maintenance_code?.trim() ? ` · ${m.last_maintenance_code.trim()}` : ''}</td>
       <td
         className={dateCellClass(m.next_maintenance_at, true)}
         title={
@@ -489,7 +490,9 @@ function MachineRow({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-1.5">
-          <span>{formatDate(m.next_maintenance_at)}</span>
+          <span>
+            {formatDateWithCode(m.next_maintenance_at, m.next_maintenance_code, formatDate)}
+          </span>
           {showQuick && (
             <button
               type="button"
@@ -502,6 +505,16 @@ function MachineRow({
             </button>
           )}
         </div>
+      </td>
+      <td>{formatDateWithCode(m.last_cutting_oil_at, null, formatDate)}</td>
+      <td className={dateCellClass(m.next_cutting_oil_at, true)}>
+        {formatDateWithCode(m.next_cutting_oil_at, null, formatDate)}
+      </td>
+      <td>
+        {formatDateWithCode(m.last_hydraulic_oil_at, m.last_hydraulic_code, formatDate)}
+      </td>
+      <td className={dateCellClass(m.next_hydraulic_oil_at, true)}>
+        {formatDateWithCode(m.next_hydraulic_oil_at, null, formatDate)}
       </td>
       <td>{formatDate(m.last_repair_at)}</td>
       <td className={dateCellClass(m.warranty_until)}>
@@ -1547,7 +1560,7 @@ export function MachineTable({
             <option key={loc} value={loc} />
           ))}
         </datalist>
-        <table className="kwd-category-drop-target w-full min-w-[1100px] text-sm">
+        <table className="kwd-category-drop-target w-full min-w-[1400px] text-sm">
           <thead className="bg-kwd-surface sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="w-10 px-2">
@@ -1593,6 +1606,10 @@ export function MachineTable({
                 sortDescending={sortDescending}
                 onSort={onSortByChange ? handleHeaderSort : undefined}
               />
+              <th className="min-w-[6rem]">letzter Schneidöl-Wechsel</th>
+              <th className="min-w-[6rem]">nächster Schneidöl-Wechsel</th>
+              <th className="min-w-[6rem]">letzter Hyd.-Ölwechsel</th>
+              <th className="min-w-[6rem]">nächster Hyd.-Ölwechsel</th>
               <th>Letzte Reparatur</th>
               <th>Garantie</th>
               <th className="min-w-[4.5rem]"> </th>
@@ -1617,7 +1634,7 @@ export function MachineTable({
                       : 'bg-kwd-surface/90'
                   }`}
                 >
-                  <td colSpan={12} className="px-2 py-1.5">
+                  <td colSpan={16} className="px-2 py-1.5">
                       <div className="flex w-full flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -1714,7 +1731,7 @@ export function MachineTable({
                       ))}
                       {group.machines.length === 0 && (
                         <tr className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}>
-                          <td colSpan={12} className="text-kwd-muted px-4 py-1 text-[11px]">
+                          <td colSpan={16} className="text-kwd-muted px-4 py-1 text-[11px]">
                             {dropActive
                               ? 'Loslassen → in diesen Ordner'
                               : 'Leer – Geräte ziehen oder unten direkt anlegen'}
@@ -1770,7 +1787,7 @@ export function MachineTable({
           {orderedMachines.length === 0 && !showAddRow && (
             <tbody>
               <tr>
-                <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
+                <td colSpan={16} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>

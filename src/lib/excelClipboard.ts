@@ -173,6 +173,10 @@ export function machinesToTsv(
     status: string
     last_maintenance_at: string | null
     next_maintenance_at: string | null
+    last_cutting_oil_at?: string | null
+    next_cutting_oil_at?: string | null
+    last_hydraulic_oil_at?: string | null
+    next_hydraulic_oil_at?: string | null
     last_repair_at: string | null
     warranty_until: string | null
     document_count?: number
@@ -189,6 +193,10 @@ export function machinesToTsv(
     'Plan/Analyse',
     'letzte Wartung',
     'nächste geplante Wartung',
+    'letzter Schneidöl-Wechsel',
+    'nächster Schneidöl-Wechsel',
+    'letzter Hyd.-Ölwechsel',
+    'nächster Hyd.-Ölwechsel',
     'Letzte Reparatur',
     'Garantie',
   ]
@@ -202,6 +210,10 @@ export function machinesToTsv(
     m.plan_label ?? '',
     m.last_maintenance_at ? formatDe(m.last_maintenance_at) : '',
     m.next_maintenance_at ? formatDe(m.next_maintenance_at) : '',
+    m.last_cutting_oil_at ? formatDe(m.last_cutting_oil_at) : '',
+    m.next_cutting_oil_at ? formatDe(m.next_cutting_oil_at) : '',
+    m.last_hydraulic_oil_at ? formatDe(m.last_hydraulic_oil_at) : '',
+    m.next_hydraulic_oil_at ? formatDe(m.next_hydraulic_oil_at) : '',
     m.last_repair_at ? formatDe(m.last_repair_at) : '',
     m.warranty_until ? formatDe(m.warranty_until) : '',
   ])

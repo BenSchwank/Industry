@@ -50,6 +50,13 @@ export interface Database {
           status: MachineStatus
           external_id: string | null
           external_source: string | null
+          last_cutting_oil_at: string | null
+          next_cutting_oil_at: string | null
+          last_hydraulic_oil_at: string | null
+          next_hydraulic_oil_at: string | null
+          last_maintenance_code: string | null
+          next_maintenance_code: string | null
+          last_hydraulic_code: string | null
           created_at: string
           updated_at: string
         }
@@ -64,6 +71,13 @@ export interface Database {
           status?: MachineStatus
           external_id?: string | null
           external_source?: string | null
+          last_cutting_oil_at?: string | null
+          next_cutting_oil_at?: string | null
+          last_hydraulic_oil_at?: string | null
+          next_hydraulic_oil_at?: string | null
+          last_maintenance_code?: string | null
+          next_maintenance_code?: string | null
+          last_hydraulic_code?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -78,6 +92,13 @@ export interface Database {
           status?: MachineStatus
           external_id?: string | null
           external_source?: string | null
+          last_cutting_oil_at?: string | null
+          next_cutting_oil_at?: string | null
+          last_hydraulic_oil_at?: string | null
+          next_hydraulic_oil_at?: string | null
+          last_maintenance_code?: string | null
+          next_maintenance_code?: string | null
+          last_hydraulic_code?: string | null
           created_at?: string
           updated_at?: string
         }

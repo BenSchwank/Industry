@@ -503,6 +503,17 @@ function MachineStammdatenForm({
   const [category, setCategory] = useState(machine.category ?? '')
   const [status, setStatus] = useState<MachineStatus>(machine.status)
   const [warrantyUntil, setWarrantyUntil] = useState(toDateInput(machine.warranty_until))
+  const [lastCuttingOil, setLastCuttingOil] = useState(toDateInput(machine.last_cutting_oil_at))
+  const [nextCuttingOil, setNextCuttingOil] = useState(toDateInput(machine.next_cutting_oil_at))
+  const [lastHydraulicOil, setLastHydraulicOil] = useState(
+    toDateInput(machine.last_hydraulic_oil_at),
+  )
+  const [nextHydraulicOil, setNextHydraulicOil] = useState(
+    toDateInput(machine.next_hydraulic_oil_at),
+  )
+  const [lastMaintCode, setLastMaintCode] = useState(machine.last_maintenance_code ?? '')
+  const [nextMaintCode, setNextMaintCode] = useState(machine.next_maintenance_code ?? '')
+  const [lastHydCode, setLastHydCode] = useState(machine.last_hydraulic_code ?? '')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState(false)
@@ -535,6 +546,13 @@ function MachineStammdatenForm({
     setCategory(machine.category ?? '')
     setStatus(machine.status)
     setWarrantyUntil(toDateInput(machine.warranty_until))
+    setLastCuttingOil(toDateInput(machine.last_cutting_oil_at))
+    setNextCuttingOil(toDateInput(machine.next_cutting_oil_at))
+    setLastHydraulicOil(toDateInput(machine.last_hydraulic_oil_at))
+    setNextHydraulicOil(toDateInput(machine.next_hydraulic_oil_at))
+    setLastMaintCode(machine.last_maintenance_code ?? '')
+    setNextMaintCode(machine.next_maintenance_code ?? '')
+    setLastHydCode(machine.last_hydraulic_code ?? '')
     setMessage(null)
     setError(null)
   }, [machine])
@@ -546,7 +564,14 @@ function MachineStammdatenForm({
     location.trim() !== (machine.location ?? '') ||
     (category.trim() || '') !== (machine.category ?? '') ||
     status !== machine.status ||
-    (warrantyUntil || '') !== toDateInput(machine.warranty_until)
+    (warrantyUntil || '') !== toDateInput(machine.warranty_until) ||
+    (lastCuttingOil || '') !== toDateInput(machine.last_cutting_oil_at) ||
+    (nextCuttingOil || '') !== toDateInput(machine.next_cutting_oil_at) ||
+    (lastHydraulicOil || '') !== toDateInput(machine.last_hydraulic_oil_at) ||
+    (nextHydraulicOil || '') !== toDateInput(machine.next_hydraulic_oil_at) ||
+    (lastMaintCode.trim() || '') !== (machine.last_maintenance_code ?? '') ||
+    (nextMaintCode.trim() || '') !== (machine.next_maintenance_code ?? '') ||
+    (lastHydCode.trim() || '') !== (machine.last_hydraulic_code ?? '')
 
   async function save() {
     setError(null)
@@ -569,6 +594,13 @@ function MachineStammdatenForm({
         category: category.trim() || null,
         status,
         warranty_until: warrantyUntil || null,
+        last_cutting_oil_at: lastCuttingOil || null,
+        next_cutting_oil_at: nextCuttingOil || null,
+        last_hydraulic_oil_at: lastHydraulicOil || null,
+        next_hydraulic_oil_at: nextHydraulicOil || null,
+        last_maintenance_code: lastMaintCode.trim() || null,
+        next_maintenance_code: nextMaintCode.trim() || null,
+        last_hydraulic_code: lastHydCode.trim() || null,
       })
       setMessage('Gespeichert.')
     } catch (err) {
@@ -768,6 +800,69 @@ function MachineStammdatenForm({
             />
           </label>
 
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">letzter Schneidöl-Wechsel</span>
+            <input
+              type="date"
+              value={lastCuttingOil}
+              onChange={(e) => setLastCuttingOil(e.target.value)}
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">nächster Schneidöl-Wechsel</span>
+            <input
+              type="date"
+              value={nextCuttingOil}
+              onChange={(e) => setNextCuttingOil(e.target.value)}
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">letzter Hyd.-Ölwechsel</span>
+            <input
+              type="date"
+              value={lastHydraulicOil}
+              onChange={(e) => setLastHydraulicOil(e.target.value)}
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">nächster Hyd.-Ölwechsel</span>
+            <input
+              type="date"
+              value={nextHydraulicOil}
+              onChange={(e) => setNextHydraulicOil(e.target.value)}
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">Wartung Code (E/I/IB)</span>
+            <input
+              value={lastMaintCode}
+              onChange={(e) => setLastMaintCode(e.target.value)}
+              placeholder="letzte"
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">nächste Wartung Code</span>
+            <input
+              value={nextMaintCode}
+              onChange={(e) => setNextMaintCode(e.target.value)}
+              placeholder="E / I"
+              className={fieldCls}
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">Hyd. Code (W/IB/K)</span>
+            <input
+              value={lastHydCode}
+              onChange={(e) => setLastHydCode(e.target.value)}
+              className={fieldCls}
+            />
+          </label>
+
           {error && (
             <p className="text-kwd-danger bg-kwd-danger/10 border-kwd-danger border px-3 py-2 text-sm font-semibold sm:col-span-2">
               {error}
@@ -798,6 +893,13 @@ function MachineStammdatenForm({
                   setCategory(machine.category ?? '')
                   setStatus(machine.status)
                   setWarrantyUntil(toDateInput(machine.warranty_until))
+                  setLastCuttingOil(toDateInput(machine.last_cutting_oil_at))
+                  setNextCuttingOil(toDateInput(machine.next_cutting_oil_at))
+                  setLastHydraulicOil(toDateInput(machine.last_hydraulic_oil_at))
+                  setNextHydraulicOil(toDateInput(machine.next_hydraulic_oil_at))
+                  setLastMaintCode(machine.last_maintenance_code ?? '')
+                  setNextMaintCode(machine.next_maintenance_code ?? '')
+                  setLastHydCode(machine.last_hydraulic_code ?? '')
                   setError(null)
                   setMessage(null)
                 }}

@@ -212,9 +212,16 @@ export function PlanPhotoImportModal({
       await queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
       await queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
 
+      const created = results.filter((r) => !r.updated).length
+      const updated = results.filter((r) => r.updated).length
       setImportResult(
-        `${results.length} Maschine${results.length === 1 ? '' : 'n'} angelegt` +
-          (errors.length ? ` · ${errors.length} Fehler` : ''),
+        [
+          created ? `${created} neu` : null,
+          updated ? `${updated} aktualisiert (Lebenszyklus behalten)` : null,
+          errors.length ? `${errors.length} Fehler` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || 'Keine Änderungen',
       )
       setStep('done')
     } catch (err) {

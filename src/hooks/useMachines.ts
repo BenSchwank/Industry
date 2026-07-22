@@ -4,6 +4,7 @@ import { normalizeBarcode } from '../lib/barcode'
 import { formatSupabaseError } from '../lib/formatError'
 import { applyMachineInitialDates } from '../lib/machineInitialDates'
 import { rememberMachineFieldOptions } from '../lib/machineFieldOptions'
+import { EMPTY_MACHINE_OIL_DATES, type MachineOilDates } from '../lib/machineOilDates'
 import type { MachineWithStats } from './useMachinesWithStats'
 import type { MachineStatus } from '../types/database'
 
@@ -19,6 +20,13 @@ export interface MachineInput {
   last_maintenance_at?: string | null
   next_maintenance_at?: string | null
   last_repair_at?: string | null
+  last_cutting_oil_at?: string | null
+  next_cutting_oil_at?: string | null
+  last_hydraulic_oil_at?: string | null
+  next_hydraulic_oil_at?: string | null
+  last_maintenance_code?: string | null
+  next_maintenance_code?: string | null
+  last_hydraulic_code?: string | null
 }
 
 export function useMachines() {
@@ -119,61 +127,13 @@ export function useBulkCreateMachines() {
 
   return useMutation({
     mutationFn: async (inputs: MachineInput[]) => {
-      const results: { id: string; name: string }[] = []
+      const results: { id: string; name: string; updated?: boolean }[] = []
       const errors: string[] = []
 
       for (const input of inputs) {
         try {
-          const barcode = normalizeBarcode(input.barcode)
-          const dataName = input.name.trim()
-          const labelRaw = input.label_name?.trim() || null
-          const labelName =
-            labelRaw && labelRaw.toLowerCase() !== dataName.toLowerCase() ? labelRaw : null
-          const payload = {
-            barcode,
-            name: dataName,
-            label_name: labelName,
-            location: input.location.trim(),
-            category: input.category?.trim() || null,
-            warranty_until: input.warranty_until || null,
-            status: input.status ?? 'active',
-          }
-          let { data, error } = await supabase
-            .from('machines')
-            .insert(payload)
-            .select('id, name')
-            .single()
-
-          if (error && /label_name|schema cache/i.test(error.message)) {
-            const { label_name: _l, ...withoutLabel } = payload
-            ;({ data, error } = await supabase
-              .from('machines')
-              .insert(withoutLabel)
-              .select('id, name')
-              .single())
-          }
-
-          if (error && /category|schema cache/i.test(error.message)) {
-            const { category: _c, label_name: _l, ...withoutCategory } = payload
-            ;({ data, error } = await supabase
-              .from('machines')
-              .insert(withoutCategory)
-              .select('id, name')
-              .single())
-          }
-
-          if (error) throw new Error(formatSupabaseError(error))
-          if (!data) throw new Error('Maschine konnte nicht angelegt werden')
-          try {
-            await applyMachineInitialDates(data.id, input)
-          } catch {
-            /* Maschine wurde angelegt – Termine optional */
-          }
-          await rememberMachineFieldOptions({
-            category: payload.category,
-            location: payload.location,
-          })
-          results.push(data)
+          const outcome = await upsertMachineByName(input)
+          results.push(outcome)
         } catch (err) {
           errors.push(`${input.name}: ${err instanceof Error ? err.message : 'Fehler'}`)
         }
@@ -189,6 +149,180 @@ export function useBulkCreateMachines() {
       queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     },
   })
+}
+
+function oilPayloadFromInput(input: MachineInput): Partial<MachineOilDates> {
+  const out: Partial<MachineOilDates> = {}
+  for (const key of Object.keys(EMPTY_MACHINE_OIL_DATES) as (keyof MachineOilDates)[]) {
+    if (input[key] !== undefined) {
+      out[key] = input[key]?.toString().trim() || null
+    }
+  }
+  return out
+}
+
+async function insertMachinePayload(
+  payload: Record<string, unknown>,
+): Promise<{ id: string; name: string }> {
+  let { data, error } = await supabase.from('machines').insert(payload).select('id, name').single()
+
+  if (error && /label_name|schema cache/i.test(error.message) && 'label_name' in payload) {
+    const { label_name: _l, ...rest } = payload
+    ;({ data, error } = await supabase.from('machines').insert(rest).select('id, name').single())
+  }
+
+  if (error && /category|schema cache/i.test(error.message) && 'category' in payload) {
+    const { category: _c, label_name: _l, ...rest } = payload
+    ;({ data, error } = await supabase.from('machines').insert(rest).select('id, name').single())
+  }
+
+  if (
+    error &&
+    /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(error.message)
+  ) {
+    const stripped = { ...payload }
+    for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
+    ;({ data, error } = await supabase
+      .from('machines')
+      .insert(stripped)
+      .select('id, name')
+      .single())
+  }
+
+  if (error) throw new Error(formatSupabaseError(error))
+  if (!data) throw new Error('Maschine konnte nicht angelegt werden')
+  return data
+}
+
+async function updateMachinePayload(
+  id: string,
+  payload: Record<string, unknown>,
+): Promise<{ id: string; name: string }> {
+  let { data, error } = await supabase
+    .from('machines')
+    .update(payload)
+    .eq('id', id)
+    .select('id, name')
+    .single()
+
+  if (error && /label_name|schema cache/i.test(error.message) && 'label_name' in payload) {
+    const { label_name: _l, ...rest } = payload
+    ;({ data, error } = await supabase
+      .from('machines')
+      .update(rest)
+      .eq('id', id)
+      .select('id, name')
+      .single())
+  }
+
+  if (error && /category|schema cache/i.test(error.message) && 'category' in payload) {
+    const { category: _c, label_name: _l, ...rest } = payload
+    ;({ data, error } = await supabase
+      .from('machines')
+      .update(rest)
+      .eq('id', id)
+      .select('id, name')
+      .single())
+  }
+
+  if (
+    error &&
+    /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(error.message)
+  ) {
+    const stripped = { ...payload }
+    for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
+    ;({ data, error } = await supabase
+      .from('machines')
+      .update(stripped)
+      .eq('id', id)
+      .select('id, name')
+      .single())
+  }
+
+  if (error) throw new Error(formatSupabaseError(error))
+  if (!data) throw new Error('Maschine konnte nicht aktualisiert werden')
+  return data
+}
+
+/**
+ * Gleicher Name → bestehende Maschine aktualisieren (Lebenszyklus/Tickets/Docs bleiben).
+ * Neuer Name → anlegen.
+ */
+async function upsertMachineByName(
+  input: MachineInput,
+): Promise<{ id: string; name: string; updated: boolean }> {
+  const barcode = normalizeBarcode(input.barcode)
+  const dataName = input.name.trim()
+  if (!dataName) throw new Error('Name fehlt')
+
+  const labelRaw = input.label_name?.trim() || null
+  const labelName =
+    labelRaw && labelRaw.toLowerCase() !== dataName.toLowerCase() ? labelRaw : null
+  const oil = oilPayloadFromInput(input)
+
+  const { data: matches, error: findError } = await supabase
+    .from('machines')
+    .select('id, name, barcode')
+    .ilike('name', dataName.replace(/[%_]/g, '\\$&'))
+
+  if (findError) throw new Error(formatSupabaseError(findError))
+
+  const exact = (matches ?? []).filter((m) => m.name.trim().toLowerCase() === dataName.toLowerCase())
+  const existing = exact[0]
+
+  if (existing) {
+    const payload: Record<string, unknown> = {
+      location: input.location.trim() || undefined,
+      category: input.category?.trim() || null,
+      warranty_until: input.warranty_until || null,
+      status: input.status ?? undefined,
+      label_name: labelName,
+      ...oil,
+    }
+    // Leere Felder nicht mit undefined überschreiben – nur gesetzte Werte
+    if (!input.location.trim()) delete payload.location
+    if (input.category === undefined) delete payload.category
+    if (input.warranty_until === undefined) delete payload.warranty_until
+    if (input.status === undefined) delete payload.status
+    if (input.label_name === undefined) delete payload.label_name
+
+    // Barcode nur setzen, wenn bisher leer / Platzhalter
+    const oldCode = (existing.barcode ?? '').trim()
+    if ((!oldCode || /^AUTO/i.test(oldCode)) && barcode) {
+      payload.barcode = barcode
+    }
+
+    const data = await updateMachinePayload(existing.id, payload)
+    await rememberMachineFieldOptions({
+      category: input.category,
+      location: input.location,
+    })
+    // Kein applyMachineInitialDates → Lebenszyklus bleibt unberührt
+    return { id: data.id, name: data.name, updated: true }
+  }
+
+  const payload: Record<string, unknown> = {
+    barcode,
+    name: dataName,
+    label_name: labelName,
+    location: input.location.trim(),
+    category: input.category?.trim() || null,
+    warranty_until: input.warranty_until || null,
+    status: input.status ?? 'active',
+    ...oil,
+  }
+
+  const data = await insertMachinePayload(payload)
+  try {
+    await applyMachineInitialDates(data.id, input)
+  } catch {
+    /* Termine optional */
+  }
+  await rememberMachineFieldOptions({
+    category: payload.category as string | null,
+    location: payload.location as string,
+  })
+  return { id: data.id, name: data.name, updated: false }
 }
 
 function isMissingColumnError(message: string, column: string): boolean {
@@ -301,6 +435,27 @@ export function useUpdateMachine() {
           : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.barcode !== undefined ? { barcode: normalizeBarcode(input.barcode) } : {}),
+        ...(input.last_cutting_oil_at !== undefined
+          ? { last_cutting_oil_at: input.last_cutting_oil_at || null }
+          : {}),
+        ...(input.next_cutting_oil_at !== undefined
+          ? { next_cutting_oil_at: input.next_cutting_oil_at || null }
+          : {}),
+        ...(input.last_hydraulic_oil_at !== undefined
+          ? { last_hydraulic_oil_at: input.last_hydraulic_oil_at || null }
+          : {}),
+        ...(input.next_hydraulic_oil_at !== undefined
+          ? { next_hydraulic_oil_at: input.next_hydraulic_oil_at || null }
+          : {}),
+        ...(input.last_maintenance_code !== undefined
+          ? { last_maintenance_code: input.last_maintenance_code?.trim() || null }
+          : {}),
+        ...(input.next_maintenance_code !== undefined
+          ? { next_maintenance_code: input.next_maintenance_code?.trim() || null }
+          : {}),
+        ...(input.last_hydraulic_code !== undefined
+          ? { last_hydraulic_code: input.last_hydraulic_code?.trim() || null }
+          : {}),
       }
 
       let { data, error } = await supabase
@@ -351,6 +506,27 @@ export function useUpdateMachine() {
           .single())
         if (!error) {
           throw new Error(CATEGORY_COLUMN_HINT)
+        }
+      }
+
+      if (error && /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(error.message)) {
+        const stripped = { ...payload } as Record<string, unknown>
+        for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
+        if (Object.keys(stripped).length === 0) {
+          throw new Error(
+            'Öl-Spalten fehlen in Supabase. Bitte supabase/FIX_MACHINE_OIL_DATES.sql ausführen.',
+          )
+        }
+        ;({ data, error } = await supabase
+          .from('machines')
+          .update(stripped)
+          .eq('id', id)
+          .select()
+          .single())
+        if (!error) {
+          throw new Error(
+            'Öl-Spalten fehlen in Supabase. Bitte supabase/FIX_MACHINE_OIL_DATES.sql ausführen.',
+          )
         }
       }
 
