@@ -1,31 +1,57 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TicketForm } from '../components/tickets/TicketForm'
 import { TicketEditForm, type TicketEditTarget } from '../components/tickets/TicketEditForm'
+import { TicketCard } from '../components/tickets/TicketCard'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
 import {
   TICKET_PRIORITY_LABEL,
-  TICKET_STATUS_LABEL,
+  TICKET_PRIORITIES,
   useDeleteTicket,
   useResolveTicket,
 } from '../hooks/useTicketActions'
+import {
+  filterTickets,
+  groupTicketsByPriority,
+  isoDateDaysAgo,
+  PRIORITY_SECTION_CLS,
+  todayIsoDate,
+  type TicketListItem,
+  type TicketPriorityFilter,
+  type TicketStatusFilter,
+} from '../lib/ticketFilters'
 import { supabase } from '../lib/supabase'
 import { useOfflineTicketStore } from '../stores/offlineTicketStore'
+import type { TicketPriority } from '../types/database'
 
-const PRIORITY_COLORS: Record<string, string> = {
-  low: 'text-kwd-muted',
-  medium: 'text-kwd-warning',
-  high: 'text-kwd-primary',
-  critical: 'text-kwd-danger',
-}
+const STATUS_FILTERS: { value: TicketStatusFilter; label: string }[] = [
+  { value: 'open', label: 'Offen' },
+  { value: 'in_progress', label: 'In Arbeit' },
+  { value: 'resolved', label: 'Erledigt' },
+  { value: 'closed', label: 'Geschlossen' },
+  { value: 'all', label: 'Alle Status' },
+]
 
-type FilterMode = 'open' | 'all'
+const DATE_PRESETS = [
+  { id: 'today', label: 'Heute', from: () => todayIsoDate(), to: () => todayIsoDate() },
+  { id: '7d', label: '7 Tage', from: () => isoDateDaysAgo(7), to: () => todayIsoDate() },
+  { id: '30d', label: '30 Tage', from: () => isoDateDaysAgo(30), to: () => todayIsoDate() },
+  { id: 'all', label: 'Alle Daten', from: () => '', to: () => '' },
+] as const
+
+const filterInputCls =
+  'border-kwd-border bg-kwd-paper min-h-[40px] w-full border px-3 text-sm'
 
 export default function TicketsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [filter, setFilter] = useState<FilterMode>('open')
+  const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>('open')
+  const [priorityFilter, setPriorityFilter] = useState<TicketPriorityFilter>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [datePreset, setDatePreset] = useState<string>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const pending = useOfflineTicketStore((s) => s.pending)
@@ -56,11 +82,11 @@ export default function TicketsPage() {
             ...t,
             created_by: null as string | null,
             reference_label: null as string | null,
-          }))
+          })) as TicketListItem[]
         }
         throw error
       }
-      return data
+      return data as TicketListItem[]
     },
   })
 
@@ -73,10 +99,46 @@ export default function TicketsPage() {
     },
   })
 
-  const visible =
-    tickets?.filter((t) =>
-      filter === 'open' ? t.status === 'open' || t.status === 'in_progress' : true,
-    ) ?? []
+  const filtered = useMemo(
+    () =>
+      filterTickets(tickets ?? [], {
+        searchQuery,
+        statusFilter,
+        priorityFilter,
+        dateFrom,
+        dateTo,
+      }),
+    [tickets, searchQuery, statusFilter, priorityFilter, dateFrom, dateTo],
+  )
+
+  const grouped = useMemo(
+    () => (priorityFilter === 'all' ? groupTicketsByPriority(filtered) : null),
+    [filtered, priorityFilter],
+  )
+
+  const hasActiveFilters =
+    searchQuery.trim() ||
+    statusFilter !== 'open' ||
+    priorityFilter !== 'all' ||
+    dateFrom ||
+    dateTo
+
+  function applyDatePreset(id: string) {
+    setDatePreset(id)
+    const preset = DATE_PRESETS.find((p) => p.id === id)
+    if (!preset) return
+    setDateFrom(preset.from())
+    setDateTo(preset.to())
+  }
+
+  function resetFilters() {
+    setSearchQuery('')
+    setStatusFilter('open')
+    setPriorityFilter('all')
+    setDateFrom('')
+    setDateTo('')
+    setDatePreset('all')
+  }
 
   async function handleResolve(id: string) {
     setBusyId(id)
@@ -109,14 +171,33 @@ export default function TicketsPage() {
     }
   }
 
+  function renderTicketList(list: TicketListItem[]) {
+    return list.map((ticket) => (
+      <TicketCard
+        key={ticket.id}
+        ticket={ticket}
+        busy={busyId === ticket.id}
+        authorName={ticket.created_by ? nameMap?.get(ticket.created_by) : null}
+        onEdit={setEditTicket}
+        onResolve={(id) => void handleResolve(id)}
+        onDelete={(id) => void handleDelete(id)}
+      />
+    ))
+  }
+
   if (isLoading) {
     return <p className="text-kwd-muted p-4">Lade Störungen…</p>
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 p-4 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold">Störungen</h2>
+        <div>
+          <h2 className="text-xl font-bold">Störungen</h2>
+          <p className="text-kwd-muted text-sm">
+            {filtered.length} von {tickets?.length ?? 0} angezeigt
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => setShowForm(true)}
@@ -126,26 +207,116 @@ export default function TicketsPage() {
         </button>
       </div>
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => setFilter('open')}
-          className={`min-h-[40px] rounded-lg px-3 text-sm font-semibold ${
-            filter === 'open' ? 'bg-kwd-primary text-white' : 'bg-kwd-surface text-kwd-muted'
-          }`}
-        >
-          Offen
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('all')}
-          className={`min-h-[40px] rounded-lg px-3 text-sm font-semibold ${
-            filter === 'all' ? 'bg-kwd-primary text-white' : 'bg-kwd-surface text-kwd-muted'
-          }`}
-        >
-          Alle
-        </button>
-      </div>
+      <section className="bg-kwd-surface border-kwd-border flex flex-col gap-3 rounded-xl border p-3">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Suchen: Maschine, Bezug, Text, Status…"
+          className={filterInputCls}
+          aria-label="Störungen durchsuchen"
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <span className="text-kwd-muted w-full text-[11px] font-semibold tracking-wide uppercase">
+            Status
+          </span>
+          {STATUS_FILTERS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setStatusFilter(value)}
+              className={`min-h-[36px] rounded-lg px-3 text-xs font-semibold ${
+                statusFilter === value
+                  ? 'bg-kwd-primary text-white'
+                  : 'bg-kwd-bg text-kwd-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="text-kwd-muted w-full text-[11px] font-semibold tracking-wide uppercase">
+            Priorität
+          </span>
+          <button
+            type="button"
+            onClick={() => setPriorityFilter('all')}
+            className={`min-h-[36px] rounded-lg px-3 text-xs font-semibold ${
+              priorityFilter === 'all' ? 'bg-kwd-primary text-white' : 'bg-kwd-bg text-kwd-muted'
+            }`}
+          >
+            Alle
+          </button>
+          {TICKET_PRIORITIES.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setPriorityFilter(value)}
+              className={`min-h-[36px] rounded-lg px-3 text-xs font-semibold ${
+                priorityFilter === value
+                  ? 'bg-kwd-primary text-white'
+                  : 'bg-kwd-bg text-kwd-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="text-kwd-muted w-full text-[11px] font-semibold tracking-wide uppercase">
+            Zeitraum
+          </span>
+          {DATE_PRESETS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => applyDatePreset(id)}
+              className={`min-h-[36px] rounded-lg px-3 text-xs font-semibold ${
+                datePreset === id ? 'bg-kwd-primary text-white' : 'bg-kwd-bg text-kwd-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-kwd-muted text-xs font-medium">Von</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value)
+                setDatePreset('custom')
+              }}
+              className={`${filterInputCls} mt-1`}
+            />
+          </label>
+          <label className="block">
+            <span className="text-kwd-muted text-xs font-medium">Bis</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value)
+                setDatePreset('custom')
+              }}
+              className={`${filterInputCls} mt-1`}
+            />
+          </label>
+        </div>
+
+        {hasActiveFilters && (
+          <button type="button" onClick={resetFilters} className="kwd-btn self-start text-xs">
+            Filter zurücksetzen
+          </button>
+        )}
+      </section>
 
       {toast && (
         <p className="bg-kwd-success/20 text-kwd-success rounded-lg px-4 py-2 text-sm font-medium">
@@ -174,98 +345,35 @@ export default function TicketsPage() {
               </li>
             ))}
           </ul>
-          <p className="text-kwd-muted mt-2 text-xs">
-            Werden automatisch synchronisiert, sobald du online bist.
-          </p>
         </section>
       )}
 
-      {visible.length === 0 && pending.length === 0 && (
+      {filtered.length === 0 && pending.length === 0 && (
         <div className="bg-kwd-surface rounded-xl p-6 text-center">
           <p className="text-kwd-muted">
-            {filter === 'open' ? 'Keine offenen Störungen.' : 'Keine Störungen.'}
+            {hasActiveFilters ? 'Keine Treffer für die Filter.' : 'Keine Störungen.'}
           </p>
         </div>
       )}
 
-      {visible.map((ticket) => {
-        const machine = ticket.machines as { name: string; barcode: string } | null
-        const referenceLabel = (ticket as { reference_label?: string | null }).reference_label
-        const isFreeReference = !machine && Boolean(referenceLabel?.trim())
-        const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
-        const busy = busyId === ticket.id
-        return (
-          <article key={ticket.id} className="bg-kwd-surface rounded-xl p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-kwd-primary text-xs font-bold">
-                  {isFreeReference ? 'Freier Bezug' : (machine?.barcode ?? '–')}
-                </p>
-                <p className="font-semibold">
-                  {machine?.name ?? referenceLabel?.trim() ?? 'Unbekannte Maschine'}
-                </p>
-              </div>
-              <span className={`text-xs font-bold uppercase ${PRIORITY_COLORS[ticket.priority]}`}>
-                {TICKET_PRIORITY_LABEL[ticket.priority] ?? ticket.priority}
-              </span>
-            </div>
-            <p className="text-kwd-muted mt-2 text-sm">{ticket.description}</p>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="bg-kwd-bg rounded px-2 py-1 font-medium">
-                {TICKET_STATUS_LABEL[ticket.status] ?? ticket.status}
-              </span>
-              <span className="text-kwd-muted">
-                {ticket.created_by && nameMap?.get(ticket.created_by) && (
-                  <span className="text-kwd-primary mr-2 font-semibold">
-                    {nameMap.get(ticket.created_by)}
-                  </span>
-                )}
-                {new Date(ticket.created_at).toLocaleDateString('de-DE')}
-              </span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  setEditTicket({
-                    id: ticket.id,
-                    description: ticket.description,
-                    priority: ticket.priority,
-                    status: ticket.status,
-                    machine_id: (ticket as { machine_id?: string | null }).machine_id ?? null,
-                    reference_label: referenceLabel ?? null,
-                    machine_label: isFreeReference
-                      ? `Freier Bezug: ${referenceLabel?.trim() ?? ''}`
-                      : `${machine?.barcode ?? ''} – ${machine?.name ?? ''}`.trim(),
-                  })
-                }
-                className="kwd-btn min-h-[44px] px-4 text-sm font-semibold"
-              >
-                Bearbeiten
-              </button>
-              {isOpen && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleResolve(ticket.id)}
-                  className="bg-kwd-success min-h-[44px] rounded-lg px-4 text-sm font-bold text-white disabled:opacity-50"
-                >
-                  {busy ? '…' : 'Erledigt'}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void handleDelete(ticket.id)}
-                className="border-kwd-danger text-kwd-danger min-h-[44px] rounded-lg border px-4 text-sm font-semibold disabled:opacity-50"
-              >
-                Löschen
-              </button>
-            </div>
-          </article>
-        )
-      })}
+      {grouped
+        ? grouped.map(({ priority, tickets: groupTickets }) => (
+            <section
+              key={priority}
+              className={`flex flex-col gap-3 rounded-xl border-2 p-3 ${PRIORITY_SECTION_CLS[priority as TicketPriority]}`}
+            >
+              <header className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold tracking-wide uppercase">
+                  {TICKET_PRIORITY_LABEL[priority] ?? priority}
+                </h3>
+                <span className="text-kwd-muted text-xs font-semibold">
+                  {groupTickets.length}
+                </span>
+              </header>
+              {renderTicketList(groupTickets)}
+            </section>
+          ))
+        : renderTicketList(filtered)}
 
       {editTicket && (
         <TicketEditForm
