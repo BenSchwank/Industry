@@ -32,7 +32,6 @@ import type { MachineStatus } from '../../types/database'
 import { Tip } from '../ui/Tip'
 import { usePreferencesStore } from '../../stores/preferencesStore'
 import { rememberMachineFieldOption, forgetMachineFieldOption, renameMachineFieldOption } from '../../lib/machineFieldOptions'
-import { CategoryPickerButton } from './CategoryPickerButton'
 import {
   draftToInput,
   EMPTY_DRAFT,
@@ -263,14 +262,10 @@ function MachineRow({
   searchQuery,
   dragOver,
   completing,
-  categorySuggestions,
   onSelect,
   onToggleCheck,
   onOpenFullscreen,
   onQuickComplete,
-  onCategoryChange,
-  onRenameCategory,
-  onDeleteCategory,
   onDragStart,
   onDragOver,
   onDrop,
@@ -282,14 +277,10 @@ function MachineRow({
   searchQuery?: string
   dragOver: boolean
   completing?: boolean
-  categorySuggestions: string[]
   onSelect: (id: string) => void
   onToggleCheck: (id: string, shiftKey: boolean) => void
   onOpenFullscreen?: (id: string) => void
   onQuickComplete?: (machine: MachineWithStats) => void
-  onCategoryChange: (machineId: string, category: string) => void
-  onRenameCategory?: (from: string, to: string) => void | Promise<void>
-  onDeleteCategory?: (category: string) => void | Promise<void>
   onDragStart: (id: string) => void
   onDragOver: (id: string) => void
   onDrop: (id: string, e: DragEvent) => void
@@ -384,16 +375,8 @@ function MachineRow({
           )}
         </div>
       </td>
-      <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-        <CategoryPickerButton
-          value={m.category ?? ''}
-          suggestions={categorySuggestions}
-          buttonLabel={m.category?.trim() || 'Kat.'}
-          title="Gerät in andere Kategorie verschieben"
-          onChange={(c) => onCategoryChange(m.id, c)}
-          onRename={onRenameCategory}
-          onDelete={onDeleteCategory}
-        />
+      <td className="px-1 py-0.5 text-xs">
+        {m.category?.trim() || UNCATEGORIZED_LABEL}
       </td>
       <LocationCell machine={m} />
       <td>
@@ -502,6 +485,9 @@ export function MachineTable({
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [extraCategories, setExtraCategories] = useState<string[]>([])
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const addCategoryInputRef = useRef<HTMLInputElement>(null)
   const lastCheckedId = useRef<string | null>(null)
 
   function getCategoryDraft(groupKey: string): MachineDraftValues {
@@ -629,6 +615,29 @@ export function MachineTable({
     await rememberMachineFieldOption('category', v)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
   }
+
+  async function commitAddCategory() {
+    const next = newCategoryName.trim()
+    if (!next) return
+    if (next.toLowerCase() === UNCATEGORIZED_LABEL.toLowerCase()) {
+      setDraftError('Bitte einen anderen Namen als „Ohne Kategorie“ wählen.')
+      return
+    }
+    setDraftError(null)
+    await rememberCategory(next)
+    setCollapsedCategories((prev) => {
+      const n = new Set(prev)
+      n.delete(next)
+      return n
+    })
+    setNewCategoryName('')
+    setAddingCategory(false)
+    flash(`Ordner „${next}“ angelegt – unten in der Kategorie eintragen`)
+  }
+
+  useEffect(() => {
+    if (addingCategory) addCategoryInputRef.current?.focus()
+  }, [addingCategory])
 
   async function renameCategory(from: string, to: string) {
     const next = to.trim()
@@ -877,17 +886,6 @@ export function MachineTable({
       )
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Standort-Update fehlgeschlagen')
-    }
-  }
-
-  async function setMachineCategory(machineId: string, category: string) {
-    const next = category.trim() || null
-    try {
-      await updateMachine.mutateAsync({ id: machineId, category: next })
-      if (next) await rememberCategory(next)
-      flash(next ? `Kategorie → ${next}` : `Kategorie → ${UNCATEGORIZED_LABEL}`)
-    } catch (e) {
-      flash(e instanceof Error ? e.message : 'Kategorie fehlgeschlagen')
     }
   }
 
@@ -1214,45 +1212,54 @@ export function MachineTable({
             Löschen{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
           </button>
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
-          <CategoryPickerButton
-            value=""
-            suggestions={categorySuggestions}
-            buttonLabel={
-              checkedList.length > 0 ? `Kategorie (${checkedList.length})` : 'Kategorie'
-            }
-            title="Kategorien verwalten: zuweisen, anlegen, umbenennen, löschen"
-            onRename={(from, to) => renameCategory(from, to)}
-            onDelete={(cat) => deleteCategory(cat)}
-            onChange={(c) => {
-              const next = c.trim()
-              if (checkedList.length > 0) {
-                void (async () => {
-                  try {
-                    await Promise.all(
-                      checkedList.map((m) =>
-                        updateMachine.mutateAsync({
-                          id: m.id,
-                          category: next || null,
-                        }),
-                      ),
-                    )
-                    if (next) await rememberCategory(next)
-                    flash(
-                      next
-                        ? `${checkedList.length} → ${next}`
-                        : `${checkedList.length} → ${UNCATEGORIZED_LABEL}`,
-                    )
-                  } catch (e) {
-                    flash(e instanceof Error ? e.message : 'Kategorie fehlgeschlagen')
+          {addingCategory ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <input
+                ref={addCategoryInputRef}
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void commitAddCategory()
                   }
-                })()
-              } else if (next) {
-                void rememberCategory(next).then(() => {
-                  flash(`Ordner „${next}“ angelegt – unten in der Kategorie anlegen`)
-                })
-              }
-            }}
-          />
+                  if (e.key === 'Escape') {
+                    setAddingCategory(false)
+                    setNewCategoryName('')
+                  }
+                }}
+                placeholder="Name der Kategorie…"
+                className="border-kwd-border bg-kwd-paper h-8 min-w-[10rem] border px-2 text-sm"
+                aria-label="Name der neuen Kategorie"
+              />
+              <button
+                type="button"
+                onClick={() => void commitAddCategory()}
+                disabled={!newCategoryName.trim()}
+                className="kwd-btn kwd-btn-primary text-xs"
+              >
+                Anlegen
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingCategory(false)
+                  setNewCategoryName('')
+                }}
+                className="kwd-btn text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddingCategory(true)}
+              className="kwd-btn"
+            >
+              Kategorie hinzufügen
+            </button>
+          )}
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           {onOpenPlanPhoto && (
             <button
@@ -1334,9 +1341,8 @@ export function MachineTable({
         </div>
         <Tip>
           <p className="text-kwd-muted text-xs">
-            <strong className="text-kwd-text">📷 Plan fotografieren</strong> (oben orange): Liste aus
-            Foto erkennen · Jeder Ordner hat unten eine Eingabezeile · Verschieben: Häkchen + „hierher“
-            oder ⋮⋮ ziehen
+            <strong className="text-kwd-text">Kategorie hinzufügen</strong> → Namen eingeben → unten
+            in dem Ordner Maschinen anlegen · Verschieben: Häkchen + „hierher“ oder ⋮⋮ ziehen
           </p>
         </Tip>
       </div>
@@ -1476,36 +1482,21 @@ export function MachineTable({
                             {checkedList.length} hierher
                           </button>
                         )}
-                        <CategoryPickerButton
-                          value={group.key === UNCATEGORIZED_LABEL ? '' : group.key}
-                          suggestions={categorySuggestions}
-                          buttonLabel="Umbenennen"
-                          title="Ordner umbenennen oder Maschinen umsortieren"
-                          onRename={(from, to) => renameCategory(from, to)}
-                          onDelete={(cat) => deleteCategory(cat)}
-                          onChange={(c) => {
-                            void (async () => {
-                              const next = c.trim() || null
-                              try {
-                                await Promise.all(
-                                  group.machines.map((m) =>
-                                    updateMachine.mutateAsync({ id: m.id, category: next }),
-                                  ),
-                                )
-                                if (next) await rememberCategory(next)
-                                flash(
-                                  next
-                                    ? `Ordner → ${next}`
-                                    : `Ordner → ${UNCATEGORIZED_LABEL}`,
-                                )
-                              } catch (e) {
-                                flash(
-                                  e instanceof Error ? e.message : 'Kategorie fehlgeschlagen',
-                                )
+                        {group.key !== UNCATEGORIZED_LABEL && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = window.prompt('Ordner umbenennen:', group.key)
+                              if (next?.trim() && next.trim() !== group.key) {
+                                void renameCategory(group.key, next.trim())
                               }
-                            })()
-                          }}
-                        />
+                            }}
+                            className="kwd-btn shrink-0 px-2 text-xs"
+                            title="Ordner umbenennen"
+                          >
+                            Umbenennen
+                          </button>
+                        )}
                         {group.key !== UNCATEGORIZED_LABEL && (
                           <button
                             type="button"
@@ -1530,14 +1521,10 @@ export function MachineTable({
                           searchQuery={searchQuery}
                           dragOver={dragOverId === m.id && dragId !== m.id}
                           completing={completingId === m.id}
-                          categorySuggestions={categorySuggestions}
                           onSelect={onSelect}
                           onToggleCheck={toggleCheck}
                           onOpenFullscreen={onOpenFullscreen}
                           onQuickComplete={(machine) => void handleQuickComplete(machine)}
-                          onCategoryChange={(id, c) => void setMachineCategory(id, c)}
-                          onRenameCategory={(from, to) => renameCategory(from, to)}
-                          onDeleteCategory={(cat) => deleteCategory(cat)}
                           onDragStart={(id) => beginDrag(id)}
                           onDragOver={(id) => setDragOverId(id)}
                           onDrop={(id, e) => {
