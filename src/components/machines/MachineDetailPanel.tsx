@@ -442,7 +442,8 @@ export function MachineDetailPanel({
       </div>
 
       <nav
-        className="border-kwd-border bg-kwd-surface-light flex shrink-0 gap-0.5 overflow-x-auto border-b p-1"
+        className="border-kwd-border bg-kwd-surface-light grid shrink-0 gap-0.5 border-b p-1"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
         role="tablist"
       >
         {tabs.map(({ id, label, short }) => {
@@ -453,13 +454,13 @@ export function MachineDetailPanel({
               type="button"
               role="tab"
               aria-selected={active}
+              title={label}
               onClick={() => setTab(id)}
-              className={`kwd-nav-item min-h-[36px] shrink-0 justify-center px-2 ${
+              className={`kwd-nav-item min-h-[36px] min-w-0 justify-center px-1 text-[11px] sm:px-1.5 sm:text-xs ${
                 active ? 'kwd-nav-item-active' : ''
               }`}
             >
-              <span className="lg:hidden">{short}</span>
-              <span className="hidden lg:inline">{label}</span>
+              <span className="truncate">{short}</span>
             </button>
           )
         })}
