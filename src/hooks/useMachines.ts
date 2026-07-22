@@ -6,7 +6,18 @@ import { applyMachineInitialDates } from '../lib/machineInitialDates'
 import { rememberMachineFieldOptions } from '../lib/machineFieldOptions'
 import { EMPTY_MACHINE_OIL_DATES, type MachineOilDates } from '../lib/machineOilDates'
 import type { MachineWithStats } from './useMachinesWithStats'
-import type { MachineStatus } from '../types/database'
+import type { Database, MachineStatus } from '../types/database'
+
+type MachineInsert = Database['public']['Tables']['machines']['Insert']
+type MachineUpdate = Database['public']['Tables']['machines']['Update']
+
+function asMachineInsert(payload: Record<string, unknown>): MachineInsert {
+  return payload as MachineInsert
+}
+
+function asMachineUpdate(payload: Record<string, unknown>): MachineUpdate {
+  return payload as MachineUpdate
+}
 
 export interface MachineInput {
   barcode: string
@@ -164,16 +175,28 @@ function oilPayloadFromInput(input: MachineInput): Partial<MachineOilDates> {
 async function insertMachinePayload(
   payload: Record<string, unknown>,
 ): Promise<{ id: string; name: string }> {
-  let { data, error } = await supabase.from('machines').insert(payload).select('id, name').single()
+  let { data, error } = await supabase
+    .from('machines')
+    .insert(asMachineInsert(payload))
+    .select('id, name')
+    .single()
 
   if (error && /label_name|schema cache/i.test(error.message) && 'label_name' in payload) {
     const { label_name: _l, ...rest } = payload
-    ;({ data, error } = await supabase.from('machines').insert(rest).select('id, name').single())
+    ;({ data, error } = await supabase
+      .from('machines')
+      .insert(asMachineInsert(rest))
+      .select('id, name')
+      .single())
   }
 
   if (error && /category|schema cache/i.test(error.message) && 'category' in payload) {
     const { category: _c, label_name: _l, ...rest } = payload
-    ;({ data, error } = await supabase.from('machines').insert(rest).select('id, name').single())
+    ;({ data, error } = await supabase
+      .from('machines')
+      .insert(asMachineInsert(rest))
+      .select('id, name')
+      .single())
   }
 
   if (
@@ -184,7 +207,7 @@ async function insertMachinePayload(
     for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
     ;({ data, error } = await supabase
       .from('machines')
-      .insert(stripped)
+      .insert(asMachineInsert(stripped))
       .select('id, name')
       .single())
   }
@@ -200,7 +223,7 @@ async function updateMachinePayload(
 ): Promise<{ id: string; name: string }> {
   let { data, error } = await supabase
     .from('machines')
-    .update(payload)
+    .update(asMachineUpdate(payload))
     .eq('id', id)
     .select('id, name')
     .single()
@@ -209,7 +232,7 @@ async function updateMachinePayload(
     const { label_name: _l, ...rest } = payload
     ;({ data, error } = await supabase
       .from('machines')
-      .update(rest)
+      .update(asMachineUpdate(rest))
       .eq('id', id)
       .select('id, name')
       .single())
@@ -219,7 +242,7 @@ async function updateMachinePayload(
     const { category: _c, label_name: _l, ...rest } = payload
     ;({ data, error } = await supabase
       .from('machines')
-      .update(rest)
+      .update(asMachineUpdate(rest))
       .eq('id', id)
       .select('id, name')
       .single())
@@ -233,7 +256,7 @@ async function updateMachinePayload(
     for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
     ;({ data, error } = await supabase
       .from('machines')
-      .update(stripped)
+      .update(asMachineUpdate(stripped))
       .eq('id', id)
       .select('id, name')
       .single())
@@ -519,7 +542,7 @@ export function useUpdateMachine() {
         }
         ;({ data, error } = await supabase
           .from('machines')
-          .update(stripped)
+          .update(asMachineUpdate(stripped))
           .eq('id', id)
           .select()
           .single())

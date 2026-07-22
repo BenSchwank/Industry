@@ -53,7 +53,7 @@ export function oilDatesSelectFragment(): string {
 export function formatDateWithCode(
   date: string | null | undefined,
   code: string | null | undefined,
-  formatDate: (iso: string | null | undefined) => string,
+  formatDate: (iso: string | null) => string,
 ): string {
   const d = formatDate(date ?? null)
   const c = code?.trim()

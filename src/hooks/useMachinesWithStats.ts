@@ -125,15 +125,23 @@ export function useMachinesWithStats() {
         'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at'
       const withOil = `${baseCols}, ${oilDatesSelectFragment()}`
 
-      let machinesRes = await supabase.from('machines').select(withOil).order('name')
+      const oilAttempt = await supabase.from('machines').select(withOil).order('name')
       let oilColumnsAvailable = true
+      let machinesRes: { data: unknown[] | null; error: { message: string } | null } = {
+        data: (oilAttempt.data as unknown[] | null) ?? null,
+        error: oilAttempt.error,
+      }
 
       if (
-        machinesRes.error &&
-        /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(machinesRes.error.message)
+        oilAttempt.error &&
+        /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(oilAttempt.error.message)
       ) {
         oilColumnsAvailable = false
-        machinesRes = await supabase.from('machines').select(baseCols).order('name')
+        const baseAttempt = await supabase.from('machines').select(baseCols).order('name')
+        machinesRes = {
+          data: (baseAttempt.data as unknown[] | null) ?? null,
+          error: baseAttempt.error,
+        }
       }
 
       type MachineRow = {
@@ -263,23 +271,21 @@ export function useMachinesWithStats() {
           oilColumnsAvailable = false
         }
       } else {
-        machines = (machinesRes.data ?? []).map((m) => ({
+        machines = ((machinesRes.data ?? []) as MachineRow[]).map((m) => ({
           ...m,
-          label_name: (m as { label_name?: string | null }).label_name ?? null,
-          category: (m as { category?: string | null }).category ?? null,
-        })) as MachineRow[]
+          label_name: m.label_name ?? null,
+          category: m.category ?? null,
+        }))
       }
 
-      const withOilDates = (m: MachineRow): MachineRow & MachineOilDates => ({
+      const machinesReady: Array<MachineRow & MachineOilDates> = machines.map((m) => ({
         ...m,
         ...(oilColumnsAvailable ? pickOilDates(m) : EMPTY_MACHINE_OIL_DATES),
-      })
+      }))
 
-      machines = machines.map(withOilDates)
+      if (machinesReady.length === 0) return []
 
-      if (machines.length === 0) return []
-
-      const ids = machines.map((m) => m.id)
+      const ids = machinesReady.map((m) => m.id)
 
       type LifeRow = {
         machine_id: string
@@ -357,7 +363,7 @@ export function useMachinesWithStats() {
 
       const taskToMachine = new Map((allTasks ?? []).map((t) => [t.id, t.machine_id]))
 
-      return machines.map((m) => {
+      return machinesReady.map((m) => {
         const taskNextDates = (tasksRes.data ?? [])
           .filter((t) => t.machine_id === m.id)
           .map((t) => t.next_due_date)
@@ -434,6 +440,7 @@ export function useMachinesWithStats() {
 
         return {
           ...m,
+          ...pickOilDates(m),
           last_maintenance_at,
           next_maintenance_at,
           last_repair_at: maxDate(allRepair),
