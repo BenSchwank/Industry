@@ -206,10 +206,7 @@ export function MachineAddRow({
   }
 
   const hasContent = Boolean(
-    values.name.trim() ||
-      values.labelName.trim() ||
-      values.location.trim() ||
-      values.barcode.trim(),
+    values.name.trim() || values.location.trim() || values.barcode.trim(),
   )
 
   return (
@@ -243,31 +240,18 @@ export function MachineAddRow({
         )}
       </td>
       <td className="px-1 py-0.5">
-        <div className="flex min-w-[10rem] flex-col gap-0.5">
-          {cell(
-            'name',
-            <input
-              ref={nameRef}
-              value={values.name}
-              onChange={(e) => patch('name', e.target.value)}
-              onFocus={() => onSelectField('name')}
-              placeholder="Datenname (Lebenszyklus)"
-              title="Datenname – wird beim Scan und im Lebenszyklus verwendet"
-              className={inputCls}
-            />,
-          )}
-          {cell(
-            'labelName',
-            <input
-              value={values.labelName}
-              onChange={(e) => patch('labelName', e.target.value)}
-              onFocus={() => onSelectField('labelName')}
-              placeholder="Etikett / Zeichnung (optional)"
-              title="Anzeigename aus Zeichnung/Menü – kann vom Datenname abweichen"
-              className={`${inputCls} text-kwd-muted text-xs`}
-            />,
-          )}
-        </div>
+        {cell(
+          'name',
+          <input
+            ref={nameRef}
+            value={values.name}
+            onChange={(e) => patch('name', e.target.value)}
+            onFocus={() => onSelectField('name')}
+            placeholder="Bezeichnung"
+            title="Maschinenname"
+            className={inputCls}
+          />,
+        )}
       </td>
       <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
         {fixedCategory !== undefined ? (

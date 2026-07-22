@@ -69,12 +69,7 @@ function dateCellClass(d: string | null, forMaintenance = false) {
 }
 
 function isBlankDraft(d: MachineDraftValues) {
-  return (
-    !d.name.trim() &&
-    !d.labelName.trim() &&
-    !d.location.trim() &&
-    !d.barcode.trim()
-  )
+  return !d.name.trim() && !d.location.trim() && !d.barcode.trim()
 }
 
 function defaultDraftForCategory(groupKey: string): MachineDraftValues {
@@ -366,27 +361,22 @@ function MachineRow({
         </div>
       </td>
       <td className="font-mono text-xs font-semibold text-kwd-primary">{m.barcode}</td>
-      <td className="font-medium">
-        <div className="flex flex-col gap-0.5">
-          <span title="Datenname (Lebenszyklus / Scan)">{m.name}</span>
-          {m.label_name?.trim() &&
-            m.label_name.trim().toLowerCase() !== m.name.trim().toLowerCase() && (
-              <span
-                className="text-kwd-muted text-[11px]"
-                title="Etikett / Zeichnung (Menü)"
-              >
-                Menü: {m.label_name.trim()}
-              </span>
-            )}
+      <td className="max-w-[14rem] truncate font-medium">
+        <span className="inline-flex max-w-full items-center gap-2">
+          <span className="truncate" title={m.name}>
+            {m.name}
+          </span>
           {m.open_ticket_count > 0 && (
-            <span className="text-kwd-danger text-[11px] font-semibold">
-              {m.open_ticket_count} offene Störung{m.open_ticket_count === 1 ? '' : 'en'}
+            <span className="text-kwd-danger shrink-0 text-[11px] font-semibold whitespace-nowrap">
+              {m.open_ticket_count} Störung{m.open_ticket_count === 1 ? '' : 'en'}
             </span>
           )}
           {problemHit && (
-            <span className="text-kwd-muted text-[11px]">Treffer: {problemHit}</span>
+            <span className="text-kwd-muted shrink-0 text-[11px] whitespace-nowrap">
+              Treffer: {problemHit}
+            </span>
           )}
-        </div>
+        </span>
       </td>
       <td className="px-1 py-0.5 text-xs">
         {m.category?.trim() || UNCATEGORIZED_LABEL}
