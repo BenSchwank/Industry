@@ -303,7 +303,13 @@
   .kwd-drag-active input,
   .kwd-drag-active select,
   .kwd-drag-active textarea,
-  .kwd-drag-active a {
+  .kwd-drag-active a,
+  .kwd-drag-active [role='menu'] {
     pointer-events: none;
+  }
+
+  .kwd-category-drop-target tbody.kwd-category-drop-active > tr:first-child {
+    background: color-mix(in srgb, var(--kwd-primary) 25%, transparent);
+    outline: 2px solid var(--kwd-primary);
   }
 }

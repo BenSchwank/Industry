@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   copyToClipboard,
@@ -242,8 +242,15 @@ function SortableTh({
 }
 
 function readDraggedMachineId(e: DragEvent, fallback: string | null): string | null {
+  const fromCustom = e.dataTransfer.getData('application/x-kwd-machine-id')?.trim()
   const fromData = e.dataTransfer.getData('text/plain')?.trim()
-  return fromData || fallback
+  return fromCustom || fromData || fallback
+}
+
+function setDragTransferData(e: DragEvent, machineId: string) {
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', machineId)
+  e.dataTransfer.setData('application/x-kwd-machine-id', machineId)
 }
 
 function isInteractiveDragTarget(target: EventTarget | null): boolean {
@@ -312,8 +319,7 @@ function MachineRow({
           e.preventDefault()
           return
         }
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', m.id)
+        setDragTransferData(e, m.id)
         onDragStart(m.id)
       }}
       onDragOver={(e) => {
@@ -344,6 +350,13 @@ function MachineRow({
             readOnly
           />
           <span
+            data-drag-handle
+            draggable
+            onDragStart={(e) => {
+              e.stopPropagation()
+              setDragTransferData(e, m.id)
+              onDragStart(m.id)
+            }}
             className="text-kwd-muted cursor-grab text-xs select-none active:cursor-grabbing"
             title="Auf anderen Ordner / Gerät ziehen = Kategorie wechseln"
             aria-hidden
@@ -470,6 +483,7 @@ export function MachineTable({
   const [draftError, setDraftError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const dragIdRef = useRef<string | null>(null)
+  const dragPayloadRef = useRef<string[] | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set())
@@ -697,12 +711,17 @@ export function MachineTable({
   }
 
   async function moveMachinesToCategory(categoryKey: string, sourceId?: string) {
+    const payloadIds = dragPayloadRef.current
     const movingIds =
-      sourceId && checkedIds.has(sourceId) && checkedIds.size > 0
-        ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
-        : sourceId
-          ? [sourceId]
-          : checkedList.map((m) => m.id)
+      sourceId && payloadIds?.includes(sourceId)
+        ? payloadIds
+        : sourceId && checkedIds.has(sourceId) && checkedIds.size > 0
+          ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+          : sourceId
+            ? [sourceId]
+            : payloadIds?.length
+              ? payloadIds
+              : checkedList.map((m) => m.id)
 
     if (movingIds.length === 0) {
       flash('Zuerst Geräte markieren (Häkchen) oder per ⋮⋮ ziehen')
@@ -798,16 +817,24 @@ export function MachineTable({
   }
 
   function beginDrag(id: string) {
+    const movingIds =
+      checkedIds.has(id) && checkedIds.size > 0
+        ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+        : [id]
+    dragPayloadRef.current = movingIds
     dragIdRef.current = id
     setDragId(id)
+    tableFocusRef.current?.classList.add('kwd-drag-active')
     if (!checkedIds.has(id)) setCheckedIds(new Set([id]))
   }
 
   function finishDrag() {
     dragIdRef.current = null
+    dragPayloadRef.current = null
     setDragId(null)
     setDragOverId(null)
     setDragOverCategory(null)
+    tableFocusRef.current?.classList.remove('kwd-drag-active')
   }
 
   function scheduleFinishDrag() {
@@ -819,11 +846,14 @@ export function MachineTable({
     e.stopPropagation()
     const sourceId = readDraggedMachineId(e, dragIdRef.current)
     if (sourceId) void moveMachinesToCategory(categoryKey, sourceId)
+    else if ((dragPayloadRef.current?.length ?? 0) > 0)
+      void moveMachinesToCategory(categoryKey)
     else if (checkedList.length > 0) void moveMachinesToCategory(categoryKey)
     finishDrag()
   }
 
   function handleCategoryDragOver(e: DragEvent, categoryKey: string) {
+    if (!dragIdRef.current && !dragPayloadRef.current) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDragOverCategory(categoryKey)
@@ -836,10 +866,13 @@ export function MachineTable({
   }
 
   async function moveMachinesOnto(targetId: string, sourceId: string) {
+    const payloadIds = dragPayloadRef.current
     const movingIds =
-      checkedIds.has(sourceId) && checkedIds.size > 0
-        ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
-        : [sourceId]
+      payloadIds && payloadIds.includes(sourceId)
+        ? payloadIds
+        : checkedIds.has(sourceId) && checkedIds.size > 0
+          ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+          : [sourceId]
 
     if (movingIds.includes(targetId)) return
 
@@ -1370,7 +1403,7 @@ export function MachineTable({
           fillHeight ? 'min-h-[70vh]' : 'max-h-[calc(100vh-280px)] min-h-[320px] overflow-auto'
         } ${dragId ? 'kwd-drag-active' : ''}`}
         onDragOver={(e) => {
-          if (!dragIdRef.current) return
+          if (!dragIdRef.current && !dragPayloadRef.current) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
         }}
@@ -1386,7 +1419,7 @@ export function MachineTable({
             <option key={loc} value={loc} />
           ))}
         </datalist>
-        <table className="w-full min-w-[1100px] text-sm">
+        <table className="kwd-category-drop-target w-full min-w-[1100px] text-sm">
           <thead className="bg-kwd-surface sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="w-10 px-2">
@@ -1437,26 +1470,25 @@ export function MachineTable({
               <th className="w-24"> </th>
             </tr>
           </thead>
-          <tbody>
-            {categoryGroups.map((group) => {
-              const collapsed = collapsedCategories.has(group.key)
-              const dropActive = dragOverCategory === group.key && dragId != null
-              return (
-                <Fragment key={group.key}>
-                  <tr
-                    className={`border-kwd-border border-y ${
-                      dropActive
-                        ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
-                        : 'bg-kwd-surface/90'
-                    }`}
-                  >
-                    <td
-                      colSpan={12}
-                      className="px-2 py-1.5"
-                      onDragOver={(e) => handleCategoryDragOver(e, group.key)}
-                      onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
-                      onDrop={(e) => handleCategoryDrop(e, group.key)}
-                    >
+          {categoryGroups.map((group) => {
+            const collapsed = collapsedCategories.has(group.key)
+            const dropActive = dragOverCategory === group.key && dragId != null
+            return (
+              <tbody
+                key={group.key}
+                className={dropActive ? 'kwd-category-drop-active' : undefined}
+                onDragOver={(e) => handleCategoryDragOver(e, group.key)}
+                onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
+                onDrop={(e) => handleCategoryDrop(e, group.key)}
+              >
+                <tr
+                  className={`border-kwd-border border-y ${
+                    dropActive
+                      ? 'bg-kwd-primary/25 outline outline-2 outline-[var(--kwd-primary)]'
+                      : 'bg-kwd-surface/90'
+                  }`}
+                >
+                  <td colSpan={12} className="px-2 py-1.5">
                       <div className="flex w-full flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -1536,12 +1568,7 @@ export function MachineTable({
                         />
                       ))}
                       {group.machines.length === 0 && (
-                        <tr
-                          className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}
-                          onDragOver={(e) => handleCategoryDragOver(e, group.key)}
-                          onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
-                          onDrop={(e) => handleCategoryDrop(e, group.key)}
-                        >
+                        <tr className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}>
                           <td colSpan={12} className="text-kwd-muted px-4 py-1 text-[11px]">
                             {dropActive
                               ? 'Loslassen → in diesen Ordner'
@@ -1592,17 +1619,18 @@ export function MachineTable({
                       )}
                     </>
                   )}
-                </Fragment>
-              )
-            })}
-            {orderedMachines.length === 0 && !showAddRow && (
+              </tbody>
+            )
+          })}
+          {orderedMachines.length === 0 && !showAddRow && (
+            <tbody>
               <tr>
                 <td colSpan={12} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>
-            )}
-          </tbody>
+            </tbody>
+          )}
         </table>
       </div>
     </div>
