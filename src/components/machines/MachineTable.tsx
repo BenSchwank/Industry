@@ -70,7 +70,12 @@ function dateCellClass(d: string | null, forMaintenance = false) {
 }
 
 function isBlankDraft(d: MachineDraftValues) {
-  return !d.name.trim() && !d.labelName.trim() && !d.location.trim() && !d.barcode.trim()
+  return (
+    !d.name.trim() &&
+    !d.labelName.trim() &&
+    !d.location.trim() &&
+    !d.barcode.trim()
+  )
 }
 
 function defaultDraftForCategory(groupKey: string): MachineDraftValues {

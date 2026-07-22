@@ -206,7 +206,10 @@ export function MachineAddRow({
   }
 
   const hasContent = Boolean(
-    values.name.trim() || values.location.trim() || values.barcode.trim(),
+    values.name.trim() ||
+      values.labelName.trim() ||
+      values.location.trim() ||
+      values.barcode.trim(),
   )
 
   return (

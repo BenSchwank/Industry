@@ -67,6 +67,12 @@ export function groupMachinesByCategory(
       })
     : order
 
+  // Leere Liste: mindestens einen Ordner zum Anlegen anzeigen
+  if (keys.length === 0) {
+    keys.push(UNCATEGORIZED_LABEL)
+    map.set(UNCATEGORIZED_LABEL, [])
+  }
+
   return keys.map((key) => ({
     key,
     label: key,
