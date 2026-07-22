@@ -248,8 +248,9 @@ export function PlanPhotoImportModal({
                   />
                 </div>
                 <p className="text-kwd-muted mt-4 text-xs leading-relaxed">
-                  Tipp: Plan gerade fotografieren, gute Beleuchtung, Text scharf. Erfordert{' '}
-                  <code className="text-kwd-text">VITE_OPENAI_API_KEY</code> (wie KI-Wartung).
+                  Tipp: Plan gerade fotografieren, gute Beleuchtung, Text scharf. Benötigt{' '}
+                  <code className="text-kwd-text">VITE_OPENAI_API_KEY</code> in Vercel mit
+                  ausreichend OpenAI-Guthaben (Billing unter platform.openai.com).
                 </p>
               </section>
             </div>

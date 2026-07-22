@@ -1,3 +1,5 @@
+import { formatOpenAiError } from './openAiErrors'
+
 export interface PlanPhotoMachine {
   name: string
   location?: string | null
@@ -76,7 +78,7 @@ export async function analyzePlanPhotoWithAi(
 
   if (!response.ok) {
     const err = await response.text()
-    throw new Error(`OpenAI-Fehler: ${response.status} – ${err.slice(0, 200)}`)
+    throw new Error(formatOpenAiError(response.status, err))
   }
 
   const data = await response.json()

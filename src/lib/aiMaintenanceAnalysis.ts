@@ -1,3 +1,4 @@
+import { formatOpenAiError } from './openAiErrors'
 import { analyzePdfBuffer } from './pdfAnalysis'
 
 export interface AiMaintenancePlan {
@@ -51,7 +52,7 @@ export async function analyzeMaintenanceWithAi(
 
   if (!response.ok) {
     const err = await response.text()
-    throw new Error(`OpenAI-Fehler: ${response.status} – ${err.slice(0, 200)}`)
+    throw new Error(formatOpenAiError(response.status, err))
   }
 
   const data = await response.json()
