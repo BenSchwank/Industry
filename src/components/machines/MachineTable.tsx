@@ -41,6 +41,12 @@ import {
   type MachineAddRowHandle,
   type MachineDraftValues,
 } from './MachineAddRow'
+import { CategoryPickerButton } from './CategoryPickerButton'
+
+interface DragSession {
+  sourceId: string
+  movingIds: string[]
+}
 
 const STATUS_LABEL: Record<MachineStatus, string> = {
   active: 'Aktiv',
@@ -245,6 +251,7 @@ function readDraggedMachineId(e: DragEvent, fallback: string | null): string | n
 function setDragTransferData(e: DragEvent, machineId: string) {
   e.dataTransfer.effectAllowed = 'move'
   e.dataTransfer.setData('text/plain', machineId)
+  e.dataTransfer.setData('text', machineId)
   e.dataTransfer.setData('application/x-kwd-machine-id', machineId)
 }
 
@@ -351,6 +358,10 @@ function MachineRow({
               e.stopPropagation()
               setDragTransferData(e, m.id)
               onDragStart(m.id)
+            }}
+            onDragEnd={(e) => {
+              e.stopPropagation()
+              onDragEnd()
             }}
             className="text-kwd-muted cursor-grab text-xs select-none active:cursor-grabbing"
             title="Auf anderen Ordner / Gerät ziehen = Kategorie wechseln"
@@ -473,7 +484,8 @@ export function MachineTable({
   const [draftError, setDraftError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const dragIdRef = useRef<string | null>(null)
-  const dragPayloadRef = useRef<string[] | null>(null)
+  const dragSessionRef = useRef<DragSession | null>(null)
+  const dropHandledRef = useRef(false)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set())
@@ -700,45 +712,62 @@ export function MachineTable({
     )
   }
 
-  async function moveMachinesToCategory(categoryKey: string, sourceId?: string) {
-    const payloadIds = dragPayloadRef.current
-    const movingIds =
-      sourceId && payloadIds?.includes(sourceId)
-        ? payloadIds
-        : sourceId && checkedIds.has(sourceId) && checkedIds.size > 0
-          ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
-          : sourceId
-            ? [sourceId]
-            : payloadIds?.length
-              ? payloadIds
-              : checkedList.map((m) => m.id)
-
-    if (movingIds.length === 0) {
+  async function moveMachinesToCategoryIds(categoryKey: string, movingIds: string[]) {
+    const uniqueIds = [...new Set(movingIds.filter(Boolean))]
+    if (uniqueIds.length === 0) {
       flash('Zuerst Geräte markieren (Häkchen) oder per ⋮⋮ ziehen')
       return
     }
 
-    const nextCategory = categoryKey === UNCATEGORIZED_LABEL ? null : categoryKey
+    const nextCategory = categoryKey === UNCATEGORIZED_LABEL ? null : categoryKey.trim()
+    const toUpdate = uniqueIds.filter((id) => {
+      const m = orderedMachines.find((x) => x.id === id)
+      if (!m) return false
+      return (m.category?.trim() || null) !== nextCategory
+    })
+
+    if (toUpdate.length === 0) {
+      flash(
+        uniqueIds.length === 1
+          ? `Bereits in „${nextCategory ?? UNCATEGORIZED_LABEL}“`
+          : `${uniqueIds.length} bereits in „${nextCategory ?? UNCATEGORIZED_LABEL}“`,
+      )
+      setCheckedIds(new Set())
+      return
+    }
 
     try {
       await Promise.all(
-        movingIds.map((id) => {
-          const m = orderedMachines.find((x) => x.id === id)
-          if (!m) return Promise.resolve()
-          if ((m.category?.trim() || null) === nextCategory) return Promise.resolve()
-          return updateMachine.mutateAsync({ id, category: nextCategory })
-        }),
+        toUpdate.map((id) =>
+          updateMachine.mutateAsync({ id, category: nextCategory }),
+        ),
       )
       if (nextCategory) await rememberCategory(nextCategory)
       flash(
-        movingIds.length === 1
+        toUpdate.length === 1
           ? `Kategorie → ${nextCategory ?? UNCATEGORIZED_LABEL}`
-          : `${movingIds.length} → ${nextCategory ?? UNCATEGORIZED_LABEL}`,
+          : `${toUpdate.length} → ${nextCategory ?? UNCATEGORIZED_LABEL}`,
       )
       setCheckedIds(new Set())
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Kategorie konnte nicht gesetzt werden')
     }
+  }
+
+  function resolveMovingIds(sourceId?: string | null): string[] {
+    const session = dragSessionRef.current
+    if (session?.movingIds.length) return session.movingIds
+    if (sourceId) {
+      if (checkedIds.has(sourceId) && checkedIds.size > 0) {
+        return orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
+      }
+      return [sourceId]
+    }
+    return checkedList.map((m) => m.id)
+  }
+
+  async function moveMachinesToCategory(categoryKey: string, sourceId?: string | null) {
+    await moveMachinesToCategoryIds(categoryKey, resolveMovingIds(sourceId))
   }
 
   const flatIds = useMemo(() => orderedMachines.map((m) => m.id), [orderedMachines])
@@ -807,11 +836,12 @@ export function MachineTable({
   }
 
   function beginDrag(id: string) {
+    dropHandledRef.current = false
     const movingIds =
       checkedIds.has(id) && checkedIds.size > 0
         ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
         : [id]
-    dragPayloadRef.current = movingIds
+    dragSessionRef.current = { sourceId: id, movingIds }
     dragIdRef.current = id
     setDragId(id)
     tableFocusRef.current?.classList.add('kwd-drag-active')
@@ -819,8 +849,8 @@ export function MachineTable({
   }
 
   function finishDrag() {
+    dragSessionRef.current = null
     dragIdRef.current = null
-    dragPayloadRef.current = null
     setDragId(null)
     setDragOverId(null)
     setDragOverCategory(null)
@@ -828,24 +858,37 @@ export function MachineTable({
   }
 
   function scheduleFinishDrag() {
-    window.setTimeout(() => finishDrag(), 0)
+    window.setTimeout(() => {
+      if (!dropHandledRef.current) finishDrag()
+      dropHandledRef.current = false
+    }, 100)
   }
 
   function handleCategoryDrop(e: DragEvent, categoryKey: string) {
     e.preventDefault()
     e.stopPropagation()
-    const sourceId = readDraggedMachineId(e, dragIdRef.current)
-    if (sourceId) void moveMachinesToCategory(categoryKey, sourceId)
-    else if ((dragPayloadRef.current?.length ?? 0) > 0)
-      void moveMachinesToCategory(categoryKey)
-    else if (checkedList.length > 0) void moveMachinesToCategory(categoryKey)
+    dropHandledRef.current = true
+    const sourceId = readDraggedMachineId(
+      e,
+      dragSessionRef.current?.sourceId ?? dragIdRef.current,
+    )
+    const movingIds = resolveMovingIds(sourceId)
     finishDrag()
+    void moveMachinesToCategoryIds(categoryKey, movingIds)
   }
 
   function handleCategoryDragOver(e: DragEvent, categoryKey: string) {
-    if (!dragIdRef.current && !dragPayloadRef.current) return
+    if (!dragSessionRef.current && !dragIdRef.current) return
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
+    setDragOverCategory(categoryKey)
+  }
+
+  function handleCategoryDragEnter(e: DragEvent, categoryKey: string) {
+    if (!dragSessionRef.current && !dragIdRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
     setDragOverCategory(categoryKey)
   }
 
@@ -855,15 +898,7 @@ export function MachineTable({
     setDragOverCategory((cur) => (cur === categoryKey ? null : cur))
   }
 
-  async function moveMachinesOnto(targetId: string, sourceId: string) {
-    const payloadIds = dragPayloadRef.current
-    const movingIds =
-      payloadIds && payloadIds.includes(sourceId)
-        ? payloadIds
-        : checkedIds.has(sourceId) && checkedIds.size > 0
-          ? orderedMachines.filter((m) => checkedIds.has(m.id)).map((m) => m.id)
-          : [sourceId]
-
+  async function moveMachinesOnto(targetId: string, _sourceId: string, movingIds: string[]) {
     if (movingIds.includes(targetId)) return
 
     const target = orderedMachines.find((m) => m.id === targetId)
@@ -878,7 +913,7 @@ export function MachineTable({
 
     // Anderer Ordner → Kategorie wechseln (nicht Standort/Reihenfolge)
     if (needsCategoryMove) {
-      await moveMachinesToCategory(targetCat, sourceId)
+      await moveMachinesToCategoryIds(targetCat, movingIds)
       return
     }
 
@@ -1234,6 +1269,23 @@ export function MachineTable({
           >
             Löschen{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
           </button>
+          {checkedList.length > 0 && (
+            <CategoryPickerButton
+              value=""
+              suggestions={categorySuggestions}
+              buttonLabel={`Kategorie zuweisen (${checkedList.length})`}
+              title="Markierte Geräte in bestehende Kategorie verschieben oder neue anlegen"
+              className="kwd-btn-primary"
+              busy={updateMachine.isPending}
+              onChange={(c) => {
+                const key = c.trim() || UNCATEGORIZED_LABEL
+                void moveMachinesToCategoryIds(
+                  key,
+                  checkedList.map((m) => m.id),
+                )
+              }}
+            />
+          )}
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           {addingCategory ? (
             <div className="flex flex-wrap items-center gap-1">
@@ -1365,7 +1417,8 @@ export function MachineTable({
         <Tip>
           <p className="text-kwd-muted text-xs">
             <strong className="text-kwd-text">Kategorie hinzufügen</strong> → Namen eingeben → unten
-            in dem Ordner Maschinen anlegen · Verschieben: Häkchen + „hierher“ oder ⋮⋮ ziehen
+            in dem Ordner Maschinen anlegen · Verschieben: Häkchen →{' '}
+            <strong>Kategorie zuweisen</strong> oder ⋮⋮ auf Ordner ziehen
           </p>
         </Tip>
       </div>
@@ -1393,7 +1446,7 @@ export function MachineTable({
           fillHeight ? 'min-h-[70vh]' : 'max-h-[calc(100vh-280px)] min-h-[320px] overflow-auto'
         } ${dragId ? 'kwd-drag-active' : ''}`}
         onDragOver={(e) => {
-          if (!dragIdRef.current && !dragPayloadRef.current) return
+          if (!dragSessionRef.current && !dragIdRef.current) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
         }}
@@ -1467,6 +1520,7 @@ export function MachineTable({
               <tbody
                 key={group.key}
                 className={dropActive ? 'kwd-category-drop-active' : undefined}
+                onDragEnter={(e) => handleCategoryDragEnter(e, group.key)}
                 onDragOver={(e) => handleCategoryDragOver(e, group.key)}
                 onDragLeave={(e) => handleCategoryDragLeave(e, group.key)}
                 onDrop={(e) => handleCategoryDrop(e, group.key)}
@@ -1550,9 +1604,14 @@ export function MachineTable({
                           onDragStart={(id) => beginDrag(id)}
                           onDragOver={(id) => setDragOverId(id)}
                           onDrop={(id, e) => {
-                            const sourceId = readDraggedMachineId(e, dragIdRef.current)
-                            if (sourceId) void moveMachinesOnto(id, sourceId)
+                            dropHandledRef.current = true
+                            const sourceId = readDraggedMachineId(
+                              e,
+                              dragSessionRef.current?.sourceId ?? dragIdRef.current,
+                            )
+                            const movingIds = resolveMovingIds(sourceId)
                             finishDrag()
+                            if (sourceId) void moveMachinesOnto(id, sourceId, movingIds)
                           }}
                           onDragEnd={scheduleFinishDrag}
                         />

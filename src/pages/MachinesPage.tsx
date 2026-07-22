@@ -254,7 +254,8 @@ export default function MachinesPage() {
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
-              📷 <strong>Plan fotografieren</strong> (orange) · <strong>Kategorie hinzufügen</strong> →
+              📷 <strong>Plan fotografieren</strong> (orange) · Häkchen →{' '}
+              <strong>Kategorie zuweisen</strong> · <strong>Kategorie hinzufügen</strong> →
               Ordner anlegen · unten in jedem Ordner Maschinen eintragen
             </p>
           )}
