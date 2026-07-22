@@ -1163,7 +1163,7 @@ export function MachineTable({
           warrantyUntil: mappedRow.warranty_until ?? '',
         })
       }
-      flash(`1 Zeile in „${targetKey === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : targetKey}" – Enter speichert`)
+      flash(`1 Zeile in „${targetKey === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : targetKey}" – Speichern-Button unten`)
       return true
     }
     void importBulk(mapped)
@@ -1510,7 +1510,7 @@ export function MachineTable({
               />
               <th>Letzte Reparatur</th>
               <th>Garantie</th>
-              <th className="w-24"> </th>
+              <th className="min-w-[4.5rem]"> </th>
             </tr>
           </thead>
           {categoryGroups.map((group) => {

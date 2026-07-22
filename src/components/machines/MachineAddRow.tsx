@@ -93,7 +93,7 @@ export const EMPTY_DRAFT: MachineDraftValues = {
 
 export function MachineAddRow({
   values: controlled,
-  blank = false,
+  blank: _blank = false,
   selectedField,
   onSelectField,
   onChange,
@@ -210,6 +210,7 @@ export function MachineAddRow({
   )
 
   return (
+    <>
     <tr
       className={`border-kwd-border h-9 border-b ${
         hasContent ? 'bg-kwd-primary/10' : 'bg-kwd-paper/40 hover:bg-kwd-surface-light'
@@ -357,26 +358,32 @@ export function MachineAddRow({
       </td>
       <td className="px-1 py-0.5 text-right">
         <div className="flex items-center justify-end gap-1">
-          {(hasContent || !blank) && (
-            <>
-              {saving ? (
-                <span className="text-kwd-muted text-[10px]">…</span>
-              ) : (
-                <span className="text-kwd-muted text-[10px]" title="Enter = speichern">
-                  ↵
-                </span>
-              )}
-              {hasContent && (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="text-kwd-muted text-[10px] hover:underline"
-                  title="Zeile leeren"
-                >
-                  ✕
-                </button>
-              )}
-            </>
+          {hasContent && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSaveRequest()
+              }}
+              disabled={saving}
+              className="kwd-btn kwd-btn-primary hidden min-h-[40px] min-w-[4.5rem] px-2 text-xs font-bold lg:inline-flex"
+            >
+              {saving ? '…' : 'OK'}
+            </button>
+          )}
+          {hasContent && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancel()
+              }}
+              disabled={saving}
+              className="text-kwd-muted hidden min-h-[40px] px-2 text-xs hover:underline lg:inline"
+              title="Zeile leeren"
+            >
+              ✕
+            </button>
           )}
           {error && (
             <p className="text-kwd-danger max-w-[120px] text-[10px] leading-tight">{error}</p>
@@ -384,6 +391,37 @@ export function MachineAddRow({
         </div>
       </td>
     </tr>
+    {hasContent && (
+      <tr className="bg-kwd-primary/10 border-kwd-border border-b lg:hidden">
+        <td colSpan={12} className="px-2 py-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSaveRequest()
+              }}
+              disabled={saving}
+              className="kwd-btn kwd-btn-primary min-h-[48px] flex-1 text-sm font-bold"
+            >
+              {saving ? 'Speichern…' : 'Speichern'}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancel()
+              }}
+              disabled={saving}
+              className="kwd-btn min-h-[48px] px-4 text-sm"
+            >
+              Leeren
+            </button>
+          </div>
+        </td>
+      </tr>
+    )}
+  </>
   )
 }
 
