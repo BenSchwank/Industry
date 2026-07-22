@@ -142,7 +142,11 @@ export async function seedWartungsplanCategories(): Promise<void> {
     await rememberMachineFieldOption('category', cat)
   }
 
-  const { data: rows } = await supabase.from('machines').select('id, category')
+  const { data: rows, error } = await supabase.from('machines').select('id, category')
+  if (error) {
+    // Spalte fehlt noch → nur Optionen merken, Maschinen nicht anfassen
+    return
+  }
   for (const row of rows ?? []) {
     const c = row.category?.trim()
     if (!c) continue

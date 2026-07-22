@@ -68,14 +68,13 @@ export default function MachinesPage() {
     [machines, fieldOptions?.locations],
   )
 
-  // Wartungsplan-Ordner: anlegen + gleiche Namen überschreiben; eigene Ordner / App-Seiten bleiben
+  // Wartungsplan-Ordner: anlegen + gleiche Namen überschreiben (nur Vorschläge, kein Maschinen-Refetch)
   useEffect(() => {
     let cancelled = false
     void (async () => {
       await seedWartungsplanCategories()
       if (!cancelled) {
         void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
-        void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       }
     })()
     return () => {

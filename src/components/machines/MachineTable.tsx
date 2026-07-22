@@ -26,7 +26,7 @@ import {
   matchProblemSnippet,
   type MachineSortBy,
 } from '../../hooks/useMachinesWithStats'
-import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useUpdateMachine } from '../../hooks/useMachines'
+import { useBulkCreateMachines, useCreateMachine, useDeleteMachines, useDuplicateMachines, useSetMachinesCategory, useUpdateMachine } from '../../hooks/useMachines'
 import { useQuickCompleteMaintenance } from '../../hooks/useQuickCompleteMaintenance'
 import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
@@ -572,6 +572,7 @@ export function MachineTable({
   const deleteMachines = useDeleteMachines()
   const duplicateMachines = useDuplicateMachines()
   const updateMachine = useUpdateMachine()
+  const setMachinesCategory = useSetMachinesCategory()
   const quickComplete = useQuickCompleteMaintenance()
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [extraCategories, setExtraCategories] = useState<string[]>([])
@@ -736,9 +737,12 @@ export function MachineTable({
     const targets = orderedMachines.filter(
       (m) => (m.category ?? '').trim().toLowerCase() === from.trim().toLowerCase(),
     )
-    await Promise.all(
-      targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: next })),
-    )
+    if (targets.length > 0) {
+      await setMachinesCategory.mutateAsync({
+        ids: targets.map((m) => m.id),
+        category: next,
+      })
+    }
     setExtraCategories((prev) => {
       const without = prev.filter((x) => x.toLowerCase() !== from.trim().toLowerCase())
       if (!without.some((x) => x.toLowerCase() === next.toLowerCase())) without.push(next)
@@ -746,7 +750,6 @@ export function MachineTable({
     })
     await renameMachineFieldOption('category', from, next)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
-    void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
     flash(
       targets.length > 0
         ? `„${from}“ → „${next}“ (${targets.length})`
@@ -771,15 +774,17 @@ export function MachineTable({
     ) {
       return
     }
-    await Promise.all(
-      targets.map((m) => updateMachine.mutateAsync({ id: m.id, category: null })),
-    )
+    if (targets.length > 0) {
+      await setMachinesCategory.mutateAsync({
+        ids: targets.map((m) => m.id),
+        category: null,
+      })
+    }
     setExtraCategories((prev) =>
       prev.filter((x) => x.toLowerCase() !== label.toLowerCase()),
     )
     await forgetMachineFieldOption('category', label)
     void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
-    void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
     flash(
       targets.length > 0
         ? `„${label}“ gelöscht · ${targets.length} → ${UNCATEGORIZED_LABEL}`
@@ -815,11 +820,7 @@ export function MachineTable({
     }
 
     try {
-      await Promise.all(
-        toUpdate.map((id) =>
-          updateMachine.mutateAsync({ id, category: nextCategory }),
-        ),
-      )
+      await setMachinesCategory.mutateAsync({ ids: toUpdate, category: nextCategory })
       if (nextCategory) await rememberCategory(nextCategory)
       setCollapsedCategories((prev) => {
         if (!nextCategory) return prev
@@ -1360,7 +1361,7 @@ export function MachineTable({
               buttonLabel={`Kategorie zuweisen (${checkedList.length})`}
               title="Markierte Geräte in bestehende Kategorie verschieben oder neue anlegen"
               className="kwd-btn-primary"
-              busy={updateMachine.isPending}
+              busy={updateMachine.isPending || setMachinesCategory.isPending}
               onChange={(c) => {
                 const key = c.trim() || UNCATEGORIZED_LABEL
                 void moveMachinesToCategoryIds(

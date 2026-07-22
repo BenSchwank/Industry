@@ -129,40 +129,32 @@ export function useMachinesWithStats() {
       }[] = []
 
       if (machinesRes.error) {
-        // label_name oder category fehlt noch
-        if (/label_name|category|schema cache/i.test(machinesRes.error.message)) {
+        const msg = machinesRes.error.message
+        const missingLabel = /label_name/i.test(msg)
+        const missingCategory =
+          /category/i.test(msg) && /schema cache|does not exist|could not find|unknown/i.test(msg)
+
+        // Nur label_name fehlt → Kategorie behalten
+        if (missingLabel && !missingCategory) {
           const fb = await supabase
             .from('machines')
             .select(
               'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
             )
             .order('name')
-          if (fb.error && /category|schema cache/i.test(fb.error.message)) {
+          if (fb.error && /category/i.test(fb.error.message)) {
             const basic = await supabase
               .from('machines')
               .select(
                 'id, barcode, name, location, warranty_until, status, external_source, created_at',
               )
               .order('name')
-            if (basic.error) {
-              const bare = await supabase
-                .from('machines')
-                .select('id, barcode, name, location, warranty_until, status, created_at')
-                .order('name')
-              if (bare.error) throw bare.error
-              machines = (bare.data ?? []).map((m) => ({
-                ...m,
-                label_name: null,
-                category: null,
-                external_source: null,
-              }))
-            } else {
-              machines = (basic.data ?? []).map((m) => ({
-                ...m,
-                label_name: null,
-                category: null,
-              }))
-            }
+            if (basic.error) throw basic.error
+            machines = (basic.data ?? []).map((m) => ({
+              ...m,
+              label_name: null,
+              category: null,
+            }))
           } else if (fb.error) {
             throw fb.error
           } else {
@@ -172,18 +164,77 @@ export function useMachinesWithStats() {
               category: (m as { category?: string | null }).category ?? null,
             }))
           }
-        } else {
+        } else if (missingCategory) {
           const basic = await supabase
             .from('machines')
-            .select('id, barcode, name, location, warranty_until, status, created_at')
+            .select(
+              'id, barcode, name, label_name, location, warranty_until, status, external_source, created_at',
+            )
             .order('name')
-          if (basic.error) throw basic.error
-          machines = (basic.data ?? []).map((m) => ({
-            ...m,
-            label_name: null,
-            category: null,
-            external_source: null,
-          }))
+          if (basic.error && /label_name/i.test(basic.error.message)) {
+            const bare = await supabase
+              .from('machines')
+              .select(
+                'id, barcode, name, location, warranty_until, status, external_source, created_at',
+              )
+              .order('name')
+            if (bare.error) {
+              const minimal = await supabase
+                .from('machines')
+                .select('id, barcode, name, location, warranty_until, status, created_at')
+                .order('name')
+              if (minimal.error) throw minimal.error
+              machines = (minimal.data ?? []).map((m) => ({
+                ...m,
+                label_name: null,
+                category: null,
+                external_source: null,
+              }))
+            } else {
+              machines = (bare.data ?? []).map((m) => ({
+                ...m,
+                label_name: null,
+                category: null,
+              }))
+            }
+          } else if (basic.error) {
+            throw basic.error
+          } else {
+            machines = (basic.data ?? []).map((m) => ({
+              ...m,
+              label_name: (m as { label_name?: string | null }).label_name ?? null,
+              category: null,
+            }))
+          }
+        } else {
+          // Unbekannter Fehler → schrittweise ohne optionale Spalten, Kategorie nur droppen wenn nötig
+          const fb = await supabase
+            .from('machines')
+            .select(
+              'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
+            )
+            .order('name')
+          if (!fb.error) {
+            machines = (fb.data ?? []).map((m) => ({
+              ...m,
+              label_name: null,
+              category: (m as { category?: string | null }).category ?? null,
+            }))
+          } else if (/category/i.test(fb.error.message)) {
+            const basic = await supabase
+              .from('machines')
+              .select('id, barcode, name, location, warranty_until, status, created_at')
+              .order('name')
+            if (basic.error) throw basic.error
+            machines = (basic.data ?? []).map((m) => ({
+              ...m,
+              label_name: null,
+              category: null,
+              external_source: null,
+            }))
+          } else {
+            throw machinesRes.error
+          }
         }
       } else {
         machines = (machinesRes.data ?? []).map((m) => ({

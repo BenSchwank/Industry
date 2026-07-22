@@ -191,6 +191,72 @@ export function useBulkCreateMachines() {
   })
 }
 
+function isMissingColumnError(message: string, column: string): boolean {
+  return (
+    new RegExp(column, 'i').test(message) &&
+    /schema cache|does not exist|could not find|unknown/i.test(message)
+  )
+}
+
+const CATEGORY_COLUMN_HINT =
+  'Kategorie-Spalte fehlt in Supabase. Bitte supabase/FIX_MACHINE_CATEGORY.sql im SQL-Editor ausführen und die Seite neu laden.'
+
+async function updateMachineCategoryInDb(
+  ids: string[],
+  category: string | null,
+): Promise<{ id: string; category: string | null }[]> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))]
+  if (uniqueIds.length === 0) return []
+
+  const next = category?.trim() || null
+  const { data, error } = await supabase
+    .from('machines')
+    .update({ category: next })
+    .in('id', uniqueIds)
+    .select('id, category')
+
+  if (error) {
+    if (isMissingColumnError(error.message, 'category')) {
+      throw new Error(CATEGORY_COLUMN_HINT)
+    }
+    throw new Error(formatSupabaseError(error))
+  }
+
+  const rows = data ?? []
+  if (rows.length === 0) {
+    throw new Error('Kategorie konnte nicht gespeichert werden (keine Zeile geändert).')
+  }
+
+  // Antwort ohne category-Feld oder Wert nicht übernommen → Spalte fehlt / Schreibschutz
+  for (const row of rows) {
+    if (!('category' in row)) {
+      throw new Error(CATEGORY_COLUMN_HINT)
+    }
+    const saved = (row.category as string | null)?.trim() || null
+    if (saved !== next) {
+      throw new Error(
+        'Kategorie wurde nicht übernommen. Bitte supabase/FIX_MACHINE_CATEGORY.sql prüfen.',
+      )
+    }
+  }
+
+  await rememberMachineFieldOptions({ category: next })
+  return rows.map((r) => ({
+    id: r.id as string,
+    category: ((r.category as string | null)?.trim() || null) as string | null,
+  }))
+}
+
+function patchMachinesCategoryCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  patches: { id: string; category: string | null }[],
+) {
+  const map = new Map(patches.map((p) => [p.id, p.category]))
+  queryClient.setQueryData<MachineWithStats[]>(['machines-with-stats'], (old) =>
+    (old ?? []).map((m) => (map.has(m.id) ? { ...m, category: map.get(m.id)! } : m)),
+  )
+}
+
 export function useUpdateMachine() {
   const queryClient = useQueryClient()
 
@@ -199,6 +265,20 @@ export function useUpdateMachine() {
       id,
       ...input
     }: Partial<MachineInput> & { id: string }) => {
+      // Kategorie allein → eigener Pfad (kein leeres Update-Fallback, das „erfolgreich“ aussieht)
+      if (
+        input.category !== undefined &&
+        input.name === undefined &&
+        input.label_name === undefined &&
+        input.location === undefined &&
+        input.warranty_until === undefined &&
+        input.status === undefined &&
+        input.barcode === undefined
+      ) {
+        const rows = await updateMachineCategoryInDb([id], input.category)
+        return rows[0] ?? { id, category: input.category?.trim() || null }
+      }
+
       const payload = {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.label_name !== undefined
@@ -230,8 +310,17 @@ export function useUpdateMachine() {
         .select()
         .single()
 
-      if (error && /label_name|schema cache/i.test(error.message) && input.label_name !== undefined) {
+      if (
+        error &&
+        isMissingColumnError(error.message, 'label_name') &&
+        input.label_name !== undefined
+      ) {
         const { label_name: _l, ...withoutLabel } = payload
+        if (Object.keys(withoutLabel).length === 0) {
+          throw new Error(
+            'Spalte label_name fehlt in Supabase. Bitte supabase/FIX_MACHINE_LABEL_NAME.sql ausführen.',
+          )
+        }
         ;({ data, error } = await supabase
           .from('machines')
           .update(withoutLabel)
@@ -245,8 +334,15 @@ export function useUpdateMachine() {
         }
       }
 
-      if (error && /category|schema cache/i.test(error.message) && input.category !== undefined) {
+      if (
+        error &&
+        isMissingColumnError(error.message, 'category') &&
+        input.category !== undefined
+      ) {
         const { category: _c, ...withoutCategory } = payload
+        if (Object.keys(withoutCategory).length === 0) {
+          throw new Error(CATEGORY_COLUMN_HINT)
+        }
         ;({ data, error } = await supabase
           .from('machines')
           .update(withoutCategory)
@@ -254,9 +350,7 @@ export function useUpdateMachine() {
           .select()
           .single())
         if (!error) {
-          throw new Error(
-            'Kategorie-Spalte fehlt in Supabase. Bitte supabase/FIX_MACHINE_CATEGORY.sql ausführen.',
-          )
+          throw new Error(CATEGORY_COLUMN_HINT)
         }
       }
 
@@ -270,21 +364,64 @@ export function useUpdateMachine() {
     onMutate: async (input) => {
       if (input.category === undefined) return undefined
       await queryClient.cancelQueries({ queryKey: ['machines-with-stats'] })
-      const previous = queryClient.getQueryData<MachineWithStats[]>(['machines-with-stats'])
+      const list = queryClient.getQueryData<MachineWithStats[]>(['machines-with-stats'])
+      const previousCategory = list?.find((m) => m.id === input.id)?.category ?? null
       const nextCategory = input.category?.trim() || null
-      queryClient.setQueryData<MachineWithStats[]>(['machines-with-stats'], (old) =>
-        (old ?? []).map((m) =>
-          m.id === input.id ? { ...m, category: nextCategory } : m,
-        ),
+      patchMachinesCategoryCache(queryClient, [{ id: input.id, category: nextCategory }])
+      return { id: input.id, previousCategory }
+    },
+    onError: (_err, input, context) => {
+      if (input.category === undefined || !context) return
+      patchMachinesCategoryCache(queryClient, [
+        { id: context.id, category: context.previousCategory },
+      ])
+    },
+    onSuccess: (data, input) => {
+      if (input.category !== undefined) {
+        const saved =
+          data && typeof data === 'object' && 'category' in data
+            ? ((data as { category?: string | null }).category?.trim() || null)
+            : input.category?.trim() || null
+        patchMachinesCategoryCache(queryClient, [{ id: input.id, category: saved }])
+      }
+      queryClient.invalidateQueries({ queryKey: ['machines'] })
+      queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machines-select'] })
+      queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+    },
+  })
+}
+
+/** Mehrere Maschinen in eine Kategorie – ein DB-Call, kein Parallel-Optimistic-Race */
+export function useSetMachinesCategory() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: { ids: string[]; category: string | null }) => {
+      return updateMachineCategoryInDb(input.ids, input.category)
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['machines-with-stats'] })
+      const list = queryClient.getQueryData<MachineWithStats[]>(['machines-with-stats']) ?? []
+      const previous = input.ids.map((id) => ({
+        id,
+        category: list.find((m) => m.id === id)?.category ?? null,
+      }))
+      const next = input.category?.trim() || null
+      patchMachinesCategoryCache(
+        queryClient,
+        input.ids.map((id) => ({ id, category: next })),
       )
       return { previous }
     },
-    onError: (_err, input, context) => {
-      if (input.category !== undefined && context?.previous) {
-        queryClient.setQueryData(['machines-with-stats'], context.previous)
+    onError: (_err, _input, context) => {
+      if (context?.previous) {
+        patchMachinesCategoryCache(queryClient, context.previous)
       }
     },
-    onSuccess: () => {
+    onSuccess: (rows) => {
+      patchMachinesCategoryCache(queryClient, rows)
       queryClient.invalidateQueries({ queryKey: ['machines'] })
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['machines-select'] })
