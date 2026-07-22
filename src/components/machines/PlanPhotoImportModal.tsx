@@ -37,7 +37,20 @@ function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): Prev
     location: machine.location,
     category: machine.category?.trim() || defaultCategory || null,
     confidence: machine.confidence,
-    barcode: suggestMachineBarcode(drawingName),
+    barcode: suggestMachineBarcode(drawingName || 'MASCHINE'),
+  }
+}
+
+function blankPreviewRow(defaultCategory: string, defaultLocation?: string | null): PreviewRow {
+  return {
+    id: crypto.randomUUID(),
+    selected: true,
+    name: '',
+    labelName: '',
+    location: defaultLocation ?? null,
+    category: defaultCategory.trim() || null,
+    confidence: 'high',
+    barcode: '',
   }
 }
 
@@ -85,24 +98,48 @@ export function PlanPhotoImportModal({
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl(prepared.previewUrl)
 
-      const result = await analyzePlanPhotoWithAi(prepared.base64, prepared.mime)
-      setHallName(result.hallName ?? null)
-      setAnalysisNotes(result.notes ?? null)
+      try {
+        const result = await analyzePlanPhotoWithAi(prepared.base64, prepared.mime)
+        setHallName(result.hallName ?? null)
+        setAnalysisNotes(result.notes ?? null)
 
-      const nextRows = result.machines.map((m) =>
-        newPreviewRow(
-          {
-            ...m,
-            location: m.location || result.hallName || null,
-          },
-          defaultCategory,
-        ),
-      )
-      setRows(nextRows)
-      setStep('preview')
+        const nextRows =
+          result.machines.length > 0
+            ? result.machines.map((m) =>
+                newPreviewRow(
+                  {
+                    ...m,
+                    location: m.location || result.hallName || null,
+                  },
+                  defaultCategory,
+                ),
+              )
+            : [blankPreviewRow(defaultCategory, result.hallName)]
+        setRows(nextRows)
+        setStep('preview')
+        if (result.machines.length === 0) {
+          setError(
+            'Keine Maschinen erkannt – Tabelle ist leer, bitte Zeilen manuell ergänzen.',
+          )
+        }
+      } catch (aiErr) {
+        // Foto bleibt – manuell in Vorschau eintragen
+        setHallName(null)
+        setAnalysisNotes(null)
+        setRows([
+          blankPreviewRow(defaultCategory),
+          blankPreviewRow(defaultCategory),
+          blankPreviewRow(defaultCategory),
+        ])
+        setStep('preview')
+        setError(
+          (aiErr instanceof Error ? aiErr.message : 'Analyse fehlgeschlagen') +
+            ' · Foto bleibt – bitte Maschinen unten manuell eintragen.',
+        )
+      }
     } catch (err) {
       setStep('capture')
-      setError(err instanceof Error ? err.message : 'Analyse fehlgeschlagen')
+      setError(err instanceof Error ? err.message : 'Bild konnte nicht geladen werden')
     }
   }
 
@@ -112,6 +149,43 @@ export function PlanPhotoImportModal({
 
   function toggleAll(selected: boolean) {
     setRows((prev) => prev.map((r) => ({ ...r, selected })))
+  }
+
+  function addRow(afterId?: string) {
+    const next = blankPreviewRow(defaultCategory, hallName)
+    setRows((prev) => {
+      if (!afterId) return [...prev, next]
+      const idx = prev.findIndex((r) => r.id === afterId)
+      if (idx < 0) return [...prev, next]
+      const copy = [...prev]
+      copy.splice(idx + 1, 0, next)
+      return copy
+    })
+  }
+
+  function removeRow(id: string) {
+    setRows((prev) => {
+      const next = prev.filter((r) => r.id !== id)
+      return next.length > 0 ? next : [blankPreviewRow(defaultCategory, hallName)]
+    })
+  }
+
+  function duplicateRow(id: string) {
+    setRows((prev) => {
+      const src = prev.find((r) => r.id === id)
+      if (!src) return prev
+      const copy: PreviewRow = {
+        ...src,
+        id: crypto.randomUUID(),
+        barcode: src.name.trim()
+          ? suggestMachineBarcode(`${src.name.trim()}-KOPIE`)
+          : '',
+      }
+      const idx = prev.findIndex((r) => r.id === id)
+      const list = [...prev]
+      list.splice(idx + 1, 0, copy)
+      return list
+    })
   }
 
   async function handleImport() {
@@ -166,7 +240,7 @@ export function PlanPhotoImportModal({
             <h2 id="plan-photo-import-title" className="text-xl font-bold lg:text-2xl">
               {step === 'capture' && 'Plan fotografieren'}
               {step === 'analyzing' && 'Plan wird ausgelesen…'}
-              {step === 'preview' && 'Erkannte Maschinen prüfen'}
+              {step === 'preview' && 'Maschinen prüfen & bearbeiten'}
               {step === 'done' && 'Import abgeschlossen'}
             </h2>
             {sourceLabel && step !== 'capture' && (
@@ -299,6 +373,13 @@ export function PlanPhotoImportModal({
                     >
                       Keine
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => addRow()}
+                      className="kwd-btn kwd-btn-primary text-xs"
+                    >
+                      + Zeile
+                    </button>
                     <CategoryPickerButton
                       value={defaultCategory}
                       suggestions={categorySuggestions}
@@ -324,12 +405,15 @@ export function PlanPhotoImportModal({
                       Anderes Foto
                     </button>
                   </div>
+                  <p className="text-kwd-muted text-xs">
+                    Felder direkt in der Tabelle ändern · fehlende Maschinen mit „+ Zeile“ ergänzen
+                  </p>
                 </div>
               </div>
 
               <div className="border-kwd-surface-light overflow-hidden rounded-xl border">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] border-collapse text-sm">
+                  <table className="w-full min-w-[980px] border-collapse text-sm">
                     <thead>
                       <tr className="bg-kwd-surface-light text-kwd-muted text-left text-xs font-bold uppercase">
                         <th className="border-kwd-surface-light w-10 border px-2 py-2">
@@ -341,20 +425,21 @@ export function PlanPhotoImportModal({
                             aria-label="Alle auswählen"
                           />
                         </th>
-                        <th className="border-kwd-surface-light border px-3 py-2">
-                          Datenname (Lebenszyklus)
-                        </th>
-                        <th className="border-kwd-surface-light border px-3 py-2">
-                          Zeichnung / Menü
-                        </th>
+                        <th className="border-kwd-surface-light border px-3 py-2">Bezeichnung</th>
                         <th className="border-kwd-surface-light border px-3 py-2">Standort</th>
                         <th className="border-kwd-surface-light border px-3 py-2">Kategorie</th>
                         <th className="border-kwd-surface-light border px-3 py-2">Scan-Code</th>
+                        <th className="border-kwd-surface-light w-28 border px-2 py-2"> </th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row, idx) => (
-                        <tr key={row.id} className={idx % 2 === 0 ? 'bg-kwd-bg/50' : ''}>
+                        <tr
+                          key={row.id}
+                          className={`${idx % 2 === 0 ? 'bg-kwd-bg/50' : ''} ${
+                            row.selected ? '' : 'opacity-50'
+                          }`}
+                        >
                           <td className="border-kwd-surface-light border px-2 py-1">
                             <input
                               type="checkbox"
@@ -370,42 +455,101 @@ export function PlanPhotoImportModal({
                                 const next = e.target.value
                                 updateRow(row.id, {
                                   name: next,
-                                  barcode: suggestMachineBarcode(next || row.labelName || 'MASCHINE'),
+                                  labelName: row.labelName || next,
+                                  barcode:
+                                    !row.barcode.trim() ||
+                                    row.barcode ===
+                                      suggestMachineBarcode(row.name || row.labelName || 'MASCHINE')
+                                      ? next.trim()
+                                        ? suggestMachineBarcode(next)
+                                        : ''
+                                      : row.barcode,
                                 })
                               }}
-                              className="bg-transparent w-full min-w-[10rem] border-0 px-1 py-1 text-sm focus:outline-none"
-                              title="Datenname für Lebenszyklus und Scan"
-                            />
-                          </td>
-                          <td className="border-kwd-surface-light border px-2 py-1">
-                            <input
-                              value={row.labelName}
-                              onChange={(e) => updateRow(row.id, { labelName: e.target.value })}
-                              className="bg-transparent text-kwd-muted w-full min-w-[8rem] border-0 px-1 py-1 text-sm focus:outline-none"
-                              title="Name wie auf der Zeichnung / im Menü"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && idx === rows.length - 1) {
+                                  e.preventDefault()
+                                  addRow(row.id)
+                                }
+                              }}
+                              placeholder="Maschinenname…"
+                              className="bg-transparent w-full min-w-[10rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
+                              title="Bezeichnung"
                             />
                           </td>
                           <td className="border-kwd-surface-light border px-2 py-1">
                             <input
                               value={row.location ?? ''}
                               onChange={(e) => updateRow(row.id, { location: e.target.value })}
-                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1 text-sm focus:outline-none"
+                              placeholder="Standort…"
+                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
                             />
                           </td>
                           <td className="border-kwd-surface-light border px-2 py-1">
                             <input
                               value={row.category ?? ''}
                               onChange={(e) => updateRow(row.id, { category: e.target.value })}
-                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1 text-sm focus:outline-none"
+                              placeholder="Kategorie…"
+                              list="plan-photo-category-suggestions"
+                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
                             />
                           </td>
-                          <td className="border-kwd-surface-light text-kwd-muted border px-2 py-1 font-mono text-xs">
-                            {row.barcode}
+                          <td className="border-kwd-surface-light border px-2 py-1">
+                            <input
+                              value={row.barcode}
+                              onChange={(e) => updateRow(row.id, { barcode: e.target.value })}
+                              placeholder="Scan-Code…"
+                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 font-mono text-xs focus:outline-none"
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => addRow(row.id)}
+                                className="kwd-btn min-h-[36px] px-2 text-xs"
+                                title="Zeile darunter einfügen"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => duplicateRow(row.id)}
+                                className="kwd-btn min-h-[36px] px-2 text-xs"
+                                title="Zeile duplizieren"
+                              >
+                                ⧉
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeRow(row.id)}
+                                className="text-kwd-danger hover:bg-kwd-danger/10 min-h-[36px] rounded px-2 text-xs font-semibold"
+                                title="Zeile löschen"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
+                      <tr className="bg-kwd-primary/10">
+                        <td colSpan={6} className="border-kwd-surface-light border px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => addRow()}
+                            className="kwd-btn kwd-btn-primary min-h-[40px] w-full text-sm font-bold sm:w-auto"
+                          >
+                            + Zeile hinzufügen
+                          </button>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
+                  <datalist id="plan-photo-category-suggestions">
+                    {categorySuggestions.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
             </div>

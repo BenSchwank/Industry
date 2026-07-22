@@ -102,9 +102,14 @@ export async function analyzePlanPhotoWithAi(
     .slice(0, 80)
 
   if (machines.length === 0) {
-    throw new Error(
-      'Keine Maschinen erkannt. Bitte Plan näher fotografieren oder schärferes Bild verwenden.',
-    )
+    return {
+      machines: [],
+      hallName: parsed.hall_name?.trim() || null,
+      notes:
+        parsed.notes?.trim() ||
+        'Keine Maschinen erkannt – bitte in der Vorschau manuell ergänzen.',
+      usedAi: true,
+    }
   }
 
   return {
