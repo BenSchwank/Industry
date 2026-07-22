@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import { machineCategorySuggestions } from './machineCategories'
+import {
+  DEFAULT_MACHINE_CATEGORIES,
+  canonicalDefaultCategory,
+  machineCategorySuggestions,
+} from './machineCategories'
 import { machineLocationSuggestions } from './machineLocations'
 
 export type MachineFieldOptionType = 'category' | 'location'
@@ -117,6 +121,36 @@ export async function rememberMachineFieldOptions(input: {
     rememberMachineFieldOption('category', input.category),
     rememberMachineFieldOption('location', input.location),
   ])
+}
+
+/**
+ * Wartungsplan-Ordner anlegen und gleichnamige Einträge kanonisch überschreiben.
+ * Andere (eigene) Kategorien bleiben erhalten. App-Seiten unverändert.
+ */
+export async function seedWartungsplanCategories(): Promise<void> {
+  const local = readLocal()
+  const remote = await fetchRemoteOptions('category')
+  const existing = [...local.category, ...remote]
+
+  for (const cat of DEFAULT_MACHINE_CATEGORIES) {
+    const variants = existing.filter(
+      (v) => v.trim().toLowerCase() === cat.toLowerCase() && v.trim() !== cat,
+    )
+    for (const variant of variants) {
+      await renameMachineFieldOption('category', variant, cat)
+    }
+    await rememberMachineFieldOption('category', cat)
+  }
+
+  const { data: rows } = await supabase.from('machines').select('id, category')
+  for (const row of rows ?? []) {
+    const c = row.category?.trim()
+    if (!c) continue
+    const canon = canonicalDefaultCategory(c)
+    if (canon && canon !== c) {
+      await supabase.from('machines').update({ category: canon }).eq('id', row.id)
+    }
+  }
 }
 
 async function fetchRemoteOptions(fieldType: MachineFieldOptionType): Promise<string[]> {

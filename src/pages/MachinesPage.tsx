@@ -15,7 +15,7 @@ import {
   type MachineSortBy,
 } from '../hooks/useMachinesWithStats'
 import { machineCategorySuggestions, DEFAULT_MACHINE_CATEGORIES } from '../lib/machineCategories'
-import { useMachineFieldOptions, rememberMachineFieldOption } from '../lib/machineFieldOptions'
+import { useMachineFieldOptions, seedWartungsplanCategories } from '../lib/machineFieldOptions'
 import { useQueryClient } from '@tanstack/react-query'
 import { machineLocationSuggestions } from '../lib/machineLocations'
 import { useIsDesktop } from '../hooks/usePlatform'
@@ -68,16 +68,14 @@ export default function MachinesPage() {
     [machines, fieldOptions?.locations],
   )
 
-  // Wartungsplan-Kategorien merken – gleiche Namen werden kanonisch überschrieben, App-Seiten bleiben
+  // Wartungsplan-Ordner: anlegen + gleiche Namen überschreiben; eigene Ordner / App-Seiten bleiben
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      for (const cat of DEFAULT_MACHINE_CATEGORIES) {
-        if (cancelled) return
-        await rememberMachineFieldOption('category', cat)
-      }
+      await seedWartungsplanCategories()
       if (!cancelled) {
         void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
+        void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       }
     })()
     return () => {
