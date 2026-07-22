@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { QS1ImportModal } from '../components/import/QS1ImportModal'
 import { PlanPhotoImportModal } from '../components/machines/PlanPhotoImportModal'
 import { MachineDetailPanel } from '../components/machines/MachineDetailPanel'
