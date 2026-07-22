@@ -27,6 +27,7 @@ function dateInputCls(value: string) {
 export type DraftField =
   | 'barcode'
   | 'name'
+  | 'labelName'
   | 'category'
   | 'location'
   | 'status'
@@ -38,6 +39,8 @@ export type DraftField =
 export interface MachineDraftValues {
   barcode: string
   name: string
+  /** Anzeigename Zeichnung / Menü */
+  labelName: string
   category: string
   location: string
   status: MachineStatus
@@ -78,6 +81,7 @@ interface MachineAddRowProps {
 export const EMPTY_DRAFT: MachineDraftValues = {
   barcode: '',
   name: '',
+  labelName: '',
   category: '',
   location: '',
   status: 'active',
@@ -130,6 +134,10 @@ export function MachineAddRow({
       setValues(next)
       return
     }
+    if (field === 'labelName') {
+      setValues({ ...values, labelName: value })
+      return
+    }
     setValues({ ...values, [field]: value })
   }
 
@@ -146,6 +154,7 @@ export function MachineAddRow({
     const next: MachineDraftValues = {
       ...values,
       name: mapped.name,
+      labelName: '',
       category: mapped.category ?? '',
       location: mapped.location ?? '',
       barcode: mapped.barcode
@@ -231,17 +240,31 @@ export function MachineAddRow({
         )}
       </td>
       <td className="px-1 py-0.5">
-        {cell(
-          'name',
-          <input
-            ref={nameRef}
-            value={values.name}
-            onChange={(e) => patch('name', e.target.value)}
-            onFocus={() => onSelectField('name')}
-            placeholder="Bezeichnung"
-            className={inputCls}
-          />,
-        )}
+        <div className="flex min-w-[10rem] flex-col gap-0.5">
+          {cell(
+            'name',
+            <input
+              ref={nameRef}
+              value={values.name}
+              onChange={(e) => patch('name', e.target.value)}
+              onFocus={() => onSelectField('name')}
+              placeholder="Datenname (Lebenszyklus)"
+              title="Datenname – wird beim Scan und im Lebenszyklus verwendet"
+              className={inputCls}
+            />,
+          )}
+          {cell(
+            'labelName',
+            <input
+              value={values.labelName}
+              onChange={(e) => patch('labelName', e.target.value)}
+              onFocus={() => onSelectField('labelName')}
+              placeholder="Etikett / Zeichnung (optional)"
+              title="Anzeigename aus Zeichnung/Menü – kann vom Datenname abweichen"
+              className={`${inputCls} text-kwd-muted text-xs`}
+            />,
+          )}
+        </div>
       </td>
       <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
         {fixedCategory !== undefined ? (
@@ -378,7 +401,7 @@ export function MachineAddRow({
 }
 
 export function validateDraft(values: MachineDraftValues): string | null {
-  if (!values.name.trim()) return 'Bezeichnung erforderlich'
+  if (!values.name.trim()) return 'Datenname (Bezeichnung) erforderlich'
   if (!values.location.trim()) return 'Standort erforderlich'
   let code = values.barcode.trim()
   if (!code) code = suggestMachineBarcode(values.name)
@@ -393,6 +416,7 @@ export function draftToInput(values: MachineDraftValues) {
   return {
     barcode: normalizeBarcode(code),
     name: values.name.trim(),
+    label_name: values.labelName.trim() || null,
     category: values.category.trim() || null,
     location: values.location.trim(),
     warranty_until: values.warrantyUntil || null,

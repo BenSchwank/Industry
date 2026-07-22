@@ -92,10 +92,12 @@ export default function MachinesPage() {
 
   useEffect(() => {
     if (selected && machineDetailFocus) {
-      setDetailFullscreen(true)
+      // Am PC: Seitenpanel – Tabelle bleibt sichtbar (Fotos/Lebenszyklus neben der Liste)
+      // Am Handy: Vollbild-Akte
+      setDetailFullscreen(!isDesktop)
       setMachineDetailFocus(false)
     }
-  }, [selected, machineDetailFocus, setMachineDetailFocus])
+  }, [selected, machineDetailFocus, setMachineDetailFocus, isDesktop])
 
   useEffect(() => {
     const el = canvasRef.current
@@ -317,7 +319,7 @@ export default function MachinesPage() {
               timeline={timeline ?? []}
               timelineLoading={timelineLoading}
               isDesktop={isDesktop}
-              compact
+              compact={false}
               fullscreen={false}
               onToggleFullscreen={() => setDetailFullscreen(true)}
               onClose={closeDetail}

@@ -84,3 +84,14 @@ CREATE POLICY "Anon delete checklist_items" ON public.maintenance_checklist_item
 
 -- Danach ggf. Schema-Cache neu laden: Dashboard → Settings → API → Reload schema
 -- oder kurz warten / Projekt neu laden.
+
+-- 7) Anzeigename Zeichnung/Menü getrennt vom Datenname (Lebenszyklus)
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS label_name TEXT;
+
+COMMENT ON COLUMN public.machines.label_name IS
+  'Anzeigename aus Zeichnung/Menü/Etikett. name bleibt der Datenname für Lebenszyklus & Scan.';
+
+CREATE INDEX IF NOT EXISTS idx_machines_label_name
+  ON public.machines (label_name)
+  WHERE label_name IS NOT NULL;

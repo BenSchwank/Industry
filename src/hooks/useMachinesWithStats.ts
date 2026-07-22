@@ -9,6 +9,8 @@ export interface MachineWithStats {
   id: string
   barcode: string
   name: string
+  /** Anzeigename Zeichnung/Menü – optional */
+  label_name: string | null
   location: string | null
   /** Maschine / Gerät / Kran … */
   category: string | null
@@ -36,6 +38,7 @@ function buildSearchHaystack(m: MachineWithStats): string {
   return [
     m.barcode,
     m.name,
+    m.label_name ?? '',
     m.location ?? '',
     m.category ?? '',
     m.status,
@@ -108,7 +111,7 @@ export function useMachinesWithStats() {
       const machinesRes = await supabase
         .from('machines')
         .select(
-          'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
+          'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at',
         )
         .order('name')
 
@@ -116,6 +119,7 @@ export function useMachinesWithStats() {
         id: string
         barcode: string
         name: string
+        label_name: string | null
         location: string | null
         category: string | null
         warranty_until: string | null
@@ -125,27 +129,48 @@ export function useMachinesWithStats() {
       }[] = []
 
       if (machinesRes.error) {
-        // category-Spalte fehlt noch → ohne category
-        if (/category|schema cache/i.test(machinesRes.error.message)) {
+        // label_name oder category fehlt noch
+        if (/label_name|category|schema cache/i.test(machinesRes.error.message)) {
           const fb = await supabase
             .from('machines')
             .select(
-              'id, barcode, name, location, warranty_until, status, external_source, created_at',
+              'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
             )
             .order('name')
-          if (fb.error) {
+          if (fb.error && /category|schema cache/i.test(fb.error.message)) {
             const basic = await supabase
               .from('machines')
-              .select('id, barcode, name, location, warranty_until, status, created_at')
+              .select(
+                'id, barcode, name, location, warranty_until, status, external_source, created_at',
+              )
               .order('name')
-            if (basic.error) throw basic.error
-            machines = (basic.data ?? []).map((m) => ({
-              ...m,
-              category: null,
-              external_source: null,
-            }))
+            if (basic.error) {
+              const bare = await supabase
+                .from('machines')
+                .select('id, barcode, name, location, warranty_until, status, created_at')
+                .order('name')
+              if (bare.error) throw bare.error
+              machines = (bare.data ?? []).map((m) => ({
+                ...m,
+                label_name: null,
+                category: null,
+                external_source: null,
+              }))
+            } else {
+              machines = (basic.data ?? []).map((m) => ({
+                ...m,
+                label_name: null,
+                category: null,
+              }))
+            }
+          } else if (fb.error) {
+            throw fb.error
           } else {
-            machines = (fb.data ?? []).map((m) => ({ ...m, category: null }))
+            machines = (fb.data ?? []).map((m) => ({
+              ...m,
+              label_name: null,
+              category: (m as { category?: string | null }).category ?? null,
+            }))
           }
         } else {
           const basic = await supabase
@@ -155,6 +180,7 @@ export function useMachinesWithStats() {
           if (basic.error) throw basic.error
           machines = (basic.data ?? []).map((m) => ({
             ...m,
+            label_name: null,
             category: null,
             external_source: null,
           }))
@@ -162,6 +188,7 @@ export function useMachinesWithStats() {
       } else {
         machines = (machinesRes.data ?? []).map((m) => ({
           ...m,
+          label_name: (m as { label_name?: string | null }).label_name ?? null,
           category: (m as { category?: string | null }).category ?? null,
         }))
       }

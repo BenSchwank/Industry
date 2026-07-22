@@ -253,9 +253,15 @@ export function MachineDetailPanel({
             </button>
             <div className="min-w-0">
               <p className="text-kwd-muted text-[11px] font-semibold tracking-wide uppercase">
-                Maschinenakte
+                Maschinenakte · Lebenszyklus
               </p>
               <h2 className="truncate text-lg font-semibold tracking-tight">{machine.name}</h2>
+              {machine.label_name?.trim() &&
+                machine.label_name.trim().toLowerCase() !== machine.name.trim().toLowerCase() && (
+                  <p className="text-kwd-muted truncate text-xs">
+                    Menü/Zeichnung: {machine.label_name.trim()}
+                  </p>
+                )}
               <p className="text-kwd-muted truncate font-mono text-xs lg:hidden">
                 {activeLabel}
                 {machine.location ? ` · ${machine.location}` : ''}
@@ -362,6 +368,12 @@ export function MachineDetailPanel({
         <div className="kwd-toolbar shrink-0">
           <div className="mr-auto min-w-0">
             <p className="truncate text-sm font-bold">{machine.name}</p>
+            {machine.label_name?.trim() &&
+              machine.label_name.trim().toLowerCase() !== machine.name.trim().toLowerCase() && (
+                <p className="text-kwd-muted truncate text-xs">
+                  Menü: {machine.label_name.trim()}
+                </p>
+              )}
             <p className="text-kwd-muted truncate font-mono text-xs">{machine.barcode}</p>
           </div>
           {onToggleFullscreen && (
@@ -478,6 +490,7 @@ function MachineStammdatenForm({
   const { data: allMachines } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const [name, setName] = useState(machine.name)
+  const [labelName, setLabelName] = useState(machine.label_name ?? '')
   const [barcode, setBarcode] = useState(machine.barcode)
   const [location, setLocation] = useState(machine.location ?? '')
   const [category, setCategory] = useState(machine.category ?? '')
@@ -509,6 +522,7 @@ function MachineStammdatenForm({
 
   useEffect(() => {
     setName(machine.name)
+    setLabelName(machine.label_name ?? '')
     setBarcode(machine.barcode)
     setLocation(machine.location ?? '')
     setCategory(machine.category ?? '')
@@ -520,6 +534,7 @@ function MachineStammdatenForm({
 
   const dirty =
     name.trim() !== machine.name ||
+    (labelName.trim() || '') !== (machine.label_name ?? '') ||
     normalizeBarcode(barcode) !== machine.barcode ||
     location.trim() !== (machine.location ?? '') ||
     (category.trim() || '') !== (machine.category ?? '') ||
@@ -530,7 +545,7 @@ function MachineStammdatenForm({
     setError(null)
     setMessage(null)
     if (!name.trim()) {
-      setError('Bezeichnung ist Pflicht.')
+      setError('Datenname (Bezeichnung) ist Pflicht.')
       return
     }
     if (!location.trim()) {
@@ -541,6 +556,7 @@ function MachineStammdatenForm({
       await updateMachine.mutateAsync({
         id: machine.id,
         name: name.trim(),
+        label_name: labelName.trim() || null,
         barcode: barcode.trim(),
         location: location.trim(),
         category: category.trim() || null,
@@ -651,9 +667,26 @@ function MachineStammdatenForm({
         <div className={`grid gap-3 p-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'}`}>
           <label className="block min-w-0">
             <span className="kwd-kpi-label">
-              Bezeichnung <span className="text-kwd-danger">*</span>
+              Datenname (Lebenszyklus) <span className="text-kwd-danger">*</span>
             </span>
-            <input value={name} onChange={(e) => setName(e.target.value)} required className={fieldCls} />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className={fieldCls}
+              title="Wird beim Scan und im Lebenszyklus verwendet"
+            />
+          </label>
+
+          <label className="block min-w-0">
+            <span className="kwd-kpi-label">Etikett / Zeichnung (Menü)</span>
+            <input
+              value={labelName}
+              onChange={(e) => setLabelName(e.target.value)}
+              className={fieldCls}
+              placeholder="Optional – Name auf Plan/Etikett"
+              title="Anzeigename aus Zeichnung oder öffentlichem Menü"
+            />
           </label>
 
           <label className="block min-w-0">
@@ -752,8 +785,10 @@ function MachineStammdatenForm({
                 type="button"
                 onClick={() => {
                   setName(machine.name)
+                  setLabelName(machine.label_name ?? '')
                   setBarcode(machine.barcode)
                   setLocation(machine.location ?? '')
+                  setCategory(machine.category ?? '')
                   setStatus(machine.status)
                   setWarrantyUntil(toDateInput(machine.warranty_until))
                   setError(null)

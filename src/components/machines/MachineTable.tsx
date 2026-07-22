@@ -70,7 +70,7 @@ function dateCellClass(d: string | null, forMaintenance = false) {
 }
 
 function isBlankDraft(d: MachineDraftValues) {
-  return !d.name.trim() && !d.location.trim() && !d.barcode.trim()
+  return !d.name.trim() && !d.labelName.trim() && !d.location.trim() && !d.barcode.trim()
 }
 
 function defaultDraftForCategory(groupKey: string): MachineDraftValues {
@@ -359,7 +359,16 @@ function MachineRow({
       <td className="font-mono text-xs font-semibold text-kwd-primary">{m.barcode}</td>
       <td className="font-medium">
         <div className="flex flex-col gap-0.5">
-          <span>{m.name}</span>
+          <span title="Datenname (Lebenszyklus / Scan)">{m.name}</span>
+          {m.label_name?.trim() &&
+            m.label_name.trim().toLowerCase() !== m.name.trim().toLowerCase() && (
+              <span
+                className="text-kwd-muted text-[11px]"
+                title="Etikett / Zeichnung (Menü)"
+              >
+                Menü: {m.label_name.trim()}
+              </span>
+            )}
           {m.open_ticket_count > 0 && (
             <span className="text-kwd-danger text-[11px] font-semibold">
               {m.open_ticket_count} offene Störung{m.open_ticket_count === 1 ? '' : 'en'}
@@ -1077,6 +1086,7 @@ export function MachineTable({
         updateCategoryDraft(targetKey, {
           ...defaultDraftForCategory(targetKey),
           name: mappedRow.name,
+          labelName: '',
           category:
             targetKey === UNCATEGORIZED_LABEL
               ? mappedRow.category ?? ''

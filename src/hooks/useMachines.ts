@@ -9,6 +9,8 @@ import type { MachineStatus } from '../types/database'
 export interface MachineInput {
   barcode: string
   name: string
+  /** Anzeigename Zeichnung/Menü – optional, sonst = name */
+  label_name?: string | null
   location: string
   category?: string | null
   warranty_until?: string | null
@@ -47,9 +49,13 @@ export function useCreateMachine() {
   return useMutation({
     mutationFn: async (input: MachineInput) => {
       const barcode = normalizeBarcode(input.barcode)
+      const dataName = input.name.trim()
+      const labelRaw = input.label_name?.trim() || null
+      const labelName = labelRaw && labelRaw.toLowerCase() !== dataName.toLowerCase() ? labelRaw : null
       const payload = {
         barcode,
-        name: input.name.trim(),
+        name: dataName,
+        label_name: labelName,
         location: input.location.trim(),
         category: input.category?.trim() || null,
         warranty_until: input.warranty_until || null,
@@ -61,8 +67,17 @@ export function useCreateMachine() {
         .select('id, barcode, name')
         .single()
 
+      if (error && /label_name|schema cache/i.test(error.message)) {
+        const { label_name: _l, ...withoutLabel } = payload
+        ;({ data, error } = await supabase
+          .from('machines')
+          .insert(withoutLabel)
+          .select('id, barcode, name')
+          .single())
+      }
+
       if (error && /category|schema cache/i.test(error.message)) {
-        const { category: _c, ...withoutCategory } = payload
+        const { category: _c, label_name: _l, ...withoutCategory } = payload
         ;({ data, error } = await supabase
           .from('machines')
           .insert(withoutCategory)
@@ -109,9 +124,14 @@ export function useBulkCreateMachines() {
       for (const input of inputs) {
         try {
           const barcode = normalizeBarcode(input.barcode)
+          const dataName = input.name.trim()
+          const labelRaw = input.label_name?.trim() || null
+          const labelName =
+            labelRaw && labelRaw.toLowerCase() !== dataName.toLowerCase() ? labelRaw : null
           const payload = {
             barcode,
-            name: input.name.trim(),
+            name: dataName,
+            label_name: labelName,
             location: input.location.trim(),
             category: input.category?.trim() || null,
             warranty_until: input.warranty_until || null,
@@ -123,8 +143,17 @@ export function useBulkCreateMachines() {
             .select('id, name')
             .single()
 
+          if (error && /label_name|schema cache/i.test(error.message)) {
+            const { label_name: _l, ...withoutLabel } = payload
+            ;({ data, error } = await supabase
+              .from('machines')
+              .insert(withoutLabel)
+              .select('id, name')
+              .single())
+          }
+
           if (error && /category|schema cache/i.test(error.message)) {
-            const { category: _c, ...withoutCategory } = payload
+            const { category: _c, label_name: _l, ...withoutCategory } = payload
             ;({ data, error } = await supabase
               .from('machines')
               .insert(withoutCategory)
@@ -171,6 +200,17 @@ export function useUpdateMachine() {
     }: Partial<MachineInput> & { id: string }) => {
       const payload = {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.label_name !== undefined
+          ? {
+              label_name: (() => {
+                const raw = input.label_name?.trim() || null
+                const dataName = (input.name ?? '').trim()
+                if (!raw) return null
+                if (dataName && raw.toLowerCase() === dataName.toLowerCase()) return null
+                return raw
+              })(),
+            }
+          : {}),
         ...(input.location !== undefined ? { location: input.location.trim() } : {}),
         ...(input.category !== undefined
           ? { category: input.category?.trim() || null }
@@ -188,6 +228,21 @@ export function useUpdateMachine() {
         .eq('id', id)
         .select()
         .single()
+
+      if (error && /label_name|schema cache/i.test(error.message) && input.label_name !== undefined) {
+        const { label_name: _l, ...withoutLabel } = payload
+        ;({ data, error } = await supabase
+          .from('machines')
+          .update(withoutLabel)
+          .eq('id', id)
+          .select()
+          .single())
+        if (!error) {
+          throw new Error(
+            'Spalte label_name fehlt in Supabase. Bitte supabase/FIX_MACHINE_LABEL_NAME.sql ausführen.',
+          )
+        }
+      }
 
       if (error && /category|schema cache/i.test(error.message) && input.category !== undefined) {
         const { category: _c, ...withoutCategory } = payload

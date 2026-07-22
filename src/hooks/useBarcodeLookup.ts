@@ -28,8 +28,24 @@ async function lookupBarcode(raw: string): Promise<BarcodeLookupResult> {
       .select('id, name, barcode')
       .ilike('barcode', `%${trimmed}%`)
       .limit(1)
-    if (soft.error || !soft.data?.length) return null
-    return soft.data[0]
+    if (!soft.error && soft.data?.length) return soft.data[0]
+
+    // Manuelle Eingabe: Datenname oder Zeichnungs-/Menüname
+    const byName = await supabase
+      .from('machines')
+      .select('id, name, barcode')
+      .ilike('name', trimmed)
+      .limit(1)
+    if (!byName.error && byName.data?.length) return byName.data[0]
+
+    const byLabel = await supabase
+      .from('machines')
+      .select('id, name, barcode')
+      .ilike('label_name', trimmed)
+      .limit(1)
+    if (!byLabel.error && byLabel.data?.length) return byLabel.data[0]
+
+    return null
   }
 
   async function findInventory() {

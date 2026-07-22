@@ -43,6 +43,7 @@ export interface Database {
           id: string
           barcode: string
           name: string
+          label_name: string | null
           location: string | null
           category: string | null
           warranty_until: string | null
@@ -56,6 +57,7 @@ export interface Database {
           id?: string
           barcode: string
           name: string
+          label_name?: string | null
           location?: string | null
           category?: string | null
           warranty_until?: string | null
@@ -69,6 +71,7 @@ export interface Database {
           id?: string
           barcode?: string
           name?: string
+          label_name?: string | null
           location?: string | null
           category?: string | null
           warranty_until?: string | null

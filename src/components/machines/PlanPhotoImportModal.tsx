@@ -9,10 +9,17 @@ import { CategoryPickerButton } from './CategoryPickerButton'
 
 type Step = 'capture' | 'analyzing' | 'preview' | 'done'
 
-interface PreviewRow extends PlanPhotoMachine {
+interface PreviewRow {
   id: string
   selected: boolean
   barcode: string
+  /** Datenname – Lebenszyklus / Scan */
+  name: string
+  /** Name auf der Zeichnung / Menü */
+  labelName: string
+  location?: string | null
+  category?: string | null
+  confidence?: 'high' | 'medium' | 'low'
 }
 
 interface PlanPhotoImportModalProps {
@@ -21,12 +28,16 @@ interface PlanPhotoImportModalProps {
 }
 
 function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): PreviewRow {
+  const drawingName = machine.name.trim()
   return {
-    ...machine,
     id: crypto.randomUUID(),
     selected: true,
+    name: drawingName,
+    labelName: drawingName,
+    location: machine.location,
     category: machine.category?.trim() || defaultCategory || null,
-    barcode: suggestMachineBarcode(machine.name),
+    confidence: machine.confidence,
+    barcode: suggestMachineBarcode(drawingName),
   }
 }
 
@@ -114,6 +125,7 @@ export function PlanPhotoImportModal({
     const inputs: MachineInput[] = selected.map((r) => ({
       barcode: r.barcode.trim() || suggestMachineBarcode(r.name),
       name: r.name.trim(),
+      label_name: r.labelName.trim() || null,
       location: (r.location ?? '').trim() || 'Unbekannt',
       category: r.category?.trim() || defaultCategory.trim() || null,
       status: 'active',
@@ -316,7 +328,7 @@ export function PlanPhotoImportModal({
 
               <div className="border-kwd-surface-light overflow-hidden rounded-xl border">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] border-collapse text-sm">
+                  <table className="w-full min-w-[900px] border-collapse text-sm">
                     <thead>
                       <tr className="bg-kwd-surface-light text-kwd-muted text-left text-xs font-bold uppercase">
                         <th className="border-kwd-surface-light w-10 border px-2 py-2">
@@ -328,7 +340,12 @@ export function PlanPhotoImportModal({
                             aria-label="Alle auswählen"
                           />
                         </th>
-                        <th className="border-kwd-surface-light border px-3 py-2">Bezeichnung</th>
+                        <th className="border-kwd-surface-light border px-3 py-2">
+                          Datenname (Lebenszyklus)
+                        </th>
+                        <th className="border-kwd-surface-light border px-3 py-2">
+                          Zeichnung / Menü
+                        </th>
                         <th className="border-kwd-surface-light border px-3 py-2">Standort</th>
                         <th className="border-kwd-surface-light border px-3 py-2">Kategorie</th>
                         <th className="border-kwd-surface-light border px-3 py-2">Scan-Code</th>
@@ -348,8 +365,23 @@ export function PlanPhotoImportModal({
                           <td className="border-kwd-surface-light border px-2 py-1">
                             <input
                               value={row.name}
-                              onChange={(e) => updateRow(row.id, { name: e.target.value })}
+                              onChange={(e) => {
+                                const next = e.target.value
+                                updateRow(row.id, {
+                                  name: next,
+                                  barcode: suggestMachineBarcode(next || row.labelName || 'MASCHINE'),
+                                })
+                              }}
                               className="bg-transparent w-full min-w-[10rem] border-0 px-1 py-1 text-sm focus:outline-none"
+                              title="Datenname für Lebenszyklus und Scan"
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-2 py-1">
+                            <input
+                              value={row.labelName}
+                              onChange={(e) => updateRow(row.id, { labelName: e.target.value })}
+                              className="bg-transparent text-kwd-muted w-full min-w-[8rem] border-0 px-1 py-1 text-sm focus:outline-none"
+                              title="Name wie auf der Zeichnung / im Menü"
                             />
                           </td>
                           <td className="border-kwd-surface-light border px-2 py-1">
