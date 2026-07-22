@@ -366,7 +366,7 @@ export function MachineAddRow({
                 onSaveRequest()
               }}
               disabled={saving}
-              className="kwd-btn kwd-btn-primary hidden min-h-[40px] min-w-[4.5rem] px-2 text-xs font-bold lg:inline-flex"
+              className="kwd-btn kwd-btn-primary inline-flex min-h-[44px] min-w-[3.25rem] px-2.5 text-xs font-bold sm:min-h-[40px] sm:min-w-[4.5rem]"
             >
               {saving ? '…' : 'OK'}
             </button>
@@ -379,7 +379,7 @@ export function MachineAddRow({
                 onCancel()
               }}
               disabled={saving}
-              className="text-kwd-muted hidden min-h-[40px] px-2 text-xs hover:underline lg:inline"
+              className="text-kwd-muted inline min-h-[44px] px-2 text-xs hover:underline sm:min-h-[40px]"
               title="Zeile leeren"
             >
               ✕
@@ -404,7 +404,7 @@ export function MachineAddRow({
               disabled={saving}
               className="kwd-btn kwd-btn-primary min-h-[48px] flex-1 text-sm font-bold"
             >
-              {saving ? 'Speichern…' : 'Speichern'}
+              {saving ? '…' : 'OK'}
             </button>
             <button
               type="button"
