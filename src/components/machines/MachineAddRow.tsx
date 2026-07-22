@@ -226,7 +226,7 @@ export function MachineAddRow({
               value={values.barcode}
               onChange={(e) => patch('barcode', e.target.value)}
               onFocus={() => onSelectField('barcode')}
-              placeholder="Scan-Code"
+              placeholder="Maschinennummer"
               className={`${inputCls} font-mono text-xs`}
             />
             <button
@@ -248,7 +248,7 @@ export function MachineAddRow({
             value={values.name}
             onChange={(e) => patch('name', e.target.value)}
             onFocus={() => onSelectField('name')}
-            placeholder="Bezeichnung"
+            placeholder="Maschine"
             title="Maschinenname"
             className={inputCls}
           />,
@@ -426,7 +426,7 @@ export function MachineAddRow({
 }
 
 export function validateDraft(values: MachineDraftValues): string | null {
-  if (!values.name.trim()) return 'Bezeichnung erforderlich'
+  if (!values.name.trim()) return 'Maschine (Bezeichnung) erforderlich'
   if (!values.location.trim()) return 'Standort erforderlich'
   let code = values.barcode.trim()
   if (!code) code = suggestMachineBarcode(values.name)

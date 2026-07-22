@@ -1559,9 +1559,9 @@ export function MachineTable({
                   aria-label="Alle markieren"
                 />
               </th>
-              <th>Scan-Code</th>
+              <th>Maschinennummer</th>
               <SortableTh
-                label="Bezeichnung"
+                label="Maschine"
                 column="name"
                 sortBy={sortBy}
                 sortDescending={sortDescending}
@@ -1585,9 +1585,9 @@ export function MachineTable({
               />
               <th>Status</th>
               <th className="min-w-[100px]">Docs / Plan</th>
-              <th>Letzte HU</th>
+              <th>letzte Wartung</th>
               <SortableTh
-                label="Nächste HU"
+                label="nächste geplante Wartung"
                 column="next_maintenance"
                 sortBy={sortBy}
                 sortDescending={sortDescending}

@@ -626,7 +626,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="Nächste HU"
+          label="nächste geplante Wartung"
           value={formatDate(machine.next_maintenance_at)}
           hint={
             maintenanceOverdue
@@ -640,7 +640,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="Letzte HU"
+          label="letzte Wartung"
           value={formatDate(machine.last_maintenance_at)}
           compact={compact}
         />
@@ -735,7 +735,7 @@ function MachineStammdatenForm({
           </label>
 
           <label className="block min-w-0">
-            <span className="kwd-kpi-label">Scan-Code</span>
+            <span className="kwd-kpi-label">Maschinennummer</span>
             <input
               value={barcode}
               onChange={(e) => setBarcode(normalizeBarcode(e.target.value))}

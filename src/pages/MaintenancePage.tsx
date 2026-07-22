@@ -116,7 +116,7 @@ export default function MaintenancePage() {
             <p className="text-kwd-muted">Keine Reparatur-Aufgaben geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
               In der Maschinenakte unter Lebenszyklus „+ Reparatur“ eintragen. Fällige
-              Hauptuntersuchungen siehst du in der Maschinenliste (Spalte „Nächste HU“).
+              Hauptuntersuchungen siehst du in der Maschinenliste (Spalte „nächste geplante Wartung“).
             </p>
           </div>
         )}

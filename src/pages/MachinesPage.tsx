@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import { QS1ImportModal } from '../components/import/QS1ImportModal'
 import { PlanPhotoImportModal } from '../components/machines/PlanPhotoImportModal'
 import { MachineDetailPanel } from '../components/machines/MachineDetailPanel'
@@ -14,9 +14,8 @@ import {
   type MachineDateFilter,
   type MachineSortBy,
 } from '../hooks/useMachinesWithStats'
-import { machineCategorySuggestions, DEFAULT_MACHINE_CATEGORIES } from '../lib/machineCategories'
-import { useMachineFieldOptions, seedWartungsplanCategories } from '../lib/machineFieldOptions'
-import { useQueryClient } from '@tanstack/react-query'
+import { machineCategorySuggestions } from '../lib/machineCategories'
+import { useMachineFieldOptions } from '../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../lib/machineLocations'
 import { useIsDesktop } from '../hooks/usePlatform'
 import { useAppStore } from '../stores/appStore'
@@ -48,12 +47,10 @@ export default function MachinesPage() {
   const { data: machines, isLoading } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const { data: timeline, isLoading: timelineLoading } = useMachineTimeline(selectedId)
-  const queryClient = useQueryClient()
 
   const categoryOptions = useMemo(
     () =>
       machineCategorySuggestions([
-        ...DEFAULT_MACHINE_CATEGORIES,
         ...(fieldOptions?.categories ?? []),
         ...uniqueMachineCategories(machines ?? []),
       ]),
@@ -67,20 +64,6 @@ export default function MachinesPage() {
       ]),
     [machines, fieldOptions?.locations],
   )
-
-  // Wartungsplan-Ordner: anlegen + gleiche Namen überschreiben (nur Vorschläge, kein Maschinen-Refetch)
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      await seedWartungsplanCategories()
-      if (!cancelled) {
-        void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [queryClient])
 
   const filtered = useMemo(() => {
     const list = filterMachines(machines ?? [], {

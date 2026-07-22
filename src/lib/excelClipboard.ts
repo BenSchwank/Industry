@@ -180,15 +180,15 @@ export function machinesToTsv(
   }[],
 ): string {
   const header = [
-    'Scan-Code',
-    'Bezeichnung',
+    'Maschinennummer',
+    'Maschine',
     'Kategorie',
     'Standort',
     'Status',
     'Dokumente',
     'Plan/Analyse',
-    'Letzte HU',
-    'Nächste HU',
+    'letzte Wartung',
+    'nächste geplante Wartung',
     'Letzte Reparatur',
     'Garantie',
   ]

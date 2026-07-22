@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { analyzePlanPhotoWithAi, type PlanPhotoMachine } from '../../lib/aiPlanPhotoAnalysis'
 import { suggestMachineBarcode } from '../../lib/barcode'
-import { inferCategoryFromMachineName } from '../../lib/machineCategories'
 import { preparePlanPhotoForAnalysis } from '../../lib/planPhotoImage'
 import { useBulkCreateMachines, type MachineInput } from '../../hooks/useMachines'
 import { useIsMobile } from '../../hooks/usePlatform'
@@ -30,14 +29,13 @@ interface PlanPhotoImportModalProps {
 
 function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): PreviewRow {
   const drawingName = machine.name.trim()
-  const inferred = inferCategoryFromMachineName(drawingName)
   return {
     id: crypto.randomUUID(),
     selected: true,
     name: drawingName,
     labelName: drawingName,
     location: machine.location,
-    category: machine.category?.trim() || inferred || defaultCategory || null,
+    category: machine.category?.trim() || defaultCategory || null,
     confidence: machine.confidence,
     barcode: suggestMachineBarcode(drawingName || 'MASCHINE'),
   }
