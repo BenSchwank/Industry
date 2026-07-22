@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TicketForm } from '../components/tickets/TicketForm'
+import { TicketEditForm, type TicketEditTarget } from '../components/tickets/TicketEditForm'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
 import {
   TICKET_PRIORITY_LABEL,
@@ -22,6 +23,7 @@ type FilterMode = 'open' | 'all'
 
 export default function TicketsPage() {
   const [showForm, setShowForm] = useState(false)
+  const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterMode>('open')
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -40,14 +42,14 @@ export default function TicketsPage() {
       const { data, error } = await supabase
         .from('tickets')
         .select(
-          'id, description, status, priority, created_at, created_by, reference_label, machines(name, barcode)',
+          'id, description, status, priority, created_at, created_by, reference_label, machine_id, machines(name, barcode)',
         )
         .order('created_at', { ascending: false })
       if (error) {
         if (/created_by|reference_label/i.test(error.message)) {
           const fb = await supabase
             .from('tickets')
-            .select('id, description, status, priority, created_at, machines(name, barcode)')
+            .select('id, description, status, priority, created_at, machine_id, machines(name, barcode)')
             .order('created_at', { ascending: false })
           if (fb.error) throw fb.error
           return (fb.data ?? []).map((t) => ({
@@ -222,6 +224,26 @@ export default function TicketsPage() {
               </span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  setEditTicket({
+                    id: ticket.id,
+                    description: ticket.description,
+                    priority: ticket.priority,
+                    status: ticket.status,
+                    machine_id: (ticket as { machine_id?: string | null }).machine_id ?? null,
+                    reference_label: referenceLabel ?? null,
+                    machine_label: isFreeReference
+                      ? `Freier Bezug: ${referenceLabel?.trim() ?? ''}`
+                      : `${machine?.barcode ?? ''} – ${machine?.name ?? ''}`.trim(),
+                  })
+                }
+                className="kwd-btn min-h-[44px] px-4 text-sm font-semibold"
+              >
+                Bearbeiten
+              </button>
               {isOpen && (
                 <button
                   type="button"
@@ -244,6 +266,17 @@ export default function TicketsPage() {
           </article>
         )
       })}
+
+      {editTicket && (
+        <TicketEditForm
+          ticket={editTicket}
+          onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => {
+            setToast(msg)
+            setTimeout(() => setToast(null), 4000)
+          }}
+        />
+      )}
 
       {showForm && (
         <TicketForm

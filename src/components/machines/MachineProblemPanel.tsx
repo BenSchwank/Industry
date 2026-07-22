@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeleteTicket, useResolveTicket } from '../../hooks/useTicketActions'
+import { TicketEditForm, type TicketEditTarget } from '../tickets/TicketEditForm'
 import { createTicketOptimistic } from '../../lib/syncTickets'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
@@ -30,6 +31,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
 
   const { data: openTickets = [] } = useQuery({
     queryKey: ['machine-open-tickets', machineId],
@@ -183,6 +185,23 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
                     <button
                       type="button"
                       disabled={busy}
+                      onClick={() =>
+                        setEditTicket({
+                          id: t.id,
+                          description: t.description,
+                          priority: t.priority,
+                          status: t.status,
+                          machine_id: machineId,
+                          machine_label: machineName,
+                        })
+                      }
+                      className="kwd-btn min-h-[40px] px-3 text-sm font-semibold"
+                    >
+                      Bearbeiten
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
                       onClick={() => void handleResolve(t.id)}
                       className="bg-kwd-success min-h-[40px] rounded-lg px-3 text-sm font-bold text-white disabled:opacity-50"
                     >
@@ -202,6 +221,17 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
             })}
           </ul>
         </section>
+      )}
+
+      {editTicket && (
+        <TicketEditForm
+          ticket={editTicket}
+          onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => {
+            setMessage(msg)
+            void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+          }}
+        />
       )}
     </div>
   )
