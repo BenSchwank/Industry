@@ -388,7 +388,7 @@ export function MachineAddRow({
 }
 
 export function validateDraft(values: MachineDraftValues): string | null {
-  if (!values.name.trim()) return 'Datenname (Bezeichnung) erforderlich'
+  if (!values.name.trim()) return 'Bezeichnung erforderlich'
   if (!values.location.trim()) return 'Standort erforderlich'
   let code = values.barcode.trim()
   if (!code) code = suggestMachineBarcode(values.name)
