@@ -1,9 +1,21 @@
 import { formatOpenAiError } from './openAiErrors'
+import { parsePlanFlexibleDate } from './planPhotoDates'
 
 export interface PlanPhotoMachine {
   name: string
+  /** Maschinennummer / Inventar / Scan-Code vom Plan */
+  machine_number?: string | null
   location?: string | null
   category?: string | null
+  last_maintenance_at?: string | null
+  next_maintenance_at?: string | null
+  last_maintenance_code?: string | null
+  next_maintenance_code?: string | null
+  last_cutting_oil_at?: string | null
+  next_cutting_oil_at?: string | null
+  last_hydraulic_oil_at?: string | null
+  next_hydraulic_oil_at?: string | null
+  last_hydraulic_code?: string | null
   confidence?: 'high' | 'medium' | 'low'
 }
 
@@ -14,23 +26,44 @@ export interface PlanPhotoAnalysisResult {
   usedAi: boolean
 }
 
-const SYSTEM_PROMPT = `Du bist Experte für industrielle Instandhaltung und Hallenpläne.
-Analysiere das Foto eines Maschinenplans, einer Anlagenliste oder einer Wandtafel mit Geräten.
+const SYSTEM_PROMPT = `Du bist Experte für industrielle Wartungspläne und Tabellen-Aushänge (KWD).
+Analysiere das Foto einer Wartungstabelle / Anlagenliste.
 
-Extrahiere alle erkennbaren Maschinen/Geräte mit:
-- name: Bezeichnung wie auf dem Plan (z. B. „Fräsmaschine DMG 500“, „Kompressor 3“)
-- location: Standort/Halle/Bereich wenn erkennbar (z. B. „Halle 2“, „Linie A“, „Bereich Nord“)
-- category: Gruppe/Abteilung wenn auf dem Plan erkennbar (sonst null)
-- confidence: "high" | "medium" | "low" je nach Lesbarkeit
+Extrahiere JEDE erkennbare Maschinenzeile mit diesen Spalten (wie auf dem Aushang):
+- name: Spalte „Maschine“ (Bezeichnung)
+- machine_number: Spalte „Maschinennummer“ (Nummer/Inventar/Code), sonst null
+- location: Standort/Halle wenn irgendwo erkennbar, sonst null
+- category: sichtbare Gruppenüberschrift/Block (z. B. Pfauter, Hänel, Kompressoren), sonst null
+- last_maintenance_at: „letzte Wartung“ – Datum als gedruckt (z. B. „Dez 25“, „01.12.2025“) oder ISO, sonst null / „-“ → null
+- next_maintenance_at: „nächste geplante Wartung“
+- last_maintenance_code: Code neben letzter Wartung: E (extern), I (intern), IB (Inbetriebnahme), sonst null
+- next_maintenance_code: Code neben nächster Wartung (E/I), sonst null
+- last_cutting_oil_at: „letzter Schneidöl-Wechsel“
+- next_cutting_oil_at: „nächster geplanter Schneidöl-Wechsel“
+- last_hydraulic_oil_at: „letzter Hyd.-Ölwechsel“
+- next_hydraulic_oil_at: „nächster Hyd.-Ölwechsel“
+- last_hydraulic_code: Code neben Hydraulik (W / IB / K), sonst null
+- confidence: "high" | "medium" | "low"
 
 Regeln:
-- Nur echte Maschinen/Geräte, keine Legenden, Überschriften oder Randtexte
-- Bei unleserlichen Einträgen weglassen oder confidence "low"
-- Deutsche Bezeichnungen beibehalten
-- Keine erfundenen Details
+- Nur echte Maschinenzeilen, keine Überschriften der Tabelle selbst
+- „-“ / leer → null
+- Deutsche Monatsangaben beibehalten wenn kein volles Datum lesbar
+- Keine erfundenen Werte
+- Alle sichtbaren Zeilen erfassen (auch Hänel Lean Lift usw.)
 
 Antworte NUR als JSON:
-{"hall_name":"… oder null","notes":"Kurzer Hinweis zur Bildqualität oder null","machines":[{"name":"…","location":"… oder null","category":"… oder null","confidence":"high|medium|low"}]}`
+{"hall_name":null,"notes":null,"machines":[{"name":"…","machine_number":null,"location":null,"category":null,"last_maintenance_at":null,"next_maintenance_at":null,"last_maintenance_code":null,"next_maintenance_code":null,"last_cutting_oil_at":null,"next_cutting_oil_at":null,"last_hydraulic_oil_at":null,"next_hydraulic_oil_at":null,"last_hydraulic_code":null,"confidence":"medium"}]}`
+
+function normDate(v: string | null | undefined): string | null {
+  return parsePlanFlexibleDate(v)
+}
+
+function normCode(v: string | null | undefined): string | null {
+  const t = v?.trim()
+  if (!t || t === '-' || t === '–') return null
+  return t.toUpperCase()
+}
 
 export async function analyzePlanPhotoWithAi(
   base64: string,
@@ -61,7 +94,7 @@ export async function analyzePlanPhotoWithAi(
           content: [
             {
               type: 'text',
-              text: 'Extrahiere alle Maschinen/Geräte aus diesem Plan-Foto für die Maschinenliste.',
+              text: 'Extrahiere die Wartungsplan-Tabelle vollständig: Maschine, Maschinennummer, Wartung, Schneidöl, Hydrauliköl inkl. Codes.',
             },
             {
               type: 'image_url',
@@ -94,12 +127,22 @@ export async function analyzePlanPhotoWithAi(
   const machines = (parsed.machines ?? [])
     .map((m) => ({
       name: m.name?.trim() ?? '',
+      machine_number: m.machine_number?.trim() || null,
       location: m.location?.trim() || null,
       category: m.category?.trim() || null,
+      last_maintenance_at: normDate(m.last_maintenance_at),
+      next_maintenance_at: normDate(m.next_maintenance_at),
+      last_maintenance_code: normCode(m.last_maintenance_code),
+      next_maintenance_code: normCode(m.next_maintenance_code),
+      last_cutting_oil_at: normDate(m.last_cutting_oil_at),
+      next_cutting_oil_at: normDate(m.next_cutting_oil_at),
+      last_hydraulic_oil_at: normDate(m.last_hydraulic_oil_at),
+      next_hydraulic_oil_at: normDate(m.next_hydraulic_oil_at),
+      last_hydraulic_code: normCode(m.last_hydraulic_code),
       confidence: m.confidence ?? 'medium',
     }))
     .filter((m) => m.name.length >= 2)
-    .slice(0, 80)
+    .slice(0, 120)
 
   if (machines.length === 0) {
     return {

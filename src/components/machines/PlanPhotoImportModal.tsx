@@ -13,12 +13,19 @@ interface PreviewRow {
   id: string
   selected: boolean
   barcode: string
-  /** Datenname – Lebenszyklus / Scan */
   name: string
-  /** Name auf der Zeichnung / Menü */
   labelName: string
   location?: string | null
   category?: string | null
+  lastMaintenance: string
+  nextMaintenance: string
+  lastMaintenanceCode: string
+  nextMaintenanceCode: string
+  lastCuttingOil: string
+  nextCuttingOil: string
+  lastHydraulicOil: string
+  nextHydraulicOil: string
+  lastHydraulicCode: string
   confidence?: 'high' | 'medium' | 'low'
 }
 
@@ -27,8 +34,16 @@ interface PlanPhotoImportModalProps {
   categorySuggestions?: string[]
 }
 
+const dateInputCls =
+  'bg-transparent w-full min-w-[7.5rem] border-0 px-1 py-1.5 text-xs focus:outline-none'
+const textInputCls =
+  'bg-transparent w-full border-0 px-1 py-1.5 text-sm focus:outline-none'
+const codeInputCls =
+  'bg-transparent w-full min-w-[2.5rem] max-w-[3.5rem] border-0 px-1 py-1.5 text-center text-xs font-bold uppercase focus:outline-none'
+
 function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): PreviewRow {
   const drawingName = machine.name.trim()
+  const number = machine.machine_number?.trim() || ''
   return {
     id: crypto.randomUUID(),
     selected: true,
@@ -37,7 +52,16 @@ function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): Prev
     location: machine.location,
     category: machine.category?.trim() || defaultCategory || null,
     confidence: machine.confidence,
-    barcode: suggestMachineBarcode(drawingName || 'MASCHINE'),
+    barcode: number || suggestMachineBarcode(drawingName || 'MASCHINE'),
+    lastMaintenance: machine.last_maintenance_at ?? '',
+    nextMaintenance: machine.next_maintenance_at ?? '',
+    lastMaintenanceCode: machine.last_maintenance_code ?? '',
+    nextMaintenanceCode: machine.next_maintenance_code ?? '',
+    lastCuttingOil: machine.last_cutting_oil_at ?? '',
+    nextCuttingOil: machine.next_cutting_oil_at ?? '',
+    lastHydraulicOil: machine.last_hydraulic_oil_at ?? '',
+    nextHydraulicOil: machine.next_hydraulic_oil_at ?? '',
+    lastHydraulicCode: machine.last_hydraulic_code ?? '',
   }
 }
 
@@ -51,6 +75,15 @@ function blankPreviewRow(defaultCategory: string, defaultLocation?: string | nul
     category: defaultCategory.trim() || null,
     confidence: 'high',
     barcode: '',
+    lastMaintenance: '',
+    nextMaintenance: '',
+    lastMaintenanceCode: '',
+    nextMaintenanceCode: '',
+    lastCuttingOil: '',
+    nextCuttingOil: '',
+    lastHydraulicOil: '',
+    nextHydraulicOil: '',
+    lastHydraulicCode: '',
   }
 }
 
@@ -119,27 +152,24 @@ export function PlanPhotoImportModal({
         setStep('preview')
         if (result.machines.length === 0) {
           setError(
-            'Keine Maschinen erkannt – Tabelle ist leer, bitte Zeilen manuell ergänzen.',
+            result.notes ||
+              'Nichts erkannt – Tabelle unten manuell ausfüllen (wie auf dem Aushang).',
           )
         }
       } catch (aiErr) {
-        // Foto bleibt – manuell in Vorschau eintragen
         setHallName(null)
         setAnalysisNotes(null)
-        setRows([
-          blankPreviewRow(defaultCategory),
-          blankPreviewRow(defaultCategory),
-          blankPreviewRow(defaultCategory),
-        ])
+        setRows([blankPreviewRow(defaultCategory)])
         setStep('preview')
         setError(
-          (aiErr instanceof Error ? aiErr.message : 'Analyse fehlgeschlagen') +
-            ' · Foto bleibt – bitte Maschinen unten manuell eintragen.',
+          aiErr instanceof Error
+            ? `${aiErr.message} – Vorschau ist leer editierbar.`
+            : 'Erkennung fehlgeschlagen – bitte manuell eintragen.',
         )
       }
     } catch (err) {
       setStep('capture')
-      setError(err instanceof Error ? err.message : 'Bild konnte nicht geladen werden')
+      setError(err instanceof Error ? err.message : 'Foto konnte nicht gelesen werden')
     }
   }
 
@@ -152,8 +182,8 @@ export function PlanPhotoImportModal({
   }
 
   function addRow(afterId?: string) {
-    const next = blankPreviewRow(defaultCategory, hallName)
     setRows((prev) => {
+      const next = blankPreviewRow(defaultCategory, hallName)
       if (!afterId) return [...prev, next]
       const idx = prev.findIndex((r) => r.id === afterId)
       if (idx < 0) return [...prev, next]
@@ -203,6 +233,15 @@ export function PlanPhotoImportModal({
       location: (r.location ?? '').trim() || 'Unbekannt',
       category: r.category?.trim() || defaultCategory.trim() || null,
       status: 'active',
+      last_maintenance_at: r.lastMaintenance || null,
+      next_maintenance_at: r.nextMaintenance || null,
+      last_maintenance_code: r.lastMaintenanceCode.trim() || null,
+      next_maintenance_code: r.nextMaintenanceCode.trim() || null,
+      last_cutting_oil_at: r.lastCuttingOil || null,
+      next_cutting_oil_at: r.nextCuttingOil || null,
+      last_hydraulic_oil_at: r.lastHydraulicOil || null,
+      next_hydraulic_oil_at: r.nextHydraulicOil || null,
+      last_hydraulic_code: r.lastHydraulicCode.trim() || null,
     }))
 
     try {
@@ -233,21 +272,21 @@ export function PlanPhotoImportModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 lg:p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 lg:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="plan-photo-import-title"
     >
-      <div className="bg-kwd-surface border-kwd-surface-light flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
+      <div className="bg-kwd-surface border-kwd-surface-light flex max-h-[96vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
         <header className="border-kwd-surface-light flex shrink-0 items-start justify-between gap-4 border-b px-5 py-4 lg:px-6">
           <div>
             <p className="text-kwd-primary text-xs font-bold uppercase tracking-widest">
               Plan-Foto
             </p>
             <h2 id="plan-photo-import-title" className="text-xl font-bold lg:text-2xl">
-              {step === 'capture' && 'Plan fotografieren'}
-              {step === 'analyzing' && 'Plan wird ausgelesen…'}
-              {step === 'preview' && 'Maschinen prüfen & bearbeiten'}
+              {step === 'capture' && 'Wartungsplan fotografieren'}
+              {step === 'analyzing' && 'Tabelle wird ausgelesen…'}
+              {step === 'preview' && 'Vorschau wie Aushang – prüfen & bearbeiten'}
               {step === 'done' && 'Import abgeschlossen'}
             </h2>
             {sourceLabel && step !== 'capture' && (
@@ -269,8 +308,8 @@ export function PlanPhotoImportModal({
               <section className="bg-kwd-bg flex flex-1 flex-col rounded-xl p-5">
                 <h3 className="font-bold">Kamera oder Galerie</h3>
                 <p className="text-kwd-muted mt-1 text-sm">
-                  Hängenden Hallenplan, Anlagenliste oder Wandtafel fotografieren – die KI liest
-                  Bezeichnungen und Standorte aus.
+                  Wartungsplan-Aushang fotografieren – die KI liest Maschinennummer, Wartung,
+                  Schneidöl und Hydrauliköl aus.
                 </p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                   <button
@@ -316,8 +355,8 @@ export function PlanPhotoImportModal({
               <section className="bg-kwd-bg flex flex-1 flex-col rounded-xl p-5">
                 <h3 className="font-bold">Standard-Kategorie (optional)</h3>
                 <p className="text-kwd-muted mt-1 text-sm">
-                  Alle erkannten Geräte landen in dieser Kategorie, wenn am Plan nichts anderes
-                  steht.
+                  Fallback, wenn am Plan keine Gruppe erkennbar ist. Am Plan erkannte Kategorien
+                  haben Vorrang.
                 </p>
                 <div className="mt-4">
                   <CategoryPickerButton
@@ -330,8 +369,7 @@ export function PlanPhotoImportModal({
                 </div>
                 <p className="text-kwd-muted mt-4 text-xs leading-relaxed">
                   Tipp: Plan gerade fotografieren, gute Beleuchtung, Text scharf. Benötigt{' '}
-                  <code className="text-kwd-text">VITE_OPENAI_API_KEY</code> in Vercel mit
-                  ausreichend OpenAI-Guthaben (Billing unter platform.openai.com).
+                  <code className="text-kwd-text">VITE_OPENAI_API_KEY</code> in Vercel.
                 </p>
               </section>
             </div>
@@ -346,7 +384,9 @@ export function PlanPhotoImportModal({
                   className="border-kwd-border max-h-48 max-w-full rounded-lg border object-contain"
                 />
               )}
-              <p className="text-kwd-muted text-sm">Maschinen werden erkannt…</p>
+              <p className="text-kwd-muted text-sm">
+                Spalten werden ausgelesen (Maschine, Maschinennummer, Wartung, Öl)…
+              </p>
             </div>
           )}
 
@@ -413,16 +453,16 @@ export function PlanPhotoImportModal({
                     </button>
                   </div>
                   <p className="text-kwd-muted text-xs">
-                    Felder direkt in der Tabelle ändern · fehlende Maschinen mit „+ Zeile“ ergänzen
+                    Spalten wie auf dem Aushang – Werte hier korrigieren, dann importieren.
                   </p>
                 </div>
               </div>
 
               <div className="border-kwd-surface-light overflow-hidden rounded-xl border">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <table className="w-full min-w-[1600px] border-collapse text-sm">
                     <thead>
-                      <tr className="bg-kwd-surface-light text-kwd-muted text-left text-xs font-bold uppercase">
+                      <tr className="bg-kwd-surface-light text-kwd-muted text-left text-[10px] font-bold uppercase tracking-wide">
                         <th className="border-kwd-surface-light w-10 border px-2 py-2">
                           <input
                             type="checkbox"
@@ -432,10 +472,33 @@ export function PlanPhotoImportModal({
                             aria-label="Alle auswählen"
                           />
                         </th>
-                        <th className="border-kwd-surface-light border px-3 py-2">Bezeichnung</th>
-                        <th className="border-kwd-surface-light border px-3 py-2">Standort</th>
-                        <th className="border-kwd-surface-light border px-3 py-2">Kategorie</th>
-                        <th className="border-kwd-surface-light border px-3 py-2">Scan-Code</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">Maschine</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          Maschinennummer
+                        </th>
+                        <th className="border-kwd-surface-light border px-2 py-2">Kategorie</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">Standort</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          letzte Wartung
+                        </th>
+                        <th className="border-kwd-surface-light w-12 border px-1 py-2">E/I</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          nächste Wartung
+                        </th>
+                        <th className="border-kwd-surface-light w-12 border px-1 py-2">E/I</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          letzter Schneidöl
+                        </th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          nächster Schneidöl
+                        </th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          letzter Hyd.-Öl
+                        </th>
+                        <th className="border-kwd-surface-light w-12 border px-1 py-2">W</th>
+                        <th className="border-kwd-surface-light border px-2 py-2">
+                          nächster Hyd.-Öl
+                        </th>
                         <th className="border-kwd-surface-light w-28 border px-2 py-2"> </th>
                       </tr>
                     </thead>
@@ -455,7 +518,7 @@ export function PlanPhotoImportModal({
                               className="accent-kwd-primary h-4 w-4"
                             />
                           </td>
-                          <td className="border-kwd-surface-light border px-2 py-1">
+                          <td className="border-kwd-surface-light border px-1 py-1">
                             <input
                               value={row.name}
                               onChange={(e) => {
@@ -479,34 +542,125 @@ export function PlanPhotoImportModal({
                                   addRow(row.id)
                                 }
                               }}
-                              placeholder="Maschinenname…"
-                              className="bg-transparent w-full min-w-[10rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
-                              title="Bezeichnung"
+                              placeholder="Maschine…"
+                              className={`${textInputCls} min-w-[9rem]`}
                             />
                           </td>
-                          <td className="border-kwd-surface-light border px-2 py-1">
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              value={row.barcode}
+                              onChange={(e) => updateRow(row.id, { barcode: e.target.value })}
+                              placeholder="Nr…"
+                              className={`${textInputCls} min-w-[6rem] font-mono text-xs`}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              value={row.category ?? ''}
+                              onChange={(e) => updateRow(row.id, { category: e.target.value })}
+                              placeholder="Kat…"
+                              list="plan-photo-category-suggestions"
+                              className={`${textInputCls} min-w-[6rem]`}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
                             <input
                               value={row.location ?? ''}
                               onChange={(e) => updateRow(row.id, { location: e.target.value })}
                               placeholder="Standort…"
-                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
+                              className={`${textInputCls} min-w-[6rem]`}
                             />
                           </td>
-                          <td className="border-kwd-surface-light border px-2 py-1">
+                          <td className="border-kwd-surface-light border px-1 py-1">
                             <input
-                              value={row.category ?? ''}
-                              onChange={(e) => updateRow(row.id, { category: e.target.value })}
-                              placeholder="Kategorie…"
-                              list="plan-photo-category-suggestions"
-                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 text-sm focus:outline-none"
+                              type="date"
+                              value={row.lastMaintenance}
+                              onChange={(e) =>
+                                updateRow(row.id, { lastMaintenance: e.target.value })
+                              }
+                              className={dateInputCls}
                             />
                           </td>
-                          <td className="border-kwd-surface-light border px-2 py-1">
+                          <td className="border-kwd-surface-light border px-0.5 py-1">
                             <input
-                              value={row.barcode}
-                              onChange={(e) => updateRow(row.id, { barcode: e.target.value })}
-                              placeholder="Scan-Code…"
-                              className="bg-transparent w-full min-w-[8rem] border-0 px-1 py-1.5 font-mono text-xs focus:outline-none"
+                              value={row.lastMaintenanceCode}
+                              onChange={(e) =>
+                                updateRow(row.id, { lastMaintenanceCode: e.target.value })
+                              }
+                              placeholder="E"
+                              className={codeInputCls}
+                              title="E-extern / I-intern / IB"
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              type="date"
+                              value={row.nextMaintenance}
+                              onChange={(e) =>
+                                updateRow(row.id, { nextMaintenance: e.target.value })
+                              }
+                              className={dateInputCls}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-0.5 py-1">
+                            <input
+                              value={row.nextMaintenanceCode}
+                              onChange={(e) =>
+                                updateRow(row.id, { nextMaintenanceCode: e.target.value })
+                              }
+                              placeholder="I"
+                              className={codeInputCls}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              type="date"
+                              value={row.lastCuttingOil}
+                              onChange={(e) =>
+                                updateRow(row.id, { lastCuttingOil: e.target.value })
+                              }
+                              className={dateInputCls}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              type="date"
+                              value={row.nextCuttingOil}
+                              onChange={(e) =>
+                                updateRow(row.id, { nextCuttingOil: e.target.value })
+                              }
+                              className={dateInputCls}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              type="date"
+                              value={row.lastHydraulicOil}
+                              onChange={(e) =>
+                                updateRow(row.id, { lastHydraulicOil: e.target.value })
+                              }
+                              className={dateInputCls}
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-0.5 py-1">
+                            <input
+                              value={row.lastHydraulicCode}
+                              onChange={(e) =>
+                                updateRow(row.id, { lastHydraulicCode: e.target.value })
+                              }
+                              placeholder="W"
+                              className={codeInputCls}
+                              title="W / IB / K"
+                            />
+                          </td>
+                          <td className="border-kwd-surface-light border px-1 py-1">
+                            <input
+                              type="date"
+                              value={row.nextHydraulicOil}
+                              onChange={(e) =>
+                                updateRow(row.id, { nextHydraulicOil: e.target.value })
+                              }
+                              className={dateInputCls}
                             />
                           </td>
                           <td className="border-kwd-surface-light border px-1 py-1">
@@ -540,7 +694,7 @@ export function PlanPhotoImportModal({
                         </tr>
                       ))}
                       <tr className="bg-kwd-primary/10">
-                        <td colSpan={6} className="border-kwd-surface-light border px-3 py-2">
+                        <td colSpan={15} className="border-kwd-surface-light border px-3 py-2">
                           <button
                             type="button"
                             onClick={() => addRow()}
@@ -566,7 +720,8 @@ export function PlanPhotoImportModal({
             <div className="bg-kwd-success/10 border-kwd-success/30 rounded-xl border p-6 text-center">
               <p className="text-lg font-bold">{importResult}</p>
               <p className="text-kwd-muted mt-2 text-sm">
-                Die Maschinen erscheinen jetzt in der Liste – Scan-Codes können Sie dort anpassen.
+                Die Maschinen erscheinen in der Liste – gleichnamige wurden aktualisiert, ohne
+                Lebenszyklus zu löschen.
               </p>
             </div>
           )}
@@ -587,13 +742,18 @@ export function PlanPhotoImportModal({
               className="kwd-btn kwd-btn-primary min-h-[44px] px-6"
             >
               {bulkCreate.isPending
-                ? 'Wird importiert…'
-                : `${selectedCount} Maschine${selectedCount === 1 ? '' : 'n'} anlegen`}
+                ? 'Importiere…'
+                : `${selectedCount} Maschine${selectedCount === 1 ? '' : 'n'} übernehmen`}
             </button>
           )}
           {step === 'done' && (
             <button type="button" onClick={onClose} className="kwd-btn kwd-btn-primary min-h-[44px]">
               Fertig
+            </button>
+          )}
+          {step !== 'done' && (
+            <button type="button" onClick={onClose} className="kwd-btn min-h-[44px]">
+              Abbrechen
             </button>
           )}
         </footer>
@@ -605,24 +765,24 @@ export function PlanPhotoImportModal({
 function SummaryCard({
   label,
   value,
-  highlight,
   text,
+  highlight,
 }: {
   label: string
-  value: number | string
-  highlight?: 'success'
+  value: string | number
   text?: boolean
+  highlight?: 'success'
 }) {
   return (
-    <div
-      className={`rounded-xl border px-4 py-3 ${
-        highlight === 'success'
-          ? 'border-kwd-success/40 bg-kwd-success/10'
-          : 'border-kwd-surface-light bg-kwd-bg'
-      }`}
-    >
-      <p className="text-kwd-muted text-xs font-semibold uppercase tracking-wide">{label}</p>
-      <p className={`mt-1 font-bold ${text ? 'text-sm' : 'text-2xl tabular-nums'}`}>{value}</p>
+    <div className="bg-kwd-bg rounded-lg px-3 py-2">
+      <p className="text-kwd-muted text-[10px] font-bold uppercase tracking-wide">{label}</p>
+      <p
+        className={`truncate font-bold ${text ? 'text-sm' : 'text-lg'} ${
+          highlight === 'success' ? 'text-kwd-success' : ''
+        }`}
+      >
+        {value}
+      </p>
     </div>
   )
 }
