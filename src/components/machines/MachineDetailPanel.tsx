@@ -423,6 +423,12 @@ export function MachineDetailPanel({
       <div className="kwd-toolbar shrink-0">
         <div className="mr-auto min-w-0">
           <p className="truncate text-sm font-bold">{machine.name}</p>
+          {machine.label_name?.trim() &&
+            machine.label_name.trim().toLowerCase() !== machine.name.trim().toLowerCase() && (
+              <p className="text-kwd-muted truncate text-xs">
+                Menü: {machine.label_name.trim()}
+              </p>
+            )}
           <p className="text-kwd-muted truncate font-mono text-xs">{machine.barcode}</p>
         </div>
         {onToggleFullscreen && (
