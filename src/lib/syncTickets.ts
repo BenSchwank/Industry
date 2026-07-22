@@ -4,6 +4,15 @@ import { useOfflineTicketStore } from '../stores/offlineTicketStore'
 import { useAuthStore } from '../stores/authStore'
 import { queryClient } from './queryClient'
 import type { TimelineItem } from '../hooks/useMachineLifecycle'
+import type { TicketPriority } from '../types/database'
+
+export interface TicketCreateInput {
+  machine_id: string | null
+  machine_name: string
+  reference_label?: string | null
+  description: string
+  priority: TicketPriority
+}
 
 function addOptimisticTimelineEntry(
   client: QueryClient,
@@ -44,6 +53,9 @@ export async function syncPendingTickets(): Promise<number> {
   for (const ticket of pending) {
     const { error } = await insertTicketRow({
       machine_id: ticket.machine_id,
+      reference_label:
+        ticket.reference_label ??
+        (ticket.machine_id ? null : ticket.machine_name),
       description: ticket.description,
       priority: ticket.priority,
       status: 'open',
@@ -71,29 +83,21 @@ export async function syncPendingTickets(): Promise<number> {
 }
 
 export async function createTicket(
-  ticket: {
-    machine_id: string
-    machine_name: string
-    description: string
-    priority: import('../types/database').TicketPriority
-  },
+  ticket: TicketCreateInput,
   isOnline: boolean,
 ): Promise<{ mode: 'synced' | 'queued' | 'error'; message?: string }> {
   return createTicketOptimistic(ticket, isOnline, queryClient)
 }
 
 export async function createTicketOptimistic(
-  ticket: {
-    machine_id: string
-    machine_name: string
-    description: string
-    priority: import('../types/database').TicketPriority
-  },
+  ticket: TicketCreateInput,
   isOnline: boolean,
   client: QueryClient,
 ): Promise<{ mode: 'synced' | 'queued' | 'error'; message?: string; localId?: string }> {
   const localId = crypto.randomUUID()
-  addOptimisticTimelineEntry(client, ticket.machine_id, ticket.description, localId)
+  if (ticket.machine_id) {
+    addOptimisticTimelineEntry(client, ticket.machine_id, ticket.description, localId)
+  }
 
   if (!isOnline) {
     useOfflineTicketStore.getState().addPending(ticket, localId)
@@ -102,6 +106,9 @@ export async function createTicketOptimistic(
 
   const { error } = await insertTicketRow({
     machine_id: ticket.machine_id,
+    reference_label:
+      ticket.reference_label ??
+      (ticket.machine_id ? null : ticket.machine_name),
     description: ticket.description,
     priority: ticket.priority,
     status: 'open',
@@ -113,17 +120,24 @@ export async function createTicketOptimistic(
       useOfflineTicketStore.getState().addPending(ticket, localId)
       return { mode: 'queued', localId }
     }
-    client.invalidateQueries({ queryKey: ['machine-timeline', ticket.machine_id] })
+    if (ticket.machine_id) {
+      client.invalidateQueries({ queryKey: ['machine-timeline', ticket.machine_id] })
+    }
     return { mode: 'error', message: error.message }
   }
 
-  await Promise.all([
+  const invalidations: Promise<unknown>[] = [
     client.invalidateQueries({ queryKey: ['tickets'] }),
-    client.invalidateQueries({ queryKey: ['machine-timeline', ticket.machine_id] }),
-    client.invalidateQueries({ queryKey: ['machine-health', ticket.machine_id] }),
     client.invalidateQueries({ queryKey: ['overview-stats'] }),
     client.invalidateQueries({ queryKey: ['machines-with-stats'] }),
-  ])
+  ]
+  if (ticket.machine_id) {
+    invalidations.push(
+      client.invalidateQueries({ queryKey: ['machine-timeline', ticket.machine_id] }),
+      client.invalidateQueries({ queryKey: ['machine-health', ticket.machine_id] }),
+    )
+  }
+  await Promise.all(invalidations)
 
   return { mode: 'synced', localId }
 }

@@ -10,6 +10,8 @@ interface TicketFormProps {
   onSuccess: (message: string) => void
 }
 
+type ReferenceMode = 'machine' | 'free'
+
 const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: 'low', label: 'Niedrig' },
   { value: 'medium', label: 'Mittel' },
@@ -19,7 +21,9 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
 
 export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
   const isOnline = useAppStore((s) => s.isOnline)
+  const [referenceMode, setReferenceMode] = useState<ReferenceMode>('machine')
   const [machineId, setMachineId] = useState('')
+  const [referenceLabel, setReferenceLabel] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
   const [submitting, setSubmitting] = useState(false)
@@ -28,30 +32,44 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
   const { data: machines } = useQuery({
     queryKey: ['machines-select'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error: qErr } = await supabase
         .from('machines')
         .select('id, name, barcode')
         .order('name')
-      if (error) throw error
+      if (qErr) throw qErr
       return data
     },
   })
 
+  const canSubmit =
+    description.trim() &&
+    (referenceMode === 'machine' ? Boolean(machineId) : Boolean(referenceLabel.trim()))
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!machineId || !description.trim()) return
+    if (!canSubmit) return
 
     const machine = machines?.find((m) => m.id === machineId)
+    const freeLabel = referenceLabel.trim()
     setSubmitting(true)
     setError(null)
 
     const result = await createTicket(
-      {
-        machine_id: machineId,
-        machine_name: machine?.name ?? 'Unbekannt',
-        description: description.trim(),
-        priority,
-      },
+      referenceMode === 'machine'
+        ? {
+            machine_id: machineId,
+            machine_name: machine?.name ?? 'Unbekannt',
+            reference_label: null,
+            description: description.trim(),
+            priority,
+          }
+        : {
+            machine_id: null,
+            machine_name: freeLabel,
+            reference_label: freeLabel,
+            description: description.trim(),
+            priority,
+          },
       isOnline,
     )
 
@@ -83,22 +101,67 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
           </p>
         )}
 
-        <label className="mt-4 block">
-          <span className="text-kwd-muted text-sm font-medium">Maschine</span>
-          <select
-            value={machineId}
-            onChange={(e) => setMachineId(e.target.value)}
-            required
-            className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4"
-          >
-            <option value="">Maschine wählen…</option>
-            {machines?.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.barcode} – {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="mt-4">
+          <legend className="text-kwd-muted text-sm font-medium">Bezug</legend>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setReferenceMode('machine')}
+              className={`min-h-[44px] rounded-xl border px-3 text-sm font-semibold ${
+                referenceMode === 'machine'
+                  ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                  : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
+              }`}
+            >
+              Maschine
+            </button>
+            <button
+              type="button"
+              onClick={() => setReferenceMode('free')}
+              className={`min-h-[44px] rounded-xl border px-3 text-sm font-semibold ${
+                referenceMode === 'free'
+                  ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                  : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
+              }`}
+            >
+              Eigener Bezugspunkt
+            </button>
+          </div>
+        </fieldset>
+
+        {referenceMode === 'machine' ? (
+          <label className="mt-4 block">
+            <span className="text-kwd-muted text-sm font-medium">Maschine</span>
+            <select
+              value={machineId}
+              onChange={(e) => setMachineId(e.target.value)}
+              required
+              className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4"
+            >
+              <option value="">Maschine wählen…</option>
+              {machines?.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.barcode} – {m.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label className="mt-4 block">
+            <span className="text-kwd-muted text-sm font-medium">Bezugspunkt *</span>
+            <input
+              type="text"
+              value={referenceLabel}
+              onChange={(e) => setReferenceLabel(e.target.value)}
+              required
+              placeholder="z.B. Halle 3, Förderband, Heizung, Dach…"
+              className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4 text-base"
+            />
+            <p className="text-kwd-muted mt-1 text-xs">
+              Freie Bezeichnung – ohne Maschine in der Liste
+            </p>
+          </label>
+        )}
 
         <label className="mt-4 block">
           <span className="text-kwd-muted text-sm font-medium">Priorität</span>
@@ -141,7 +204,7 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
           </button>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !canSubmit}
             className="bg-kwd-primary text-kwd-bg min-h-[52px] flex-1 rounded-xl font-bold disabled:opacity-50"
           >
             {submitting ? 'Speichern…' : 'Melden'}

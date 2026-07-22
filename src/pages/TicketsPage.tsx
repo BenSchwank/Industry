@@ -39,16 +39,22 @@ export default function TicketsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tickets')
-        .select('id, description, status, priority, created_at, created_by, machines(name, barcode)')
+        .select(
+          'id, description, status, priority, created_at, created_by, reference_label, machines(name, barcode)',
+        )
         .order('created_at', { ascending: false })
       if (error) {
-        if (/created_by/i.test(error.message)) {
+        if (/created_by|reference_label/i.test(error.message)) {
           const fb = await supabase
             .from('tickets')
             .select('id, description, status, priority, created_at, machines(name, barcode)')
             .order('created_at', { ascending: false })
           if (fb.error) throw fb.error
-          return (fb.data ?? []).map((t) => ({ ...t, created_by: null as string | null }))
+          return (fb.data ?? []).map((t) => ({
+            ...t,
+            created_by: null as string | null,
+            reference_label: null as string | null,
+          }))
         }
         throw error
       }
@@ -156,7 +162,9 @@ export default function TicketsPage() {
           <ul className="mt-2 flex flex-col gap-2">
             {pending.map((t) => (
               <li key={t.localId} className="bg-kwd-surface rounded-lg p-3 text-sm">
-                <p className="font-semibold">{t.machine_name}</p>
+                <p className="font-semibold">
+                  {t.machine_id ? t.machine_name : `Bezug: ${t.machine_name}`}
+                </p>
                 <p className="text-kwd-muted">{t.description}</p>
                 {t.syncError && (
                   <p className="text-kwd-danger mt-1 text-xs">Sync-Fehler: {t.syncError}</p>
@@ -180,14 +188,20 @@ export default function TicketsPage() {
 
       {visible.map((ticket) => {
         const machine = ticket.machines as { name: string; barcode: string } | null
+        const referenceLabel = (ticket as { reference_label?: string | null }).reference_label
+        const isFreeReference = !machine && Boolean(referenceLabel?.trim())
         const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
         const busy = busyId === ticket.id
         return (
           <article key={ticket.id} className="bg-kwd-surface rounded-xl p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-kwd-primary text-xs font-bold">{machine?.barcode ?? '–'}</p>
-                <p className="font-semibold">{machine?.name ?? 'Unbekannte Maschine'}</p>
+                <p className="text-kwd-primary text-xs font-bold">
+                  {isFreeReference ? 'Freier Bezug' : (machine?.barcode ?? '–')}
+                </p>
+                <p className="font-semibold">
+                  {machine?.name ?? referenceLabel?.trim() ?? 'Unbekannte Maschine'}
+                </p>
               </div>
               <span className={`text-xs font-bold uppercase ${PRIORITY_COLORS[ticket.priority]}`}>
                 {TICKET_PRIORITY_LABEL[ticket.priority] ?? ticket.priority}

@@ -4,8 +4,9 @@ import type { TicketPriority } from '../types/database'
 
 export interface PendingTicket {
   localId: string
-  machine_id: string
+  machine_id: string | null
   machine_name: string
+  reference_label?: string | null
   description: string
   priority: TicketPriority
   created_at: string

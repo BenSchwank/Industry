@@ -100,6 +100,7 @@ export function useMessageInbox() {
       }
 
       for (const ticket of ticketsRes.data ?? []) {
+        if (!ticket.machine_id) continue
         messages.push({
           id: `ticket-${ticket.id}`,
           kind: 'ticket_open',

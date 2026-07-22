@@ -107,7 +107,8 @@ export interface Database {
       tickets: {
         Row: {
           id: string
-          machine_id: string
+          machine_id: string | null
+          reference_label: string | null
           description: string
           status: TicketStatus
           priority: TicketPriority
@@ -117,7 +118,8 @@ export interface Database {
         }
         Insert: {
           id?: string
-          machine_id: string
+          machine_id?: string | null
+          reference_label?: string | null
           description: string
           status?: TicketStatus
           priority?: TicketPriority
@@ -127,7 +129,8 @@ export interface Database {
         }
         Update: {
           id?: string
-          machine_id?: string
+          machine_id?: string | null
+          reference_label?: string | null
           description?: string
           status?: TicketStatus
           priority?: TicketPriority
