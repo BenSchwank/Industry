@@ -8,6 +8,7 @@ import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
 import { useQuickCompleteMaintenance } from '../../hooks/useQuickCompleteMaintenance'
+import { useSetNextMaintenance } from '../../hooks/useSetNextMaintenance'
 import {
   useMachinesWithStats,
   type MachineWithStats,
@@ -493,6 +494,7 @@ function MachineStammdatenForm({
   maintenanceSoon: boolean
 }) {
   const updateMachine = useUpdateMachine()
+  const setNextMaintenance = useSetNextMaintenance()
   const quickComplete = useQuickCompleteMaintenance()
   const { data: allMachines } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
@@ -503,6 +505,9 @@ function MachineStammdatenForm({
   const [category, setCategory] = useState(machine.category ?? '')
   const [status, setStatus] = useState<MachineStatus>(machine.status)
   const [warrantyUntil, setWarrantyUntil] = useState(toDateInput(machine.warranty_until))
+  const [nextMaintenanceAt, setNextMaintenanceAt] = useState(
+    toDateInput(machine.next_maintenance_at),
+  )
   const [lastCuttingOil, setLastCuttingOil] = useState(toDateInput(machine.last_cutting_oil_at))
   const [nextCuttingOil, setNextCuttingOil] = useState(toDateInput(machine.next_cutting_oil_at))
   const [lastHydraulicOil, setLastHydraulicOil] = useState(
@@ -546,6 +551,7 @@ function MachineStammdatenForm({
     setCategory(machine.category ?? '')
     setStatus(machine.status)
     setWarrantyUntil(toDateInput(machine.warranty_until))
+    setNextMaintenanceAt(toDateInput(machine.next_maintenance_at))
     setLastCuttingOil(toDateInput(machine.last_cutting_oil_at))
     setNextCuttingOil(toDateInput(machine.next_cutting_oil_at))
     setLastHydraulicOil(toDateInput(machine.last_hydraulic_oil_at))
@@ -565,6 +571,7 @@ function MachineStammdatenForm({
     (category.trim() || '') !== (machine.category ?? '') ||
     status !== machine.status ||
     (warrantyUntil || '') !== toDateInput(machine.warranty_until) ||
+    (nextMaintenanceAt || '') !== toDateInput(machine.next_maintenance_at) ||
     (lastCuttingOil || '') !== toDateInput(machine.last_cutting_oil_at) ||
     (nextCuttingOil || '') !== toDateInput(machine.next_cutting_oil_at) ||
     (lastHydraulicOil || '') !== toDateInput(machine.last_hydraulic_oil_at) ||
@@ -572,6 +579,8 @@ function MachineStammdatenForm({
     (lastMaintCode.trim() || '') !== (machine.last_maintenance_code ?? '') ||
     (nextMaintCode.trim() || '') !== (machine.next_maintenance_code ?? '') ||
     (lastHydCode.trim() || '') !== (machine.last_hydraulic_code ?? '')
+
+  const saving = updateMachine.isPending || setNextMaintenance.isPending
 
   async function save() {
     setError(null)
@@ -585,6 +594,9 @@ function MachineStammdatenForm({
       return
     }
     try {
+      const nextMaintChanged =
+        (nextMaintenanceAt || '') !== toDateInput(machine.next_maintenance_at)
+
       await updateMachine.mutateAsync({
         id: machine.id,
         name: name.trim(),
@@ -602,6 +614,14 @@ function MachineStammdatenForm({
         next_maintenance_code: nextMaintCode.trim() || null,
         last_hydraulic_code: lastHydCode.trim() || null,
       })
+
+      if (nextMaintChanged) {
+        await setNextMaintenance.mutateAsync({
+          machineId: machine.id,
+          nextDueDate: nextMaintenanceAt || null,
+        })
+      }
+
       setMessage('Gespeichert.')
     } catch (err) {
       setError(err instanceof Error ? formatSupabaseError(err) : 'Speichern fehlgeschlagen')
@@ -800,6 +820,30 @@ function MachineStammdatenForm({
             />
           </label>
 
+          <div className="block min-w-0 sm:col-span-2">
+            <span className="kwd-kpi-label">nächste geplante Wartung</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={nextMaintenanceAt}
+                onChange={(e) => setNextMaintenanceAt(e.target.value)}
+                className={`${fieldCls} mt-0 max-w-xs`}
+              />
+              <button
+                type="button"
+                disabled={!nextMaintenanceAt && !machine.next_maintenance_at}
+                onClick={() => setNextMaintenanceAt('')}
+                className="kwd-btn min-h-[40px]"
+                title="Nächste geplante Wartung entfernen"
+              >
+                Entfernen
+              </button>
+            </div>
+            <p className="text-kwd-muted mt-1 text-xs">
+              Datum ändern oder leeren und speichern. Entfernen löscht den Termin aus der Liste.
+            </p>
+          </div>
+
           <label className="block min-w-0">
             <span className="kwd-kpi-label">letzter Schneidöl-Wechsel</span>
             <input
@@ -877,10 +921,10 @@ function MachineStammdatenForm({
           <div className="flex flex-wrap gap-2 sm:col-span-2">
             <button
               type="submit"
-              disabled={!dirty || updateMachine.isPending}
+              disabled={!dirty || saving}
               className="kwd-btn kwd-btn-primary"
             >
-              {updateMachine.isPending ? 'Speichern…' : 'Speichern'}
+              {saving ? 'Speichern…' : 'Speichern'}
             </button>
             {dirty && (
               <button
@@ -893,6 +937,7 @@ function MachineStammdatenForm({
                   setCategory(machine.category ?? '')
                   setStatus(machine.status)
                   setWarrantyUntil(toDateInput(machine.warranty_until))
+                  setNextMaintenanceAt(toDateInput(machine.next_maintenance_at))
                   setLastCuttingOil(toDateInput(machine.last_cutting_oil_at))
                   setNextCuttingOil(toDateInput(machine.next_cutting_oil_at))
                   setLastHydraulicOil(toDateInput(machine.last_hydraulic_oil_at))
