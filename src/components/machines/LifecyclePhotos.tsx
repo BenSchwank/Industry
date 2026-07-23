@@ -138,7 +138,8 @@ export function LifecyclePhotoPicker({
   entryId: string
   onUploaded?: () => void
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
   const upload = useUploadLifecyclePhotos()
   const [error, setError] = useState<string | null>(null)
 
@@ -153,29 +154,48 @@ export function LifecyclePhotoPicker({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload fehlgeschlagen')
     } finally {
-      if (inputRef.current) inputRef.current.value = ''
+      if (galleryRef.current) galleryRef.current.value = ''
+      if (cameraRef.current) cameraRef.current.value = ''
     }
   }
 
   return (
     <div className="mt-2">
       <input
-        ref={inputRef}
+        ref={cameraRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif,image/*"
-        multiple
+        accept="image/*"
         capture="environment"
+        multiple
         className="hidden"
         onChange={(e) => void onFiles(e.target.files)}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={upload.isPending}
-        className="kwd-btn text-xs"
-      >
-        {upload.isPending ? 'Lade hoch…' : '+ Foto'}
-      </button>
+      <input
+        ref={galleryRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => void onFiles(e.target.files)}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => cameraRef.current?.click()}
+          disabled={upload.isPending}
+          className="kwd-btn text-xs"
+        >
+          {upload.isPending ? 'Lade hoch…' : '+ Foto'}
+        </button>
+        <button
+          type="button"
+          onClick={() => galleryRef.current?.click()}
+          disabled={upload.isPending}
+          className="kwd-btn text-xs"
+        >
+          {upload.isPending ? 'Lade hoch…' : 'Galerie / Datei'}
+        </button>
+      </div>
       {error && <p className="text-kwd-danger mt-1 text-xs">{error}</p>}
     </div>
   )

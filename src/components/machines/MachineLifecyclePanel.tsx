@@ -77,6 +77,7 @@ export function MachineLifecyclePanel({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const lastClickedIndex = useRef<number | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const addEntry = useAddLifecycleEntry()
   const deleteEntries = useDeleteTimelineEntries()
@@ -133,6 +134,7 @@ export function MachineLifecyclePanel({
       setError(e instanceof Error ? e.message : 'Ungültiges Bild')
     } finally {
       if (photoInputRef.current) photoInputRef.current.value = ''
+      if (cameraInputRef.current) cameraInputRef.current.value = ''
     }
   }
 
@@ -402,20 +404,35 @@ export function MachineLifecyclePanel({
                 <span className="kwd-kpi-label">Fotos (optional)</span>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => addPendingFiles(e.target.files)}
+                  />
+                  <input
                     ref={photoInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif,image/*"
                     multiple
-                    capture="environment"
                     className="hidden"
                     onChange={(e) => addPendingFiles(e.target.files)}
                   />
                   <button
                     type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="kwd-btn"
+                  >
+                    Foto aufnehmen
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => photoInputRef.current?.click()}
                     className="kwd-btn"
                   >
-                    Bilder wählen
+                    Galerie / Datei
                   </button>
                   <span className="text-kwd-muted text-xs">bis 8 Fotos · max. 10 MB</span>
                 </div>
