@@ -1,11 +1,23 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeleteTicket, useResolveTicket } from '../../hooks/useTicketActions'
+import { assertLifecycleImage } from '../../hooks/useLifecyclePhotos'
+import {
+  TICKET_PHOTOS_SQL_HINT,
+  useTicketPhotosForMachine,
+  useUploadTicketPhotos,
+} from '../../hooks/useTicketPhotos'
 import { TicketEditForm, type TicketEditTarget } from '../tickets/TicketEditForm'
 import { createTicketOptimistic } from '../../lib/syncTickets'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
+import {
+  LifecycleImagePickButtons,
+  PendingPhotoStrip,
+  TicketPhotoPicker,
+  TicketPhotoStrip,
+} from './LifecyclePhotos'
 
 const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: 'low', label: 'Niedrig' },
@@ -25,13 +37,26 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const queryClient = useQueryClient()
   const resolveTicket = useResolveTicket()
   const deleteTicket = useDeleteTicket()
+  const uploadPhotos = useUploadTicketPhotos()
+  const { data: allTicketPhotos = [] } = useTicketPhotosForMachine(machineId)
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
+
+  const photosByTicket = useMemo(() => {
+    const map = new Map<string, typeof allTicketPhotos>()
+    for (const p of allTicketPhotos) {
+      const list = map.get(p.ticket_id) ?? []
+      list.push(p)
+      map.set(p.ticket_id, list)
+    }
+    return map
+  }, [allTicketPhotos])
 
   const { data: openTickets = [] } = useQuery({
     queryKey: ['machine-open-tickets', machineId],
@@ -46,6 +71,18 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
       return data ?? []
     },
   })
+
+  function addPendingFiles(list: FileList | null) {
+    if (!list || list.length === 0) return
+    try {
+      const next = [...list]
+      for (const f of next) assertLifecycleImage(f)
+      setPendingPhotos((prev) => [...prev, ...next].slice(0, 8))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ungültiges Bild')
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -66,20 +103,64 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
       queryClient,
     )
 
-    setSubmitting(false)
-
     if (result.mode === 'error') {
+      setSubmitting(false)
       setError(result.message ?? 'Fehler beim Speichern')
       return
     }
 
+    if (result.mode === 'synced' && result.ticketId && pendingPhotos.length > 0) {
+      const photosToUpload = pendingPhotos
+      try {
+        await uploadPhotos.mutateAsync({
+          ticketId: result.ticketId,
+          machineId,
+          files: photosToUpload,
+        })
+      } catch (photoErr) {
+        setSubmitting(false)
+        setDescription('')
+        setPendingPhotos([])
+        setError(
+          photoErr instanceof Error
+            ? `Störung gespeichert, Fotos fehlgeschlagen: ${photoErr.message}`
+            : `Störung gespeichert, Fotos fehlgeschlagen. ${TICKET_PHOTOS_SQL_HINT}`,
+        )
+        void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+        onLogged?.()
+        return
+      }
+      setSubmitting(false)
+      setDescription('')
+      setPendingPhotos([])
+      setMessage('Problem mit Fotos erfasst.')
+      void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+      void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+      onLogged?.()
+      return
+    }
+
+    if (result.mode === 'queued' && pendingPhotos.length > 0) {
+      setSubmitting(false)
+      setDescription('')
+      setPendingPhotos([])
+      setMessage(
+        'Problem offline gespeichert – Fotos bitte nach dem Sync erneut anhängen (Online).',
+      )
+      onLogged?.()
+      return
+    }
+
+    setSubmitting(false)
     setDescription('')
+    setPendingPhotos([])
     setMessage(
       result.mode === 'queued'
         ? 'Problem offline gespeichert – wird synchronisiert.'
         : 'Problem erfasst – erscheint sofort in der Historie.',
     )
     void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+    void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
     onLogged?.()
   }
 
@@ -105,6 +186,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
       await deleteTicket.mutateAsync(id)
       setMessage('Störung gelöscht.')
       void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+      void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Löschen fehlgeschlagen')
     } finally {
@@ -154,6 +236,22 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
             />
           </label>
 
+          <div>
+            <span className="text-kwd-muted text-sm font-medium">Fotos (optional)</span>
+            <div className="mt-1">
+              <LifecycleImagePickButtons
+                onFiles={addPendingFiles}
+                cameraLabel="Foto aufnehmen"
+                galleryLabel="Galerie / Datei"
+              />
+              <p className="text-kwd-muted mt-1 text-xs">Handy: Galerie oder Dateien · bis 8 Fotos</p>
+            </div>
+            <PendingPhotoStrip
+              files={pendingPhotos}
+              onRemove={(i) => setPendingPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+            />
+          </div>
+
           {error && <p className="text-kwd-danger text-sm font-medium">{error}</p>}
           {message && <p className="text-kwd-success text-sm font-medium">{message}</p>}
 
@@ -169,18 +267,25 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
 
       {openTickets.length > 0 && (
         <section className="bg-kwd-surface border-kwd-border rounded-xl border p-4">
-          <h3 className="mb-3 font-bold">
-            Offene Störungen ({openTickets.length})
-          </h3>
+          <h3 className="mb-3 font-bold">Offene Störungen ({openTickets.length})</h3>
           <ul className="flex flex-col gap-3">
             {openTickets.map((t) => {
               const busy = busyId === t.id
+              const photos = photosByTicket.get(t.id) ?? []
               return (
                 <li key={t.id} className="border-kwd-border rounded-lg border p-3">
-                  <p className="text-sm">{t.description}</p>
+                  <p className="text-sm whitespace-pre-wrap">{t.description}</p>
                   <p className="text-kwd-muted mt-1 text-xs">
                     {new Date(t.created_at).toLocaleString('de-DE')} · {t.priority}
                   </p>
+                  <TicketPhotoStrip photos={photos} canDelete />
+                  <TicketPhotoPicker
+                    ticketId={t.id}
+                    machineId={machineId}
+                    onUploaded={() => {
+                      void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+                    }}
+                  />
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button"

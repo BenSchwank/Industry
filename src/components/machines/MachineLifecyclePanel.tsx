@@ -30,7 +30,10 @@ import {
   LifecyclePhotoPicker,
   LifecyclePhotoStrip,
   PendingPhotoStrip,
+  TicketPhotoPicker,
+  TicketPhotoStrip,
 } from './LifecyclePhotos'
+import { useTicketPhotosForMachine } from '../../hooks/useTicketPhotos'
 
 const ENTRY_TYPES: { value: LifecycleEntryType; label: string }[] = [
   { value: 'maintenance', label: 'Hauptuntersuchung' },
@@ -89,6 +92,7 @@ export function MachineLifecyclePanel({
   const deleteEntries = useDeleteTimelineEntries()
   const uploadPhotos = useUploadLifecyclePhotos()
   const { data: allPhotos = [] } = useLifecyclePhotosForMachine(machineId)
+  const { data: allTicketPhotos = [] } = useTicketPhotosForMachine(machineId)
 
   useEffect(() => {
     let cancelled = false
@@ -112,6 +116,16 @@ export function MachineLifecyclePanel({
     }
     return map
   }, [allPhotos])
+
+  const photosByTicket = useMemo(() => {
+    const map = new Map<string, typeof allTicketPhotos>()
+    for (const p of allTicketPhotos) {
+      const list = map.get(p.ticket_id) ?? []
+      list.push(p)
+      map.set(p.ticket_id, list)
+    }
+    return map
+  }, [allTicketPhotos])
 
   const grouped = useMemo(() => {
     const map = new Map<string, TimelineItem[]>()
@@ -504,6 +518,8 @@ export function MachineLifecyclePanel({
                   const isSelected = selected.has(key)
                   const photos =
                     item.source === 'lifecycle' ? (photosByEntry.get(item.id) ?? []) : []
+                  const ticketPhotos =
+                    item.source === 'ticket' ? (photosByTicket.get(item.id) ?? []) : []
                   const dueCls = maintenanceDueClass(item.next_due_date)
                   return (
                     <li
@@ -559,8 +575,12 @@ export function MachineLifecyclePanel({
                           </p>
                         )}
                         <LifecyclePhotoStrip photos={photos} canDelete={item.source === 'lifecycle'} />
+                        <TicketPhotoStrip photos={ticketPhotos} canDelete={item.source === 'ticket'} />
                         {item.source === 'lifecycle' && (
                           <LifecyclePhotoPicker machineId={machineId} entryId={item.id} />
+                        )}
+                        {item.source === 'ticket' && (
+                          <TicketPhotoPicker ticketId={item.id} machineId={machineId} />
                         )}
                       </div>
                       <div className="flex shrink-0 flex-col gap-2 self-start">
@@ -600,6 +620,9 @@ export function MachineLifecyclePanel({
               ? (photosByEntry.get(maximized.id) ?? [])
               : []
           }
+          ticketPhotos={
+            maximized.source === 'ticket' ? (photosByTicket.get(maximized.id) ?? []) : []
+          }
           machineId={machineId}
           onClose={() => setMaximized(null)}
           onDelete={() => {
@@ -634,6 +657,7 @@ function entryTypeLabel(type: string) {
 function LifecycleEntryMaximizeModal({
   item,
   photos,
+  ticketPhotos,
   machineId,
   onClose,
   onDelete,
@@ -641,12 +665,14 @@ function LifecycleEntryMaximizeModal({
 }: {
   item: TimelineItem
   photos: LifecyclePhoto[]
+  ticketPhotos: import('../../hooks/useTicketPhotos').TicketPhoto[]
   machineId: string
   onClose: () => void
   onDelete: () => void
   deleting: boolean
 }) {
   const dueCls = maintenanceDueClass(item.next_due_date)
+  const photoCount = photos.length + ticketPhotos.length
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -725,19 +751,32 @@ function LifecycleEntryMaximizeModal({
           </section>
 
           <section>
-            <h4 className="kwd-kpi-label">Fotos ({photos.length})</h4>
-            {photos.length > 0 ? (
+            <h4 className="kwd-kpi-label">Fotos ({photoCount})</h4>
+            {photos.length > 0 && (
               <LifecyclePhotoStrip
                 photos={photos}
                 canDelete={item.source === 'lifecycle'}
                 size="lg"
               />
-            ) : (
+            )}
+            {ticketPhotos.length > 0 && (
+              <TicketPhotoStrip
+                photos={ticketPhotos}
+                canDelete={item.source === 'ticket'}
+                size="lg"
+              />
+            )}
+            {photoCount === 0 && (
               <p className="text-kwd-muted mt-1 text-sm">Noch keine Fotos</p>
             )}
             {item.source === 'lifecycle' && (
               <div className="mt-3">
                 <LifecyclePhotoPicker machineId={machineId} entryId={item.id} />
+              </div>
+            )}
+            {item.source === 'ticket' && (
+              <div className="mt-3">
+                <TicketPhotoPicker ticketId={item.id} machineId={machineId} />
               </div>
             )}
           </section>

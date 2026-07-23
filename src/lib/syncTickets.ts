@@ -93,7 +93,12 @@ export async function createTicketOptimistic(
   ticket: TicketCreateInput,
   isOnline: boolean,
   client: QueryClient,
-): Promise<{ mode: 'synced' | 'queued' | 'error'; message?: string; localId?: string }> {
+): Promise<{
+  mode: 'synced' | 'queued' | 'error'
+  message?: string
+  localId?: string
+  ticketId?: string
+}> {
   const localId = crypto.randomUUID()
   if (ticket.machine_id) {
     addOptimisticTimelineEntry(client, ticket.machine_id, ticket.description, localId)
@@ -104,7 +109,7 @@ export async function createTicketOptimistic(
     return { mode: 'queued', localId }
   }
 
-  const { error } = await insertTicketRow({
+  const { data, error } = await insertTicketRow({
     machine_id: ticket.machine_id,
     reference_label:
       ticket.reference_label ??
@@ -139,5 +144,9 @@ export async function createTicketOptimistic(
   }
   await Promise.all(invalidations)
 
-  return { mode: 'synced', localId }
+  return {
+    mode: 'synced',
+    localId,
+    ticketId: data && typeof data === 'object' && 'id' in data ? String(data.id) : undefined,
+  }
 }
