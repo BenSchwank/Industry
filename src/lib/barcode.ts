@@ -47,9 +47,11 @@ export function suggestMachineBarcode(name: string): string {
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 20)
+    .slice(0, 16)
 
-  const suffix = Date.now().toString(36).toUpperCase().slice(-4)
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    .toUpperCase()
+    .slice(-8)
   return normalizeBarcode(`${BARCODE_PREFIX.machine}-${slug || 'NEU'}-${suffix}`)
 }
 
@@ -65,9 +67,11 @@ export function suggestInventoryBarcode(name: string): string {
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 20)
+    .slice(0, 16)
 
-  const suffix = Date.now().toString(36).toUpperCase().slice(-4)
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    .toUpperCase()
+    .slice(-8)
   return normalizeBarcode(`${BARCODE_PREFIX.inventory}-${slug || 'ARTIKEL'}-${suffix}`)
 }
 

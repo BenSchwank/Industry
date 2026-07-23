@@ -41,7 +41,11 @@ const textInputCls =
 const codeInputCls =
   'bg-transparent w-full min-w-[2.5rem] max-w-[3.5rem] border-0 px-1 py-1.5 text-center text-xs font-bold uppercase focus:outline-none'
 
-function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): PreviewRow {
+function newPreviewRow(
+  machine: PlanPhotoMachine,
+  defaultCategory: string,
+  uniqueKey = 0,
+): PreviewRow {
   const drawingName = machine.name.trim()
   const number = machine.machine_number?.trim() || ''
   return {
@@ -52,7 +56,9 @@ function newPreviewRow(machine: PlanPhotoMachine, defaultCategory: string): Prev
     location: machine.location,
     category: machine.category?.trim() || defaultCategory || null,
     confidence: machine.confidence,
-    barcode: number || suggestMachineBarcode(drawingName || 'MASCHINE'),
+    barcode:
+      number ||
+      suggestMachineBarcode(`${drawingName || 'MASCHINE'}-${uniqueKey}-${Math.random()}`),
     lastMaintenance: machine.last_maintenance_at ?? '',
     nextMaintenance: machine.next_maintenance_at ?? '',
     lastMaintenanceCode: machine.last_maintenance_code ?? '',
@@ -138,13 +144,14 @@ export function PlanPhotoImportModal({
 
         const nextRows =
           result.machines.length > 0
-            ? result.machines.map((m) =>
+            ? result.machines.map((m, i) =>
                 newPreviewRow(
                   {
                     ...m,
                     location: m.location || result.hallName || null,
                   },
                   defaultCategory,
+                  i,
                 ),
               )
             : [blankPreviewRow(defaultCategory, result.hallName)]
@@ -226,23 +233,34 @@ export function PlanPhotoImportModal({
     }
 
     setError(null)
-    const inputs: MachineInput[] = selected.map((r) => ({
-      barcode: r.barcode.trim() || suggestMachineBarcode(r.name),
-      name: r.name.trim(),
-      label_name: r.labelName.trim() || null,
-      location: (r.location ?? '').trim() || 'Unbekannt',
-      category: r.category?.trim() || defaultCategory.trim() || null,
-      status: 'active',
-      last_maintenance_at: r.lastMaintenance || null,
-      next_maintenance_at: r.nextMaintenance || null,
-      last_maintenance_code: r.lastMaintenanceCode.trim() || null,
-      next_maintenance_code: r.nextMaintenanceCode.trim() || null,
-      last_cutting_oil_at: r.lastCuttingOil || null,
-      next_cutting_oil_at: r.nextCuttingOil || null,
-      last_hydraulic_oil_at: r.lastHydraulicOil || null,
-      next_hydraulic_oil_at: r.nextHydraulicOil || null,
-      last_hydraulic_code: r.lastHydraulicCode.trim() || null,
-    }))
+
+    // Doppelte Maschinennummern in der Auswahl eindeutig machen
+    const usedCodes = new Set<string>()
+    const inputs: MachineInput[] = selected.map((r, i) => {
+      let code = r.barcode.trim() || suggestMachineBarcode(`${r.name}-${i}`)
+      const norm = code.toUpperCase()
+      if (usedCodes.has(norm)) {
+        code = suggestMachineBarcode(`${r.name}-${i}-${usedCodes.size}`)
+      }
+      usedCodes.add(code.toUpperCase())
+      return {
+        barcode: code,
+        name: r.name.trim(),
+        label_name: r.labelName.trim() || null,
+        location: (r.location ?? '').trim() || 'Unbekannt',
+        category: r.category?.trim() || defaultCategory.trim() || null,
+        status: 'active' as const,
+        last_maintenance_at: r.lastMaintenance || null,
+        next_maintenance_at: r.nextMaintenance || null,
+        last_maintenance_code: r.lastMaintenanceCode.trim() || null,
+        next_maintenance_code: r.nextMaintenanceCode.trim() || null,
+        last_cutting_oil_at: r.lastCuttingOil || null,
+        next_cutting_oil_at: r.nextCuttingOil || null,
+        last_hydraulic_oil_at: r.lastHydraulicOil || null,
+        next_hydraulic_oil_at: r.nextHydraulicOil || null,
+        last_hydraulic_code: r.lastHydraulicCode.trim() || null,
+      }
+    })
 
     try {
       const { results, errors } = await bulkCreate.mutateAsync(inputs)
@@ -250,18 +268,32 @@ export function PlanPhotoImportModal({
       await queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       await queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
       await queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
+      await queryClient.refetchQueries({ queryKey: ['machines-with-stats'] })
 
       const created = results.filter((r) => !r.updated).length
       const updated = results.filter((r) => r.updated).length
+
+      if (results.length === 0) {
+        setError(
+          errors.length
+            ? `Nichts gespeichert:\n${errors.slice(0, 8).join('\n')}`
+            : 'Nichts gespeichert – bitte erneut versuchen.',
+        )
+        return
+      }
+
       setImportResult(
         [
-          created ? `${created} neu` : null,
+          created ? `${created} neu angelegt` : null,
           updated ? `${updated} aktualisiert (Lebenszyklus behalten)` : null,
           errors.length ? `${errors.length} Fehler` : null,
         ]
           .filter(Boolean)
-          .join(' · ') || 'Keine Änderungen',
+          .join(' · '),
       )
+      if (errors.length) {
+        setError(errors.slice(0, 8).join('\n'))
+      }
       setStep('done')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import fehlgeschlagen')

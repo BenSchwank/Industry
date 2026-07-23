@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { normalizeBarcode } from '../lib/barcode'
+import { normalizeBarcode, suggestMachineBarcode } from '../lib/barcode'
 import { formatSupabaseError } from '../lib/formatError'
 import { applyMachineInitialDates } from '../lib/machineInitialDates'
 import { rememberMachineFieldOptions } from '../lib/machineFieldOptions'
@@ -175,46 +175,65 @@ function oilPayloadFromInput(input: MachineInput): Partial<MachineOilDates> {
 async function insertMachinePayload(
   payload: Record<string, unknown>,
 ): Promise<{ id: string; name: string }> {
-  let { data, error } = await supabase
-    .from('machines')
-    .insert(asMachineInsert(payload))
-    .select('id, name')
-    .single()
+  let attempt = { ...payload }
+  let lastError: Error | null = null
 
-  if (error && /label_name|schema cache/i.test(error.message) && 'label_name' in payload) {
-    const { label_name: _l, ...rest } = payload
-    ;({ data, error } = await supabase
+  for (let tryCount = 0; tryCount < 4; tryCount++) {
+    let { data, error } = await supabase
       .from('machines')
-      .insert(asMachineInsert(rest))
+      .insert(asMachineInsert(attempt))
       .select('id, name')
-      .single())
+      .single()
+
+    if (error && /label_name|schema cache/i.test(error.message) && 'label_name' in attempt) {
+      const { label_name: _l, ...rest } = attempt
+      ;({ data, error } = await supabase
+        .from('machines')
+        .insert(asMachineInsert(rest))
+        .select('id, name')
+        .single())
+      if (!error && data) return data
+    }
+
+    if (error && /category|schema cache/i.test(error.message) && 'category' in attempt) {
+      const { category: _c, label_name: _l, ...rest } = attempt
+      ;({ data, error } = await supabase
+        .from('machines')
+        .insert(asMachineInsert(rest))
+        .select('id, name')
+        .single())
+      if (!error && data) return data
+    }
+
+    if (
+      error &&
+      /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(error.message)
+    ) {
+      const stripped = { ...attempt }
+      for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
+      ;({ data, error } = await supabase
+        .from('machines')
+        .insert(asMachineInsert(stripped))
+        .select('id, name')
+        .single())
+      if (!error && data) return data
+      attempt = stripped
+    }
+
+    if (!error && data) return data
+
+    if (error && /barcode|duplicate|unique|already exists/i.test(error.message)) {
+      const nameHint = String(attempt.name ?? 'NEU')
+      attempt = { ...attempt, barcode: suggestMachineBarcode(`${nameHint}-${tryCount + 1}`) }
+      lastError = new Error(formatSupabaseError(error))
+      continue
+    }
+
+    if (error) throw new Error(formatSupabaseError(error))
+    throw new Error('Maschine konnte nicht angelegt werden')
   }
 
-  if (error && /category|schema cache/i.test(error.message) && 'category' in payload) {
-    const { category: _c, label_name: _l, ...rest } = payload
-    ;({ data, error } = await supabase
-      .from('machines')
-      .insert(asMachineInsert(rest))
-      .select('id, name')
-      .single())
-  }
-
-  if (
-    error &&
-    /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(error.message)
-  ) {
-    const stripped = { ...payload }
-    for (const k of Object.keys(EMPTY_MACHINE_OIL_DATES)) delete stripped[k]
-    ;({ data, error } = await supabase
-      .from('machines')
-      .insert(asMachineInsert(stripped))
-      .select('id, name')
-      .single())
-  }
-
-  if (error) throw new Error(formatSupabaseError(error))
-  if (!data) throw new Error('Maschine konnte nicht angelegt werden')
-  return data
+  throw lastError ?? new Error('Maschine konnte nicht angelegt werden (Barcode belegt)')
 }
 
 async function updateMachinePayload(
@@ -269,28 +288,34 @@ async function updateMachinePayload(
 
 /**
  * Gleicher Name → bestehende Maschine aktualisieren (Lebenszyklus/Tickets/Docs bleiben).
- * Neuer Name → anlegen.
+ * Neuer Name → anlegen. Barcode-Kollisionen werden automatisch neu vergeben.
  */
 async function upsertMachineByName(
   input: MachineInput,
 ): Promise<{ id: string; name: string; updated: boolean }> {
-  const barcode = normalizeBarcode(input.barcode)
   const dataName = input.name.trim()
   if (!dataName) throw new Error('Name fehlt')
+
+  let barcode = normalizeBarcode(input.barcode || suggestMachineBarcode(dataName))
+  if (!barcode || barcode.length < 3) {
+    barcode = suggestMachineBarcode(dataName)
+  }
 
   const labelRaw = input.label_name?.trim() || null
   const labelName =
     labelRaw && labelRaw.toLowerCase() !== dataName.toLowerCase() ? labelRaw : null
   const oil = oilPayloadFromInput(input)
 
-  const { data: matches, error: findError } = await supabase
+  // Exakte Namenssuche (Groß/Klein egal) – kein LIKE-Wildcard
+  const { data: allNames, error: findError } = await supabase
     .from('machines')
     .select('id, name, barcode')
-    .ilike('name', dataName.replace(/[%_]/g, '\\$&'))
 
   if (findError) throw new Error(formatSupabaseError(findError))
 
-  const exact = (matches ?? []).filter((m) => m.name.trim().toLowerCase() === dataName.toLowerCase())
+  const exact = (allNames ?? []).filter(
+    (m) => m.name.trim().toLowerCase() === dataName.toLowerCase(),
+  )
   const existing = exact[0]
 
   if (existing) {
@@ -302,17 +327,19 @@ async function upsertMachineByName(
       label_name: labelName,
       ...oil,
     }
-    // Leere Felder nicht mit undefined überschreiben – nur gesetzte Werte
     if (!input.location.trim()) delete payload.location
     if (input.category === undefined) delete payload.category
     if (input.warranty_until === undefined) delete payload.warranty_until
     if (input.status === undefined) delete payload.status
     if (input.label_name === undefined) delete payload.label_name
 
-    // Barcode nur setzen, wenn bisher leer / Platzhalter
     const oldCode = (existing.barcode ?? '').trim()
-    if ((!oldCode || /^AUTO/i.test(oldCode)) && barcode) {
-      payload.barcode = barcode
+    if ((!oldCode || /^AUTO/i.test(oldCode) || /^KWD-M-/i.test(oldCode)) && barcode) {
+      // Nur setzen, wenn der neue Code nicht schon einer anderen Maschine gehört
+      const taken = (allNames ?? []).some(
+        (m) => m.id !== existing.id && normalizeBarcode(m.barcode) === barcode,
+      )
+      if (!taken) payload.barcode = barcode
     }
 
     const data = await updateMachinePayload(existing.id, payload)
@@ -320,15 +347,22 @@ async function upsertMachineByName(
       category: input.category,
       location: input.location,
     })
-    // Kein applyMachineInitialDates → Lebenszyklus bleibt unberührt
     return { id: data.id, name: data.name, updated: true }
+  }
+
+  // Neuer Name: falls Barcode schon vergeben → frischen Code erzeugen
+  const barcodeTaken = (allNames ?? []).some(
+    (m) => normalizeBarcode(m.barcode) === barcode,
+  )
+  if (barcodeTaken) {
+    barcode = suggestMachineBarcode(dataName)
   }
 
   const payload: Record<string, unknown> = {
     barcode,
     name: dataName,
     label_name: labelName,
-    location: input.location.trim(),
+    location: input.location.trim() || 'Unbekannt',
     category: input.category?.trim() || null,
     warranty_until: input.warranty_until || null,
     status: input.status ?? 'active',
