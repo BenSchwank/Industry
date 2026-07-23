@@ -97,6 +97,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
       persistOptions={{
         persister: asyncStoragePersister,
         maxAge: PERSIST_MAX_AGE,
+        // Cache invalidieren wenn Listen-Query-Fallback geändert wurde (alte 6er-Snapshot)
+        buster: 'machines-list-fallback-v2',
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
             const key = query.queryKey[0]
@@ -104,6 +106,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
           },
         },
       }}
+
     >
       <AuthInit />
       <OnlineStatusSync />

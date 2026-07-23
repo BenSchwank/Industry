@@ -117,168 +117,100 @@ function resolvePlanStatus(
   return { plan_status: 'none', plan_label: null }
 }
 
+type MachineListRow = {
+  id: string
+  barcode: string
+  name: string
+  label_name: string | null
+  location: string | null
+  category: string | null
+  warranty_until: string | null
+  status: MachineStatus
+  external_source: string | null
+  created_at: string
+} & Partial<MachineOilDates>
+
+function isMissingColumnError(message: string, column: string): boolean {
+  return (
+    new RegExp(column, 'i').test(message) &&
+    /schema cache|does not exist|could not find|unknown/i.test(message)
+  )
+}
+
+/** Lädt Maschinen mit Fallback, wenn optionale Spalten in Prod fehlen. */
+async function loadMachineListRows(): Promise<{
+  machines: MachineListRow[]
+  oilColumnsAvailable: boolean
+}> {
+  const attempts: Array<{ select: string; oil: boolean }> = [
+    {
+      select: `id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at, ${oilDatesSelectFragment()}`,
+      oil: true,
+    },
+    {
+      select:
+        'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at',
+      oil: false,
+    },
+    {
+      select:
+        'id, barcode, name, label_name, location, category, warranty_until, status, created_at',
+      oil: false,
+    },
+    {
+      select: 'id, barcode, name, location, category, warranty_until, status, created_at',
+      oil: false,
+    },
+    {
+      select: 'id, barcode, name, location, warranty_until, status, created_at',
+      oil: false,
+    },
+  ]
+
+  let lastError: { message: string } | null = null
+
+  for (const attempt of attempts) {
+    const res = await supabase.from('machines').select(attempt.select).order('name')
+    if (!res.error) {
+      const machines = ((res.data ?? []) as unknown as Array<Record<string, unknown>>).map(
+        (m) => ({
+          id: m.id as string,
+          barcode: m.barcode as string,
+          name: m.name as string,
+          label_name: (m.label_name as string | null | undefined) ?? null,
+          location: (m.location as string | null | undefined) ?? null,
+          category: (m.category as string | null | undefined) ?? null,
+          warranty_until: (m.warranty_until as string | null | undefined) ?? null,
+          status: m.status as MachineStatus,
+          external_source: (m.external_source as string | null | undefined) ?? null,
+          created_at: m.created_at as string,
+          ...(attempt.oil ? pickOilDates(m) : {}),
+        }),
+      )
+      return { machines, oilColumnsAvailable: attempt.oil }
+    }
+
+    lastError = res.error
+    const msg = res.error.message
+    const optionalMissing =
+      isMissingColumnError(msg, 'external_source') ||
+      isMissingColumnError(msg, 'label_name') ||
+      isMissingColumnError(msg, 'category') ||
+      /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(msg)
+
+    if (!optionalMissing) break
+  }
+
+  throw lastError ?? new Error('Maschinen konnten nicht geladen werden')
+}
+
 export function useMachinesWithStats() {
   return useQuery({
     queryKey: ['machines-with-stats'],
     queryFn: async () => {
-      const baseCols =
-        'id, barcode, name, label_name, location, category, warranty_until, status, external_source, created_at'
-      const withOil = `${baseCols}, ${oilDatesSelectFragment()}`
+      const { machines, oilColumnsAvailable } = await loadMachineListRows()
 
-      const oilAttempt = await supabase.from('machines').select(withOil).order('name')
-      let oilColumnsAvailable = true
-      let machinesRes: { data: unknown[] | null; error: { message: string } | null } = {
-        data: (oilAttempt.data as unknown[] | null) ?? null,
-        error: oilAttempt.error,
-      }
-
-      if (
-        oilAttempt.error &&
-        /cutting_oil|hydraulic_oil|maintenance_code|hydraulic_code/i.test(oilAttempt.error.message)
-      ) {
-        oilColumnsAvailable = false
-        const baseAttempt = await supabase.from('machines').select(baseCols).order('name')
-        machinesRes = {
-          data: (baseAttempt.data as unknown[] | null) ?? null,
-          error: baseAttempt.error,
-        }
-      }
-
-      type MachineRow = {
-        id: string
-        barcode: string
-        name: string
-        label_name: string | null
-        location: string | null
-        category: string | null
-        warranty_until: string | null
-        status: MachineStatus
-        external_source: string | null
-        created_at: string
-      } & Partial<MachineOilDates>
-
-      let machines: MachineRow[] = []
-
-      if (machinesRes.error) {
-        const msg = machinesRes.error.message
-        const missingLabel = /label_name/i.test(msg)
-        const missingCategory =
-          /category/i.test(msg) && /schema cache|does not exist|could not find|unknown/i.test(msg)
-
-        // Nur label_name fehlt → Kategorie behalten
-        if (missingLabel && !missingCategory) {
-          const fb = await supabase
-            .from('machines')
-            .select(
-              'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
-            )
-            .order('name')
-          if (fb.error && /category/i.test(fb.error.message)) {
-            const basic = await supabase
-              .from('machines')
-              .select(
-                'id, barcode, name, location, warranty_until, status, external_source, created_at',
-              )
-              .order('name')
-            if (basic.error) throw basic.error
-            machines = (basic.data ?? []).map((m) => ({
-              ...m,
-              label_name: null,
-              category: null,
-            }))
-          } else if (fb.error) {
-            throw fb.error
-          } else {
-            machines = (fb.data ?? []).map((m) => ({
-              ...m,
-              label_name: null,
-              category: (m as { category?: string | null }).category ?? null,
-            }))
-          }
-          oilColumnsAvailable = false
-        } else if (missingCategory) {
-          const basic = await supabase
-            .from('machines')
-            .select(
-              'id, barcode, name, label_name, location, warranty_until, status, external_source, created_at',
-            )
-            .order('name')
-          if (basic.error && /label_name/i.test(basic.error.message)) {
-            const bare = await supabase
-              .from('machines')
-              .select(
-                'id, barcode, name, location, warranty_until, status, external_source, created_at',
-              )
-              .order('name')
-            if (bare.error) {
-              const minimal = await supabase
-                .from('machines')
-                .select('id, barcode, name, location, warranty_until, status, created_at')
-                .order('name')
-              if (minimal.error) throw minimal.error
-              machines = (minimal.data ?? []).map((m) => ({
-                ...m,
-                label_name: null,
-                category: null,
-                external_source: null,
-              }))
-            } else {
-              machines = (bare.data ?? []).map((m) => ({
-                ...m,
-                label_name: null,
-                category: null,
-              }))
-            }
-          } else if (basic.error) {
-            throw basic.error
-          } else {
-            machines = (basic.data ?? []).map((m) => ({
-              ...m,
-              label_name: (m as { label_name?: string | null }).label_name ?? null,
-              category: null,
-            }))
-          }
-          oilColumnsAvailable = false
-        } else {
-          // Unbekannter Fehler → schrittweise ohne optionale Spalten, Kategorie nur droppen wenn nötig
-          const fb = await supabase
-            .from('machines')
-            .select(
-              'id, barcode, name, location, category, warranty_until, status, external_source, created_at',
-            )
-            .order('name')
-          if (!fb.error) {
-            machines = (fb.data ?? []).map((m) => ({
-              ...m,
-              label_name: null,
-              category: (m as { category?: string | null }).category ?? null,
-            }))
-          } else if (/category/i.test(fb.error.message)) {
-            const basic = await supabase
-              .from('machines')
-              .select('id, barcode, name, location, warranty_until, status, created_at')
-              .order('name')
-            if (basic.error) throw basic.error
-            machines = (basic.data ?? []).map((m) => ({
-              ...m,
-              label_name: null,
-              category: null,
-              external_source: null,
-            }))
-          } else {
-            throw machinesRes.error
-          }
-          oilColumnsAvailable = false
-        }
-      } else {
-        machines = ((machinesRes.data ?? []) as MachineRow[]).map((m) => ({
-          ...m,
-          label_name: m.label_name ?? null,
-          category: m.category ?? null,
-        }))
-      }
-
-      const machinesReady: Array<MachineRow & MachineOilDates> = machines.map((m) => ({
+      const machinesReady: Array<MachineListRow & MachineOilDates> = machines.map((m) => ({
         ...m,
         ...(oilColumnsAvailable ? pickOilDates(m) : EMPTY_MACHINE_OIL_DATES),
       }))

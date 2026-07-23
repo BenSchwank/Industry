@@ -96,7 +96,26 @@ CREATE INDEX IF NOT EXISTS idx_machines_label_name
   ON public.machines (label_name)
   WHERE label_name IS NOT NULL;
 
--- 8) Schneidöl / Hydrauliköl / Codes vom Wartungsplan-Aushang
+-- 8) Externe IDs (QS1 / Import) – nötig für Listen-Select mit external_source
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE public.machines
+  ADD COLUMN IF NOT EXISTS external_source TEXT DEFAULT 'kwd';
+
+ALTER TABLE public.maintenance_tasks
+  ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE public.maintenance_tasks
+  ADD COLUMN IF NOT EXISTS external_source TEXT DEFAULT 'kwd';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_machines_external
+  ON public.machines (external_source, external_id)
+  WHERE external_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_external
+  ON public.maintenance_tasks (external_source, external_id)
+  WHERE external_id IS NOT NULL;
+
+-- 9) Schneidöl / Hydrauliköl / Codes vom Wartungsplan-Aushang
 ALTER TABLE public.machines
   ADD COLUMN IF NOT EXISTS last_cutting_oil_at DATE;
 ALTER TABLE public.machines

@@ -51,7 +51,7 @@ export function useMachines() {
 
       if (!full.error) return full.data
 
-      // Fallback wenn Migration 005 noch nicht ausgeführt
+      // Fallback wenn Migration 005 (external_source) noch nicht ausgeführt
       const basic = await supabase
         .from('machines')
         .select('id, barcode, name, location, warranty_until, status, created_at')
