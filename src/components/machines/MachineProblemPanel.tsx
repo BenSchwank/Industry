@@ -12,6 +12,7 @@ import { createTicketOptimistic } from '../../lib/syncTickets'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
+import { LifecycleRepairSelect } from './LifecycleRepairSelect'
 import {
   LifecycleImagePickButtons,
   PendingPhotoStrip,
@@ -42,6 +43,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [lifecycleEntryId, setLifecycleEntryId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -98,6 +100,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         machine_name: machineName,
         description: description.trim(),
         priority,
+        lifecycle_entry_id: lifecycleEntryId || null,
       },
       isOnline,
       queryClient,
@@ -154,6 +157,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
     setSubmitting(false)
     setDescription('')
     setPendingPhotos([])
+    setLifecycleEntryId('')
     setMessage(
       result.mode === 'queued'
         ? 'Problem offline gespeichert – wird synchronisiert.'
@@ -235,6 +239,19 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
               className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[120px] w-full rounded-xl border px-4 py-3 text-base"
             />
           </label>
+
+          <LifecycleRepairSelect
+            machineId={machineId}
+            value={lifecycleEntryId}
+            onChange={(entryId, entry) => {
+              setLifecycleEntryId(entryId)
+              if (entry && !description.trim()) {
+                setDescription(
+                  `${entry.title}${entry.description ? `\n${entry.description}` : ''}`,
+                )
+              }
+            }}
+          />
 
           <div>
             <span className="text-kwd-muted text-sm font-medium">Fotos (optional)</span>

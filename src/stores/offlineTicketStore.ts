@@ -9,6 +9,7 @@ export interface PendingTicket {
   reference_label?: string | null
   description: string
   priority: TicketPriority
+  lifecycle_entry_id?: string | null
   created_at: string
   syncError?: string
 }

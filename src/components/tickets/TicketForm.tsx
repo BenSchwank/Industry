@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../../lib/supabase'
+import { useEffect, useState, type FormEvent } from 'react'
+import { LifecycleRepairSelect } from '../machines/LifecycleRepairSelect'
+import { MachineSearchSelect } from '../machines/MachineSearchSelect'
 import { createTicket } from '../../lib/syncTickets'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
@@ -8,6 +8,9 @@ import type { TicketPriority } from '../../types/database'
 interface TicketFormProps {
   onClose: () => void
   onSuccess: (message: string) => void
+  /** Vorausgewählte Maschine (z. B. aus Scanner / Detail) */
+  initialMachineId?: string | null
+  initialMachineName?: string | null
 }
 
 type ReferenceMode = 'machine' | 'free'
@@ -19,27 +22,31 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: 'critical', label: 'Kritisch' },
 ]
 
-export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
+export function TicketForm({
+  onClose,
+  onSuccess,
+  initialMachineId = null,
+  initialMachineName = null,
+}: TicketFormProps) {
   const isOnline = useAppStore((s) => s.isOnline)
+  const selectedMachineId = useAppStore((s) => s.selectedMachineId)
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>('machine')
-  const [machineId, setMachineId] = useState('')
+  const [machineId, setMachineId] = useState(initialMachineId ?? selectedMachineId ?? '')
+  const [machineName, setMachineName] = useState(initialMachineName ?? '')
+  const [lifecycleEntryId, setLifecycleEntryId] = useState('')
   const [referenceLabel, setReferenceLabel] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { data: machines } = useQuery({
-    queryKey: ['machines-select'],
-    queryFn: async () => {
-      const { data, error: qErr } = await supabase
-        .from('machines')
-        .select('id, name, barcode')
-        .order('name')
-      if (qErr) throw qErr
-      return data
-    },
-  })
+  useEffect(() => {
+    if (initialMachineId) {
+      setMachineId(initialMachineId)
+      setReferenceMode('machine')
+      if (initialMachineName) setMachineName(initialMachineName)
+    }
+  }, [initialMachineId, initialMachineName])
 
   const canSubmit =
     description.trim() &&
@@ -49,7 +56,6 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
     e.preventDefault()
     if (!canSubmit) return
 
-    const machine = machines?.find((m) => m.id === machineId)
     const freeLabel = referenceLabel.trim()
     setSubmitting(true)
     setError(null)
@@ -58,10 +64,11 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
       referenceMode === 'machine'
         ? {
             machine_id: machineId,
-            machine_name: machine?.name ?? 'Unbekannt',
+            machine_name: machineName || 'Unbekannt',
             reference_label: null,
             description: description.trim(),
             priority,
+            lifecycle_entry_id: lifecycleEntryId || null,
           }
         : {
             machine_id: null,
@@ -69,6 +76,7 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
             reference_label: freeLabel,
             description: description.trim(),
             priority,
+            lifecycle_entry_id: null,
           },
       isOnline,
     )
@@ -83,7 +91,9 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
     onSuccess(
       result.mode === 'queued'
         ? 'Störung offline gespeichert – wird synchronisiert sobald das Netz da ist.'
-        : 'Störung erfolgreich gemeldet.',
+        : lifecycleEntryId
+          ? 'Störung gemeldet und mit Lebenszyklus verknüpft.'
+          : 'Störung erfolgreich gemeldet.',
     )
     onClose()
   }
@@ -92,7 +102,7 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
       <form
         onSubmit={handleSubmit}
-        className="bg-kwd-surface border-kwd-border text-kwd-text w-full max-w-lg rounded-t-2xl border p-5 shadow-xl sm:rounded-2xl"
+        className="bg-kwd-surface border-kwd-border text-kwd-text max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border p-5 shadow-xl sm:rounded-2xl"
       >
         <h3 className="text-lg font-bold">Störung melden</h3>
         {!isOnline && (
@@ -117,7 +127,10 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
             </button>
             <button
               type="button"
-              onClick={() => setReferenceMode('free')}
+              onClick={() => {
+                setReferenceMode('free')
+                setLifecycleEntryId('')
+              }}
               className={`min-h-[44px] rounded-xl border px-3 text-sm font-semibold ${
                 referenceMode === 'free'
                   ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
@@ -130,22 +143,31 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
         </fieldset>
 
         {referenceMode === 'machine' ? (
-          <label className="mt-4 block">
-            <span className="text-kwd-muted text-sm font-medium">Maschine</span>
-            <select
-              value={machineId}
-              onChange={(e) => setMachineId(e.target.value)}
-              required
-              className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4"
-            >
-              <option value="">Maschine wählen…</option>
-              {machines?.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.barcode} – {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <div className="mt-4">
+              <MachineSearchSelect
+                value={machineId}
+                required
+                onChange={(id, machine) => {
+                  setMachineId(id)
+                  setMachineName(machine?.name ?? '')
+                  setLifecycleEntryId('')
+                }}
+              />
+            </div>
+            <LifecycleRepairSelect
+              machineId={machineId || null}
+              value={lifecycleEntryId}
+              onChange={(entryId, entry) => {
+                setLifecycleEntryId(entryId)
+                if (entry && !description.trim()) {
+                  setDescription(
+                    `${entry.title}${entry.description ? `\n${entry.description}` : ''}`,
+                  )
+                }
+              }}
+            />
+          </>
         ) : (
           <label className="mt-4 block">
             <span className="text-kwd-muted text-sm font-medium">Bezugspunkt *</span>
@@ -190,9 +212,7 @@ export function TicketForm({ onClose, onSuccess }: TicketFormProps) {
           />
         </label>
 
-        {error && (
-          <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>
-        )}
+        {error && <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>}
 
         <div className="mt-5 flex gap-3">
           <button

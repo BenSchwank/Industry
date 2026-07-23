@@ -136,6 +136,7 @@ export interface Database {
           created_at: string
           resolved_at: string | null
           created_by: string | null
+          lifecycle_entry_id: string | null
         }
         Insert: {
           id?: string
@@ -147,6 +148,7 @@ export interface Database {
           created_at?: string
           resolved_at?: string | null
           created_by?: string | null
+          lifecycle_entry_id?: string | null
         }
         Update: {
           id?: string
@@ -158,6 +160,7 @@ export interface Database {
           created_at?: string
           resolved_at?: string | null
           created_by?: string | null
+          lifecycle_entry_id?: string | null
         }
         Relationships: [
           {
