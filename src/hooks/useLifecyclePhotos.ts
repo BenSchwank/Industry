@@ -54,25 +54,34 @@ function guessMimeFromName(filename: string): string | null {
   return null
 }
 
-function isMissingLifecyclePhotosSchema(error: { code?: string; message?: string }) {
-  const msg = error.message ?? ''
+function storageErrorText(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error ?? '')
+  const e = error as { message?: string; error?: string; statusCode?: string | number }
+  return [e.message, e.error, e.statusCode != null ? String(e.statusCode) : '']
+    .filter(Boolean)
+    .join(' ')
+}
+
+function isMissingLifecyclePhotosSchema(error: { code?: string; message?: string; error?: string }) {
+  const msg = storageErrorText(error)
   return (
     error.code === '42P01' ||
     error.code === 'PGRST205' ||
     /does not exist|relation|could not find the table|schema cache/i.test(msg) ||
-    /Bucket not found|not found/i.test(msg)
+    /bucket not found|404/i.test(msg)
   )
 }
 
 export function isLifecyclePhotosSchemaMissingError(error: {
   code?: string
   message?: string
+  error?: string
 }) {
   return isMissingLifecyclePhotosSchema(error)
 }
 
 export const LIFECYCLE_PHOTOS_SQL_HINT =
-  'Fotos brauchen einmalig die Datenbank-Erweiterung: in Supabase → SQL → supabase/FIX_LIFECYCLE_PHOTOS.sql ausführen.'
+  'Foto-Speicher fehlt in Supabase. Bitte einmal supabase/FIX_LIFECYCLE_PHOTOS.sql im SQL-Editor ausführen, danach Seite neu laden.'
 
 export async function uploadLifecyclePhotoFiles(params: {
   machineId: string

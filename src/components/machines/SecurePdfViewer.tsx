@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { formatSupabaseError } from '../../lib/formatError'
 import { supabase } from '../../lib/supabase'
-
-const BUCKET = 'machine-documents'
+import { DOCS_BUCKET, storageBucketForAttachment } from '../../hooks/useMachineAttachments'
 
 async function loadPdfJs() {
   const pdfjs = await import('pdfjs-dist')
@@ -21,7 +20,14 @@ export function useAttachmentPdfBytes(storagePath: string | null) {
     queryKey: ['attachment-pdf-bytes', storagePath],
     enabled: Boolean(storagePath),
     queryFn: async () => {
-      const { data, error } = await supabase.storage.from(BUCKET).download(storagePath!)
+      const bucket = storagePath?.startsWith('attachments/')
+        ? storageBucketForAttachment({
+            mime_type: 'application/pdf',
+            filename: 'x.pdf',
+            storage_path: storagePath,
+          })
+        : DOCS_BUCKET
+      const { data, error } = await supabase.storage.from(bucket).download(storagePath!)
       if (error) throw new Error(formatSupabaseError(error))
       return await data.arrayBuffer()
     },

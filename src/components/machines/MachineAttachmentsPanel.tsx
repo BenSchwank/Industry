@@ -2,12 +2,16 @@ import { useRef, useState } from 'react'
 import { enqueueAiAnalysis, getAiQueueStatus } from '../../lib/aiAnalysisQueue'
 import { formatFileSize } from '../../lib/pdfAnalysis'
 import {
+  isImageAttachment,
+  isPdfAttachment,
   useAnalyzeMachineAttachment,
+  useAttachmentSignedUrl,
   useDeleteMachineAttachment,
   useMachineAttachments,
   useUploadMachineAttachment,
   type MachineAttachment,
 } from '../../hooks/useMachineAttachments'
+import { LifecycleImagePickButtons } from './LifecyclePhotos'
 import { SecurePdfViewer } from './SecurePdfViewer'
 
 interface MachineAttachmentsPanelProps {
@@ -22,7 +26,7 @@ export function MachineAttachmentsPanel({
   machineName,
   onPlanQueued,
 }: MachineAttachmentsPanelProps) {
-  const fileRef = useRef<HTMLInputElement>(null)
+  const pdfRef = useRef<HTMLInputElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [autoAnalyze, setAutoAnalyze] = useState(true)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -35,17 +39,20 @@ export function MachineAttachmentsPanel({
 
   const selected = attachments.find((a) => a.id === selectedId) ?? attachments[0] ?? null
 
-  async function handleFileChange(files: FileList | null) {
-    if (!files?.length) return
+  async function uploadFiles(files: FileList | File[] | null) {
+    if (!files || (files instanceof FileList ? files.length === 0 : files.length === 0)) return
     setUploadError(null)
     setInfo(null)
 
-    for (const file of Array.from(files)) {
+    const list = files instanceof FileList ? Array.from(files) : files
+    for (const file of list) {
       try {
+        const isPdf =
+          file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         const saved = await upload.mutateAsync({
           machineId,
           file,
-          runAnalysis: autoAnalyze,
+          runAnalysis: isPdf ? autoAnalyze : false,
         })
         setSelectedId(saved.id)
       } catch (err) {
@@ -54,7 +61,7 @@ export function MachineAttachmentsPanel({
       }
     }
 
-    if (fileRef.current) fileRef.current.value = ''
+    if (pdfRef.current) pdfRef.current.value = ''
   }
 
   async function handleAnalyze(attachment: MachineAttachment) {
@@ -79,6 +86,10 @@ export function MachineAttachmentsPanel({
   }
 
   function handleAiPlan(attachment: MachineAttachment) {
+    if (!isPdfAttachment(attachment)) {
+      setUploadError('KI-Wartungsplan funktioniert nur mit PDF-Dokumenten.')
+      return
+    }
     setUploadError(null)
     enqueueAiAnalysis({
       attachmentId: attachment.id,
@@ -97,11 +108,13 @@ export function MachineAttachmentsPanel({
       : []
   const pageCount = selected?.analysis_metadata?.pageCount
   const wordCount = selected?.analysis_metadata?.wordCount
+  const selectedIsImage = selected ? isImageAttachment(selected) : false
+  const selectedIsPdf = selected ? isPdfAttachment(selected) : false
 
   return (
     <section className="kwd-panel">
       <div className="kwd-panel-head flex flex-wrap items-center justify-between gap-2">
-        <span>PDF-Dokumente · {machineName}</span>
+        <span>Dokumente · {machineName}</span>
         <div className="flex flex-wrap items-center gap-2 font-normal normal-case tracking-normal">
           <label className="text-kwd-muted flex items-center gap-2 text-xs">
             <input
@@ -110,28 +123,44 @@ export function MachineAttachmentsPanel({
               onChange={(e) => setAutoAnalyze(e.target.checked)}
               className="accent-kwd-primary h-4 w-4"
             />
-            Beim Upload analysieren
+            PDF beim Upload analysieren
           </label>
           <input
-            ref={fileRef}
+            ref={pdfRef}
             type="file"
             accept="application/pdf,.pdf"
             multiple
             className="hidden"
-            onChange={(e) => handleFileChange(e.target.files)}
+            onChange={(e) => void uploadFiles(e.target.files)}
           />
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => pdfRef.current?.click()}
             disabled={upload.isPending}
-            className="kwd-btn kwd-btn-primary"
+            className="kwd-btn"
           >
-            {upload.isPending ? 'Lädt…' : '+ PDF anhängen'}
+            {upload.isPending ? 'Lädt…' : '+ PDF'}
           </button>
         </div>
       </div>
 
       <div className="flex flex-col gap-3 p-3">
+        <div className="border-kwd-border bg-kwd-surface border p-3">
+          <p className="text-sm font-semibold">Bilder anhängen</p>
+          <p className="text-kwd-muted mt-0.5 text-xs">
+            Fotos aus Kamera, Galerie oder Dateien – auch auf dem Handy.
+          </p>
+          <div className="mt-2">
+            <LifecycleImagePickButtons
+              onFiles={(list) => void uploadFiles(list)}
+              disabled={upload.isPending}
+              cameraLabel="Foto aufnehmen"
+              galleryLabel="Galerie / Datei"
+              pendingLabel="Lädt…"
+            />
+          </div>
+        </div>
+
         <p className="text-kwd-muted text-xs">
           Unterlagen nur in der Software ansehen – kein Download, kein Öffnen in neuem Tab.
         </p>
@@ -157,7 +186,7 @@ export function MachineAttachmentsPanel({
 
         {!isLoading && attachments.length === 0 && (
           <p className="text-kwd-muted border-kwd-border border border-dashed px-4 py-10 text-center text-sm">
-            Noch keine PDFs – Handbuch oder Wartungsplan hochladen.
+            Noch keine Unterlagen – PDF oder Bilder hochladen.
           </p>
         )}
 
@@ -177,6 +206,7 @@ export function MachineAttachmentsPanel({
                   >
                     <p className="font-semibold">{att.title ?? att.filename}</p>
                     <p className="text-kwd-muted mt-0.5 text-xs">
+                      {isImageAttachment(att) ? 'Bild' : 'PDF'} ·{' '}
                       {formatFileSize(att.file_size_bytes)} ·{' '}
                       {new Date(att.created_at).toLocaleDateString('de-DE')}
                       {att.analyzed_at ? ' · analysiert' : ' · roh'}
@@ -192,25 +222,29 @@ export function MachineAttachmentsPanel({
                   <p className="mr-auto self-center truncate text-sm font-semibold">
                     {selected.filename}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => handleAiPlan(selected)}
-                    className="kwd-btn kwd-btn-primary"
-                  >
-                    KI-Wartungsplan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleAnalyze(selected)}
-                    disabled={analyze.isPending}
-                    className="kwd-btn"
-                  >
-                    {analyze.isPending
-                      ? 'Analysiert…'
-                      : selected.analyzed_at
-                        ? 'Neu analysieren'
-                        : 'Analysieren'}
-                  </button>
+                  {selectedIsPdf && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleAiPlan(selected)}
+                        className="kwd-btn kwd-btn-primary"
+                      >
+                        KI-Wartungsplan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAnalyze(selected)}
+                        disabled={analyze.isPending}
+                        className="kwd-btn"
+                      >
+                        {analyze.isPending
+                          ? 'Analysiert…'
+                          : selected.analyzed_at
+                            ? 'Neu analysieren'
+                            : 'Analysieren'}
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => void handleDelete(selected)}
@@ -222,63 +256,94 @@ export function MachineAttachmentsPanel({
                 </div>
 
                 <div className="border-kwd-border bg-kwd-bg relative z-0 overflow-hidden border">
-                  <SecurePdfViewer
-                    key={selected.id}
-                    storagePath={selected.storage_path}
-                    filename={selected.filename}
-                  />
+                  {selectedIsImage ? (
+                    <AttachmentImageViewer attachment={selected} />
+                  ) : (
+                    <SecurePdfViewer
+                      key={selected.id}
+                      storagePath={selected.storage_path}
+                      filename={selected.filename}
+                    />
+                  )}
                 </div>
 
-                <article className="border-kwd-border bg-kwd-surface border p-4">
-                  <h4 className="text-base font-bold tracking-tight">Dokument-Analyse</h4>
-                  {!selected.analysis_summary && !selected.analyzed_at ? (
-                    <p className="text-kwd-muted mt-3 text-sm">
-                      Noch nicht analysiert. „Analysieren“ oder „KI-Wartungsplan“ nutzen.
-                    </p>
-                  ) : (
-                    <>
-                      <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                        {pageCount != null && (
-                          <span className="bg-kwd-surface-light border-kwd-border border px-2 py-1 font-semibold">
-                            {String(pageCount)} Seite(n)
-                          </span>
-                        )}
-                        {wordCount != null && (
-                          <span className="bg-kwd-surface-light border-kwd-border border px-2 py-1 font-semibold">
-                            {String(wordCount)} Wörter
-                          </span>
-                        )}
-                        {selected.analyzed_at && (
-                          <span className="text-kwd-muted self-center text-xs">
-                            {new Date(selected.analyzed_at).toLocaleString('de-DE')}
-                          </span>
-                        )}
-                      </div>
-                      {selected.analysis_summary && (
-                        <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed">
-                          {selected.analysis_summary}
-                        </p>
-                      )}
-                      {keywords.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {keywords.map((kw) => (
-                            <span
-                              key={kw}
-                              className="bg-kwd-primary/15 text-kwd-primary border-kwd-primary/30 border px-2.5 py-1 text-sm font-semibold"
-                            >
-                              {kw}
+                {selectedIsPdf && (
+                  <article className="border-kwd-border bg-kwd-surface border p-4">
+                    <h4 className="text-base font-bold tracking-tight">Dokument-Analyse</h4>
+                    {!selected.analysis_summary && !selected.analyzed_at ? (
+                      <p className="text-kwd-muted mt-3 text-sm">
+                        Noch nicht analysiert. „Analysieren“ oder „KI-Wartungsplan“ nutzen.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                          {pageCount != null && (
+                            <span className="bg-kwd-surface-light border-kwd-border border px-2 py-1 font-semibold">
+                              {String(pageCount)} Seite(n)
                             </span>
-                          ))}
+                          )}
+                          {wordCount != null && (
+                            <span className="bg-kwd-surface-light border-kwd-border border px-2 py-1 font-semibold">
+                              {String(wordCount)} Wörter
+                            </span>
+                          )}
+                          {selected.analyzed_at && (
+                            <span className="text-kwd-muted self-center text-xs">
+                              {new Date(selected.analyzed_at).toLocaleString('de-DE')}
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </>
-                  )}
-                </article>
+                        {selected.analysis_summary && (
+                          <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed">
+                            {selected.analysis_summary}
+                          </p>
+                        )}
+                        {keywords.length > 0 && (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {keywords.map((kw) => (
+                              <span
+                                key={kw}
+                                className="bg-kwd-primary/15 text-kwd-primary border-kwd-primary/30 border px-2.5 py-1 text-sm font-semibold"
+                              >
+                                {kw}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </article>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
     </section>
+  )
+}
+
+function AttachmentImageViewer({ attachment }: { attachment: MachineAttachment }) {
+  const { data: url, isLoading, error } = useAttachmentSignedUrl(attachment)
+
+  if (isLoading) {
+    return <p className="text-kwd-muted p-8 text-center text-sm">Bild wird geladen…</p>
+  }
+  if (error || !url) {
+    return (
+      <p className="text-kwd-danger p-8 text-center text-sm">
+        {error instanceof Error ? error.message : 'Bild konnte nicht geladen werden'}
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex max-h-[70vh] items-center justify-center bg-black/5 p-2">
+      <img
+        src={url}
+        alt={attachment.filename}
+        className="max-h-[68vh] max-w-full object-contain"
+      />
+    </div>
   )
 }
