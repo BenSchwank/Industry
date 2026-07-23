@@ -1,6 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { listActiveAssignees } from '../lib/listActiveAssignees'
 import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../stores/authStore'
 import type { TicketPriority, TicketStatus } from '../types/database'
+
+export const TICKET_ASSIGNED_SQL_HINT =
+  'Bitte in Supabase SQL ausführen: supabase/FIX_TICKET_ASSIGNED_TO.sql'
 
 function invalidateTicketQueries(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['tickets'] })
@@ -12,7 +17,42 @@ function invalidateTicketQueries(queryClient: ReturnType<typeof useQueryClient>)
   void queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
 }
 
-/** Störung bearbeiten (Text, Priorität, Status, Bezugspunkt). */
+type TicketUpdatePayload = {
+  description?: string
+  priority?: TicketPriority
+  status?: TicketStatus
+  resolved_at?: string | null
+  assigned_to?: string | null
+  reference_label?: string | null
+}
+
+async function updateTicketRow(id: string, payload: TicketUpdatePayload): Promise<void> {
+  const { error } = await supabase.from('tickets').update(payload).eq('id', id)
+  if (!error) return
+
+  if (/assigned_to|schema cache/i.test(error.message) && 'assigned_to' in payload) {
+    const { assigned_to: _a, ...without } = payload
+    const retry = await supabase.from('tickets').update(without).eq('id', id)
+    if (!retry.error) {
+      throw new Error(
+        `Status gespeichert, Zuständigkeit fehlt in der Datenbank. ${TICKET_ASSIGNED_SQL_HINT}`,
+      )
+    }
+    throw retry.error
+  }
+  throw error
+}
+
+/** Aktive Benutzer für Zuständigen-Auswahl. */
+export function useActiveAssignees() {
+  return useQuery({
+    queryKey: ['active-assignees'],
+    queryFn: listActiveAssignees,
+    staleTime: 60_000,
+  })
+}
+
+/** Störung bearbeiten (Text, Priorität, Status, Zuständig, Bezugspunkt). */
 export function useUpdateTicket() {
   const queryClient = useQueryClient()
 
@@ -22,6 +62,7 @@ export function useUpdateTicket() {
       description?: string
       priority?: TicketPriority
       status?: TicketStatus
+      assigned_to?: string | null
       reference_label?: string | null
     }) => {
       const payload: {
@@ -29,6 +70,7 @@ export function useUpdateTicket() {
         priority?: TicketPriority
         status?: TicketStatus
         resolved_at?: string | null
+        assigned_to?: string | null
         reference_label?: string | null
       } = {}
       if (input.description !== undefined) payload.description = input.description.trim()
@@ -40,14 +82,48 @@ export function useUpdateTicket() {
             ? new Date().toISOString()
             : null
       }
+      if (input.assigned_to !== undefined) {
+        payload.assigned_to = input.assigned_to?.trim() || null
+      }
       if (input.reference_label !== undefined) {
         payload.reference_label = input.reference_label?.trim() || null
       }
 
-      const { error } = await supabase.from('tickets').update(payload).eq('id', input.id)
-      if (error) throw error
+      await updateTicketRow(input.id, payload)
     },
     onSuccess: () => invalidateTicketQueries(queryClient),
+  })
+}
+
+/** Störung auf „In Arbeit“ setzen und Benutzer zuweisen. */
+export function useSetTicketInProgress() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: { id: string; assigned_to: string }) => {
+      const assignee = input.assigned_to.trim()
+      if (!assignee) throw new Error('Bitte einen Benutzer wählen')
+
+      await updateTicketRow(input.id, {
+        status: 'in_progress',
+        resolved_at: null,
+        assigned_to: assignee,
+      })
+    },
+    onSuccess: () => invalidateTicketQueries(queryClient),
+  })
+}
+
+/** Schnell: aktuelle Person übernimmt die Störung. */
+export function useClaimTicket() {
+  const setInProgress = useSetTicketInProgress()
+
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      const userId = useAuthStore.getState().user?.id
+      if (!userId) throw new Error('Bitte anmelden, um die Störung zu übernehmen')
+      await setInProgress.mutateAsync({ id: ticketId, assigned_to: userId })
+    },
   })
 }
 

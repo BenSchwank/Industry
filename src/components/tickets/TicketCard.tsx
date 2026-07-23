@@ -17,7 +17,9 @@ interface TicketCardProps {
   ticket: TicketListItem
   busy: boolean
   authorName?: string | null
+  assigneeName?: string | null
   onEdit: (target: TicketEditTarget) => void
+  onSetInProgress: (ticket: TicketListItem) => void
   onResolve: (id: string) => void
   onDelete: (id: string) => void
 }
@@ -26,7 +28,9 @@ export function TicketCard({
   ticket,
   busy,
   authorName,
+  assigneeName,
   onEdit,
+  onSetInProgress,
   onResolve,
   onDelete,
 }: TicketCardProps) {
@@ -34,6 +38,7 @@ export function TicketCard({
   const referenceLabel = ticket.reference_label
   const isFreeReference = !machine && Boolean(referenceLabel?.trim())
   const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
+  const inProgress = ticket.status === 'in_progress'
 
   return (
     <article className="bg-kwd-surface border-kwd-border rounded-xl border p-4">
@@ -48,9 +53,22 @@ export function TicketCard({
       </div>
       <p className="text-kwd-muted mt-2 text-sm">{ticket.description}</p>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="bg-kwd-bg rounded px-2 py-1 font-medium">
-          {TICKET_STATUS_LABEL[ticket.status] ?? ticket.status}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded px-2 py-1 font-medium ${
+              inProgress
+                ? 'bg-kwd-primary/15 text-kwd-primary'
+                : 'bg-kwd-bg text-kwd-text'
+            }`}
+          >
+            {TICKET_STATUS_LABEL[ticket.status] ?? ticket.status}
+          </span>
+          {assigneeName && (
+            <span className="bg-kwd-primary/10 text-kwd-primary rounded px-2 py-1 font-semibold">
+              Zuständig: {assigneeName}
+            </span>
+          )}
+        </div>
         <span className="text-kwd-muted">
           {authorName && <span className="text-kwd-primary mr-2 font-semibold">{authorName}</span>}
           {new Date(ticket.created_at).toLocaleString('de-DE', {
@@ -72,6 +90,7 @@ export function TicketCard({
               description: ticket.description,
               priority: ticket.priority,
               status: ticket.status,
+              assigned_to: ticket.assigned_to ?? null,
               machine_id: ticket.machine_id ?? null,
               reference_label: referenceLabel ?? null,
               machine_label: isFreeReference
@@ -83,6 +102,16 @@ export function TicketCard({
         >
           Bearbeiten
         </button>
+        {isOpen && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onSetInProgress(ticket)}
+            className="border-kwd-primary text-kwd-primary min-h-[44px] rounded-lg border px-4 text-sm font-bold disabled:opacity-50"
+          >
+            {inProgress ? 'Zuständig ändern' : 'In Arbeit'}
+          </button>
+        )}
         {isOpen && (
           <button
             type="button"

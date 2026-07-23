@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TicketForm } from '../components/tickets/TicketForm'
 import { TicketEditForm, type TicketEditTarget } from '../components/tickets/TicketEditForm'
+import { TicketInProgressForm } from '../components/tickets/TicketInProgressForm'
 import { TicketCard } from '../components/tickets/TicketCard'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
 import {
@@ -45,6 +46,7 @@ const filterInputCls =
 export default function TicketsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
+  const [inProgressTicket, setInProgressTicket] = useState<TicketListItem | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>('open')
   const [priorityFilter, setPriorityFilter] = useState<TicketPriorityFilter>('all')
@@ -68,19 +70,32 @@ export default function TicketsPage() {
       const { data, error } = await supabase
         .from('tickets')
         .select(
-          'id, description, status, priority, created_at, created_by, reference_label, machine_id, machines(name, barcode)',
+          'id, description, status, priority, created_at, created_by, assigned_to, reference_label, machine_id, machines(name, barcode)',
         )
         .order('created_at', { ascending: false })
       if (error) {
-        if (/created_by|reference_label/i.test(error.message)) {
+        if (/assigned_to|created_by|reference_label|schema cache/i.test(error.message)) {
           const fb = await supabase
+            .from('tickets')
+            .select(
+              'id, description, status, priority, created_at, created_by, reference_label, machine_id, machines(name, barcode)',
+            )
+            .order('created_at', { ascending: false })
+          if (!fb.error) {
+            return (fb.data ?? []).map((t) => ({
+              ...t,
+              assigned_to: null as string | null,
+            })) as TicketListItem[]
+          }
+          const bare = await supabase
             .from('tickets')
             .select('id, description, status, priority, created_at, machine_id, machines(name, barcode)')
             .order('created_at', { ascending: false })
-          if (fb.error) throw fb.error
-          return (fb.data ?? []).map((t) => ({
+          if (bare.error) throw bare.error
+          return (bare.data ?? []).map((t) => ({
             ...t,
             created_by: null as string | null,
+            assigned_to: null as string | null,
             reference_label: null as string | null,
           })) as TicketListItem[]
         }
@@ -90,12 +105,19 @@ export default function TicketsPage() {
     },
   })
 
+  const userIdsKey = tickets
+    ?.flatMap((t) => [t.created_by, t.assigned_to])
+    .filter(Boolean)
+    .join(',')
+
   const { data: nameMap } = useQuery({
-    queryKey: ['ticket-authors', tickets?.map((t) => t.created_by).join(',')],
-    enabled: Boolean(tickets?.some((t) => t.created_by)),
+    queryKey: ['ticket-user-names', userIdsKey],
+    enabled: Boolean(userIdsKey),
     queryFn: async () => {
       const { resolveUsernames } = await import('../lib/resolveUsernames')
-      return resolveUsernames(tickets?.map((t) => t.created_by) ?? [])
+      return resolveUsernames(
+        tickets?.flatMap((t) => [t.created_by, t.assigned_to]) ?? [],
+      )
     },
   })
 
@@ -107,8 +129,9 @@ export default function TicketsPage() {
         priorityFilter,
         dateFrom,
         dateTo,
+        nameById: nameMap,
       }),
-    [tickets, searchQuery, statusFilter, priorityFilter, dateFrom, dateTo],
+    [tickets, searchQuery, statusFilter, priorityFilter, dateFrom, dateTo, nameMap],
   )
 
   const grouped = useMemo(
@@ -178,7 +201,9 @@ export default function TicketsPage() {
         ticket={ticket}
         busy={busyId === ticket.id}
         authorName={ticket.created_by ? nameMap?.get(ticket.created_by) : null}
+        assigneeName={ticket.assigned_to ? nameMap?.get(ticket.assigned_to) : null}
         onEdit={setEditTicket}
+        onSetInProgress={setInProgressTicket}
         onResolve={(id) => void handleResolve(id)}
         onDelete={(id) => void handleDelete(id)}
       />
@@ -212,7 +237,7 @@ export default function TicketsPage() {
           type="search"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Suchen: Maschine, Bezug, Text, Status…"
+          placeholder="Suchen: Maschine, Bezug, Text, Status, Zuständig…"
           className={filterInputCls}
           aria-label="Störungen durchsuchen"
         />
@@ -379,6 +404,23 @@ export default function TicketsPage() {
         <TicketEditForm
           ticket={editTicket}
           onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => {
+            setToast(msg)
+            setTimeout(() => setToast(null), 4000)
+          }}
+        />
+      )}
+
+      {inProgressTicket && (
+        <TicketInProgressForm
+          ticketId={inProgressTicket.id}
+          ticketLabel={
+            inProgressTicket.machines?.name ??
+            inProgressTicket.reference_label ??
+            undefined
+          }
+          initialAssigneeId={inProgressTicket.assigned_to}
+          onClose={() => setInProgressTicket(null)}
           onSuccess={(msg) => {
             setToast(msg)
             setTimeout(() => setToast(null), 4000)

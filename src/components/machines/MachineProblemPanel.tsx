@@ -1,6 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useDeleteTicket, useResolveTicket } from '../../hooks/useTicketActions'
+import {
+  TICKET_STATUS_LABEL,
+  useDeleteTicket,
+  useResolveTicket,
+} from '../../hooks/useTicketActions'
 import { assertLifecycleImage } from '../../hooks/useLifecyclePhotos'
 import {
   TICKET_PHOTOS_SQL_HINT,
@@ -8,10 +12,12 @@ import {
   useUploadTicketPhotos,
 } from '../../hooks/useTicketPhotos'
 import { TicketEditForm, type TicketEditTarget } from '../tickets/TicketEditForm'
+import { TicketInProgressForm } from '../tickets/TicketInProgressForm'
 import { createTicketOptimistic } from '../../lib/syncTickets'
+import { resolveUsernames } from '../../lib/resolveUsernames'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
-import type { TicketPriority } from '../../types/database'
+import type { TicketPriority, TicketStatus } from '../../types/database'
 import { LifecycleRepairSelect } from './LifecycleRepairSelect'
 import {
   LifecycleImagePickButtons,
@@ -26,6 +32,15 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: 'high', label: 'Hoch' },
   { value: 'critical', label: 'Kritisch' },
 ]
+
+interface MachineOpenTicket {
+  id: string
+  description: string
+  status: TicketStatus
+  priority: TicketPriority
+  created_at: string
+  assigned_to: string | null
+}
 
 interface MachineProblemPanelProps {
   machineId: string
@@ -49,6 +64,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
+  const [inProgressTicket, setInProgressTicket] = useState<MachineOpenTicket | null>(null)
 
   const photosByTicket = useMemo(() => {
     const map = new Map<string, typeof allTicketPhotos>()
@@ -63,15 +79,35 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const { data: openTickets = [] } = useQuery({
     queryKey: ['machine-open-tickets', machineId],
     queryFn: async () => {
-      const { data, error: qErr } = await supabase
+      const full = await supabase
         .from('tickets')
-        .select('id, description, status, priority, created_at')
+        .select('id, description, status, priority, created_at, assigned_to')
         .eq('machine_id', machineId)
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
-      if (qErr) throw qErr
-      return data ?? []
+      if (!full.error) return (full.data ?? []) as MachineOpenTicket[]
+
+      if (/assigned_to|schema cache/i.test(full.error.message)) {
+        const fb = await supabase
+          .from('tickets')
+          .select('id, description, status, priority, created_at')
+          .eq('machine_id', machineId)
+          .in('status', ['open', 'in_progress'])
+          .order('created_at', { ascending: false })
+        if (fb.error) throw fb.error
+        return (fb.data ?? []).map((t) => ({
+          ...t,
+          assigned_to: null as string | null,
+        })) as MachineOpenTicket[]
+      }
+      throw full.error
     },
+  })
+
+  const { data: assigneeNames } = useQuery({
+    queryKey: ['machine-ticket-assignees', machineId, openTickets.map((t) => t.assigned_to).join(',')],
+    enabled: openTickets.some((t) => t.assigned_to),
+    queryFn: () => resolveUsernames(openTickets.map((t) => t.assigned_to)),
   })
 
   function addPendingFiles(list: FileList | null) {
@@ -289,11 +325,20 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
             {openTickets.map((t) => {
               const busy = busyId === t.id
               const photos = photosByTicket.get(t.id) ?? []
+              const assignee = t.assigned_to ? assigneeNames?.get(t.assigned_to) : null
+              const inProgress = t.status === 'in_progress'
               return (
                 <li key={t.id} className="border-kwd-border rounded-lg border p-3">
                   <p className="text-sm whitespace-pre-wrap">{t.description}</p>
                   <p className="text-kwd-muted mt-1 text-xs">
                     {new Date(t.created_at).toLocaleString('de-DE')} · {t.priority}
+                    {' · '}
+                    <span className={inProgress ? 'text-kwd-primary font-semibold' : ''}>
+                      {TICKET_STATUS_LABEL[t.status] ?? t.status}
+                    </span>
+                    {assignee && (
+                      <span className="text-kwd-primary font-semibold"> · {assignee}</span>
+                    )}
                   </p>
                   <TicketPhotoStrip photos={photos} canDelete />
                   <TicketPhotoPicker
@@ -313,6 +358,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
                           description: t.description,
                           priority: t.priority,
                           status: t.status,
+                          assigned_to: t.assigned_to,
                           machine_id: machineId,
                           machine_label: machineName,
                         })
@@ -320,6 +366,14 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
                       className="kwd-btn min-h-[40px] px-3 text-sm font-semibold"
                     >
                       Bearbeiten
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setInProgressTicket(t)}
+                      className="border-kwd-primary text-kwd-primary min-h-[40px] rounded-lg border px-3 text-sm font-bold disabled:opacity-50"
+                    >
+                      {inProgress ? 'Zuständig' : 'In Arbeit'}
                     </button>
                     <button
                       type="button"
@@ -349,6 +403,19 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         <TicketEditForm
           ticket={editTicket}
           onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => {
+            setMessage(msg)
+            void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+          }}
+        />
+      )}
+
+      {inProgressTicket && (
+        <TicketInProgressForm
+          ticketId={inProgressTicket.id}
+          ticketLabel={machineName}
+          initialAssigneeId={inProgressTicket.assigned_to}
+          onClose={() => setInProgressTicket(null)}
           onSuccess={(msg) => {
             setMessage(msg)
             void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })

@@ -2,8 +2,10 @@ import { useState, type FormEvent } from 'react'
 import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
+  useActiveAssignees,
   useUpdateTicket,
 } from '../../hooks/useTicketActions'
+import { useAuthStore } from '../../stores/authStore'
 import type { TicketPriority, TicketStatus } from '../../types/database'
 
 export interface TicketEditTarget {
@@ -11,6 +13,7 @@ export interface TicketEditTarget {
   description: string
   priority: TicketPriority
   status: TicketStatus
+  assigned_to?: string | null
   machine_id?: string | null
   reference_label?: string | null
   machine_label?: string
@@ -24,9 +27,12 @@ interface TicketEditFormProps {
 
 export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormProps) {
   const updateTicket = useUpdateTicket()
+  const userId = useAuthStore((s) => s.user?.id)
+  const { data: assignees = [], isLoading: loadingAssignees } = useActiveAssignees()
   const [description, setDescription] = useState(ticket.description)
   const [priority, setPriority] = useState<TicketPriority>(ticket.priority)
   const [status, setStatus] = useState<TicketStatus>(ticket.status)
+  const [assignedTo, setAssignedTo] = useState(ticket.assigned_to ?? '')
   const [referenceLabel, setReferenceLabel] = useState(ticket.reference_label ?? '')
   const [error, setError] = useState<string | null>(null)
 
@@ -43,6 +49,18 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
       return
     }
 
+    let nextAssigned = assignedTo.trim() || null
+    if (status === 'in_progress' && !nextAssigned) {
+      nextAssigned = userId ?? null
+      if (!nextAssigned) {
+        setError('Für „In Arbeit“ bitte einen Benutzer wählen')
+        return
+      }
+    }
+    if (status === 'open' && !assignedTo.trim()) {
+      nextAssigned = null
+    }
+
     setError(null)
     try {
       await updateTicket.mutateAsync({
@@ -50,6 +68,7 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
         description: description.trim(),
         priority,
         status,
+        assigned_to: nextAssigned,
         ...(isFreeReference ? { reference_label: referenceLabel.trim() } : {}),
       })
       onSuccess('Störung gespeichert.')
@@ -102,7 +121,13 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
           <span className="text-kwd-muted text-sm font-medium">Status</span>
           <select
             value={status}
-            onChange={(e) => setStatus(e.target.value as TicketStatus)}
+            onChange={(e) => {
+              const next = e.target.value as TicketStatus
+              setStatus(next)
+              if (next === 'in_progress' && !assignedTo && userId) {
+                setAssignedTo(userId)
+              }
+            }}
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4"
           >
             {TICKET_STATUSES.map((s) => (
@@ -111,6 +136,31 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="mt-4 block">
+          <span className="text-kwd-muted text-sm font-medium">
+            Zuständig {status === 'in_progress' ? '*' : '(optional)'}
+          </span>
+          <select
+            value={assignedTo}
+            onChange={(e) => setAssignedTo(e.target.value)}
+            required={status === 'in_progress'}
+            className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4"
+          >
+            <option value="">
+              {loadingAssignees ? 'Lade Benutzer…' : 'Niemand / offen'}
+            </option>
+            {assignees.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.username}
+                {a.id === userId ? ' (ich)' : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-kwd-muted mt-1 text-xs">
+            Zeigt in der Liste, wer an der Störung arbeitet.
+          </p>
         </label>
 
         <label className="mt-4 block">

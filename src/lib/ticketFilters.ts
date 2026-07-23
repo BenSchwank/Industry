@@ -14,6 +14,7 @@ export interface TicketListItem {
   priority: TicketPriority
   created_at: string
   created_by: string | null
+  assigned_to?: string | null
   reference_label?: string | null
   machine_id?: string | null
   machines: { name: string; barcode: string } | null
@@ -61,6 +62,8 @@ export function filterTickets(
     priorityFilter: TicketPriorityFilter
     dateFrom: string
     dateTo: string
+    /** Optional: id → username für Suche nach Zuständigem / Melder */
+    nameById?: Map<string, string>
   },
 ): TicketListItem[] {
   const terms = opts.searchQuery
@@ -70,6 +73,7 @@ export function filterTickets(
     .filter(Boolean)
   const from = opts.dateFrom ? startOfDay(opts.dateFrom) : null
   const to = opts.dateTo ? endOfDay(opts.dateTo) : null
+  const names = opts.nameById
 
   return tickets.filter((t) => {
     if (opts.statusFilter === 'open') {
@@ -92,6 +96,8 @@ export function filterTickets(
         t.machines?.barcode ?? '',
         TICKET_STATUS_LABEL[t.status] ?? t.status,
         TICKET_PRIORITY_LABEL[t.priority] ?? t.priority,
+        t.created_by && names ? (names.get(t.created_by) ?? '') : '',
+        t.assigned_to && names ? (names.get(t.assigned_to) ?? '') : '',
       ]
         .join(' ')
         .toLowerCase()
