@@ -760,7 +760,7 @@ export function PlanPhotoImportModal({
 
           {error && (
             <div className="border-kwd-danger bg-kwd-danger/10 mt-4 rounded-xl border p-4">
-              <p className="text-sm">{error}</p>
+              <p className="whitespace-pre-wrap text-sm">{error}</p>
             </div>
           )}
         </div>
