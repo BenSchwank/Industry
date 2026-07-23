@@ -29,15 +29,50 @@ function extForMime(mime: string, filename: string) {
 }
 
 export function assertLifecycleImage(file: File) {
-  const mime = file.type || 'image/jpeg'
+  const rawMime = (file.type || '').toLowerCase()
+  const mime = rawMime || guessMimeFromName(file.name) || 'image/jpeg'
+  if (rawMime === 'image/heic' || rawMime === 'image/heif' || /\.heic$/i.test(file.name)) {
+    throw new Error(
+      'HEIC-Fotos vom iPhone werden noch nicht unterstützt. Bitte als JPEG speichern oder „Größere kompatible“ in den iPhone-Einstellungen nutzen.',
+    )
+  }
   if (!ALLOWED.has(mime) && !/\.(jpe?g|png|webp|gif)$/i.test(file.name)) {
     throw new Error('Nur Bilder (JPEG, PNG, WebP, GIF) sind erlaubt.')
   }
   if (file.size > MAX_BYTES) {
     throw new Error('Bild zu groß (max. 10 MB).')
   }
-  return mime.startsWith('image/') ? mime : 'image/jpeg'
+  return ALLOWED.has(mime) ? mime : 'image/jpeg'
 }
+
+function guessMimeFromName(filename: string): string | null {
+  const ext = filename.split('.').pop()?.toLowerCase()
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  return null
+}
+
+function isMissingLifecyclePhotosSchema(error: { code?: string; message?: string }) {
+  const msg = error.message ?? ''
+  return (
+    error.code === '42P01' ||
+    error.code === 'PGRST205' ||
+    /does not exist|relation|could not find the table|schema cache/i.test(msg) ||
+    /Bucket not found|not found/i.test(msg)
+  )
+}
+
+export function isLifecyclePhotosSchemaMissingError(error: {
+  code?: string
+  message?: string
+}) {
+  return isMissingLifecyclePhotosSchema(error)
+}
+
+export const LIFECYCLE_PHOTOS_SQL_HINT =
+  'Fotos brauchen einmalig die Datenbank-Erweiterung: in Supabase → SQL → supabase/FIX_LIFECYCLE_PHOTOS.sql ausführen.'
 
 export async function uploadLifecyclePhotoFiles(params: {
   machineId: string
@@ -59,7 +94,12 @@ export async function uploadLifecyclePhotoFiles(params: {
       .from(LIFECYCLE_MEDIA_BUCKET)
       .upload(storagePath, file, { contentType: mime, upsert: false })
 
-    if (uploadError) throw new Error(formatSupabaseError(uploadError))
+    if (uploadError) {
+      if (isMissingLifecyclePhotosSchema(uploadError)) {
+        throw new Error(LIFECYCLE_PHOTOS_SQL_HINT)
+      }
+      throw new Error(formatSupabaseError(uploadError))
+    }
 
     const { data, error } = await supabase
       .from('machine_lifecycle_photos')
@@ -68,7 +108,7 @@ export async function uploadLifecyclePhotoFiles(params: {
         entry_id: entryId,
         machine_id: machineId,
         storage_path: storagePath,
-        filename: file.name,
+        filename: file.name || `foto.${ext}`,
         mime_type: mime,
         file_size_bytes: file.size,
       })
@@ -79,6 +119,9 @@ export async function uploadLifecyclePhotoFiles(params: {
 
     if (error) {
       await supabase.storage.from(LIFECYCLE_MEDIA_BUCKET).remove([storagePath])
+      if (isMissingLifecyclePhotosSchema(error)) {
+        throw new Error(LIFECYCLE_PHOTOS_SQL_HINT)
+      }
       throw new Error(formatSupabaseError(error))
     }
 
@@ -102,8 +145,8 @@ export function useLifecyclePhotosForMachine(machineId: string | null) {
         .order('created_at', { ascending: true })
 
       if (error) {
-        // Tabelle fehlt noch → leere Liste, UI bleibt nutzbar
-        if (error.code === '42P01' || /does not exist|relation/i.test(error.message)) {
+        // Tabelle/Bucket fehlt noch → leere Liste, UI bleibt nutzbar
+        if (isMissingLifecyclePhotosSchema(error)) {
           return [] as LifecyclePhoto[]
         }
         throw new Error(formatSupabaseError(error))

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   useAddLifecycleEntry,
   useDeleteTimelineEntries,
@@ -6,11 +7,14 @@ import {
 } from '../../hooks/useMachineLifecycle'
 import {
   assertLifecycleImage,
+  isLifecyclePhotosSchemaMissingError,
+  LIFECYCLE_PHOTOS_SQL_HINT,
   useLifecyclePhotosForMachine,
   useUploadLifecyclePhotos,
   type LifecyclePhoto,
 } from '../../hooks/useLifecyclePhotos'
 import { formatSupabaseError } from '../../lib/formatError'
+import { supabase } from '../../lib/supabase'
 import {
   addDaysIso,
   formatDurationDays,
@@ -78,12 +82,26 @@ export function MachineLifecyclePanel({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [maximized, setMaximized] = useState<TimelineItem | null>(null)
   const [formPreviewOpen, setFormPreviewOpen] = useState(false)
+  const [photosSchemaMissing, setPhotosSchemaMissing] = useState(false)
   const lastClickedIndex = useRef<number | null>(null)
 
   const addEntry = useAddLifecycleEntry()
   const deleteEntries = useDeleteTimelineEntries()
   const uploadPhotos = useUploadLifecyclePhotos()
   const { data: allPhotos = [] } = useLifecyclePhotosForMachine(machineId)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { error } = await supabase.from('machine_lifecycle_photos').select('id').limit(1)
+      if (!cancelled && error && isLifecyclePhotosSchemaMissingError(error)) {
+        setPhotosSchemaMissing(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const photosByEntry = useMemo(() => {
     const map = new Map<string, LifecyclePhoto[]>()
@@ -171,13 +189,14 @@ export function MachineLifecyclePanel({
         } catch (photoErr) {
           setError(
             photoErr instanceof Error
-              ? `Eintrag gespeichert, Fotos fehlgeschlagen: ${photoErr.message}. Migration 010 ausführen?`
+              ? `Eintrag gespeichert, Fotos fehlgeschlagen: ${photoErr.message}`
               : 'Eintrag gespeichert, Foto-Upload fehlgeschlagen.',
           )
           setTitle('')
           setDescription('')
           setPendingPhotos([])
           setShowForm(false)
+          setFormPreviewOpen(false)
           return
         }
       }
@@ -260,6 +279,11 @@ export function MachineLifecyclePanel({
 
   return (
     <div className="flex flex-col gap-3">
+      {photosSchemaMissing && (
+        <p className="text-kwd-danger bg-kwd-danger/10 border-kwd-danger border px-3 py-2 text-sm">
+          {LIFECYCLE_PHOTOS_SQL_HINT}
+        </p>
+      )}
       <section className="kwd-panel">
         <div className="kwd-panel-head flex flex-wrap items-center justify-between gap-2">
           <span>Lebenszyklus · {machineName}</span>
@@ -637,9 +661,9 @@ function LifecycleEntryMaximizeModal({
     }
   }, [onClose])
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex flex-col bg-black/50 p-2 sm:p-4"
+      className="fixed inset-0 z-[80] flex flex-col bg-black/50 p-2 sm:p-4"
       role="dialog"
       aria-modal
       aria-label="Eintrag maximiert"
@@ -733,7 +757,8 @@ function LifecycleEntryMaximizeModal({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -765,9 +790,9 @@ function LifecycleFormPreviewModal({
     }
   }, [onClose])
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex flex-col bg-black/50 p-2 sm:p-4"
+      className="fixed inset-0 z-[80] flex flex-col bg-black/50 p-2 sm:p-4"
       role="dialog"
       aria-modal
       aria-label="Vorschau vor dem Speichern"
@@ -821,6 +846,7 @@ function LifecycleFormPreviewModal({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
