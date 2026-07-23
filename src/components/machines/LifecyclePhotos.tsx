@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   assertLifecycleImage,
   useDeleteLifecyclePhoto,
@@ -7,22 +7,30 @@ import {
   type LifecyclePhoto,
 } from '../../hooks/useLifecyclePhotos'
 
+/** display:none bricht auf manchen Handys den Galerie-Dialog – optisch verstecken statt hidden */
+const fileInputCls =
+  'absolute h-px w-px overflow-hidden whitespace-nowrap border-0 p-0 opacity-0'
+const pickBtnCls = 'kwd-btn inline-flex min-h-[44px] cursor-pointer items-center justify-center text-xs'
+
 function PhotoThumb({
   photo,
   onRemove,
+  size = 'sm',
 }: {
   photo: LifecyclePhoto
   onRemove?: (photo: LifecyclePhoto) => void
+  size?: 'sm' | 'lg'
 }) {
   const { data: url, isLoading } = useLifecyclePhotoUrl(photo.storage_path)
   const [lightbox, setLightbox] = useState(false)
+  const box = size === 'lg' ? 'h-28 w-28 sm:h-36 sm:w-36' : 'h-16 w-16'
 
   return (
     <>
       <button
         type="button"
         onClick={() => setLightbox(true)}
-        className="border-kwd-border bg-kwd-surface-light relative h-16 w-16 shrink-0 overflow-hidden border"
+        className={`border-kwd-border bg-kwd-surface-light relative shrink-0 overflow-hidden border ${box}`}
         title={photo.filename}
       >
         {isLoading || !url ? (
@@ -35,7 +43,7 @@ function PhotoThumb({
         <button
           type="button"
           onClick={() => onRemove(photo)}
-          className="text-kwd-danger absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold shadow"
+          className="text-kwd-danger absolute -top-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-bold shadow"
           title="Foto entfernen"
           aria-label="Foto entfernen"
         >
@@ -44,7 +52,7 @@ function PhotoThumb({
       )}
       {lightbox && url && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-3"
           onClick={() => setLightbox(false)}
           role="dialog"
           aria-modal
@@ -52,9 +60,17 @@ function PhotoThumb({
           <img
             src={url}
             alt={photo.filename}
-            className="max-h-[90vh] max-w-[90vw] object-contain"
+            className="max-h-[92vh] max-w-[96vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+          <button
+            type="button"
+            className="absolute top-3 right-3 min-h-[44px] min-w-[44px] rounded-full bg-white/90 text-lg font-bold"
+            onClick={() => setLightbox(false)}
+            aria-label="Schließen"
+          >
+            ×
+          </button>
         </div>
       )}
     </>
@@ -64,19 +80,22 @@ function PhotoThumb({
 export function LifecyclePhotoStrip({
   photos,
   canDelete,
+  size = 'sm',
 }: {
   photos: LifecyclePhoto[]
   canDelete?: boolean
+  size?: 'sm' | 'lg'
 }) {
   const deletePhoto = useDeleteLifecyclePhoto()
   if (photos.length === 0) return null
 
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className={`mt-2 flex flex-wrap gap-2 ${size === 'lg' ? 'gap-3' : ''}`}>
       {photos.map((photo) => (
         <div key={photo.id} className="relative">
           <PhotoThumb
             photo={photo}
+            size={size}
             onRemove={
               canDelete
                 ? (p) => {
@@ -97,34 +116,126 @@ export function PendingPhotoStrip({
   onRemove,
 }: {
   files: File[]
-  onRemove: (index: number) => void
+  onRemove?: (index: number) => void
 }) {
   if (files.length === 0) return null
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {files.map((file, i) => (
-        <PendingThumb key={`${file.name}-${file.size}-${i}`} file={file} onRemove={() => onRemove(i)} />
+        <PendingThumb
+          key={`${file.name}-${file.size}-${i}`}
+          file={file}
+          onRemove={onRemove ? () => onRemove(i) : undefined}
+          size={onRemove ? 'sm' : 'lg'}
+        />
       ))}
     </div>
   )
 }
 
-function PendingThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+function PendingThumb({
+  file,
+  onRemove,
+  size = 'sm',
+}: {
+  file: File
+  onRemove?: () => void
+  size?: 'sm' | 'lg'
+}) {
   const [url] = useState(() => URL.createObjectURL(file))
   useEffect(() => () => URL.revokeObjectURL(url), [url])
+  const box = size === 'lg' ? 'h-28 w-28 sm:h-36 sm:w-36' : 'h-16 w-16'
   return (
     <div className="relative">
-      <div className="border-kwd-border h-16 w-16 overflow-hidden border">
+      <div className={`border-kwd-border overflow-hidden border ${box}`}>
         <img src={url} alt={file.name} className="h-full w-full object-cover" />
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="text-kwd-danger absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold shadow"
-        aria-label="Entfernen"
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-kwd-danger absolute -top-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-bold shadow"
+          aria-label="Entfernen"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
+type ImagePickMode = 'camera' | 'gallery'
+
+/**
+ * Kamera + Galerie/Datei – Label-basiert, damit der Dialog auch auf dem Handy öffnet.
+ * (Programmatisches input.click() + display:none scheitert oft auf iOS/Android.)
+ */
+export function LifecycleImagePickButtons({
+  onFiles,
+  disabled,
+  cameraLabel = 'Foto aufnehmen',
+  galleryLabel = 'Galerie / Datei',
+  multiple = true,
+  pendingLabel = 'Lade…',
+}: {
+  onFiles: (files: FileList | null) => void
+  disabled?: boolean
+  cameraLabel?: string
+  galleryLabel?: string
+  multiple?: boolean
+  pendingLabel?: string
+}) {
+  const baseId = useId()
+  const cameraId = `${baseId}-camera`
+  const galleryId = `${baseId}-gallery`
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
+
+  function handleChange(mode: ImagePickMode, list: FileList | null) {
+    onFiles(list)
+    const el = mode === 'camera' ? cameraRef.current : galleryRef.current
+    if (el) el.value = ''
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <input
+        ref={cameraRef}
+        id={cameraId}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple={multiple}
+        className={fileInputCls}
+        tabIndex={-1}
+        disabled={disabled}
+        onChange={(e) => handleChange('camera', e.target.files)}
+      />
+      <input
+        ref={galleryRef}
+        id={galleryId}
+        type="file"
+        accept="image/*"
+        multiple={multiple}
+        className={fileInputCls}
+        tabIndex={-1}
+        disabled={disabled}
+        onChange={(e) => handleChange('gallery', e.target.files)}
+      />
+      <label
+        htmlFor={cameraId}
+        className={`${pickBtnCls} ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+        aria-disabled={disabled}
       >
-        ×
-      </button>
+        {disabled ? pendingLabel : cameraLabel}
+      </label>
+      <label
+        htmlFor={galleryId}
+        className={`${pickBtnCls} ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+        aria-disabled={disabled}
+      >
+        {disabled ? pendingLabel : galleryLabel}
+      </label>
     </div>
   )
 }
@@ -138,8 +249,6 @@ export function LifecyclePhotoPicker({
   entryId: string
   onUploaded?: () => void
 }) {
-  const galleryRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
   const upload = useUploadLifecyclePhotos()
   const [error, setError] = useState<string | null>(null)
 
@@ -153,49 +262,18 @@ export function LifecyclePhotoPicker({
       onUploaded?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload fehlgeschlagen')
-    } finally {
-      if (galleryRef.current) galleryRef.current.value = ''
-      if (cameraRef.current) cameraRef.current.value = ''
     }
   }
 
   return (
     <div className="mt-2">
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        multiple
-        className="hidden"
-        onChange={(e) => void onFiles(e.target.files)}
+      <LifecycleImagePickButtons
+        onFiles={(list) => void onFiles(list)}
+        disabled={upload.isPending}
+        cameraLabel="+ Foto"
+        galleryLabel="Galerie / Datei"
+        pendingLabel="Lade hoch…"
       />
-      <input
-        ref={galleryRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif,image/*"
-        multiple
-        className="hidden"
-        onChange={(e) => void onFiles(e.target.files)}
-      />
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => cameraRef.current?.click()}
-          disabled={upload.isPending}
-          className="kwd-btn text-xs"
-        >
-          {upload.isPending ? 'Lade hoch…' : '+ Foto'}
-        </button>
-        <button
-          type="button"
-          onClick={() => galleryRef.current?.click()}
-          disabled={upload.isPending}
-          className="kwd-btn text-xs"
-        >
-          {upload.isPending ? 'Lade hoch…' : 'Galerie / Datei'}
-        </button>
-      </div>
       {error && <p className="text-kwd-danger mt-1 text-xs">{error}</p>}
     </div>
   )

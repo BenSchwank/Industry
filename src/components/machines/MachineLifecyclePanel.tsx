@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import {
   useAddLifecycleEntry,
   useDeleteTimelineEntries,
@@ -22,6 +22,7 @@ import type { LifecycleEntryType } from '../../types/database'
 import { DurationUnitField, parseDurationInput } from '../ui/DurationUnitField'
 import { Tip } from '../ui/Tip'
 import {
+  LifecycleImagePickButtons,
   LifecyclePhotoPicker,
   LifecyclePhotoStrip,
   PendingPhotoStrip,
@@ -75,9 +76,9 @@ export function MachineLifecyclePanel({
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [maximized, setMaximized] = useState<TimelineItem | null>(null)
+  const [formPreviewOpen, setFormPreviewOpen] = useState(false)
   const lastClickedIndex = useRef<number | null>(null)
-  const photoInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const addEntry = useAddLifecycleEntry()
   const deleteEntries = useDeleteTimelineEntries()
@@ -132,9 +133,6 @@ export function MachineLifecyclePanel({
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ungültiges Bild')
-    } finally {
-      if (photoInputRef.current) photoInputRef.current.value = ''
-      if (cameraInputRef.current) cameraInputRef.current.value = ''
     }
   }
 
@@ -395,46 +393,22 @@ export function MachineLifecyclePanel({
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
+                  rows={4}
                   placeholder="Beliebige Details: Öltyp, Messwerte, Teile, Bemerkungen…"
-                  className={`${fieldCls} min-h-[80px] resize-y`}
+                  className={`${fieldCls} min-h-[100px] resize-y`}
                 />
               </label>
               <div className="sm:col-span-2">
                 <span className="kwd-kpi-label">Fotos (optional)</span>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => addPendingFiles(e.target.files)}
+                <div className="mt-1">
+                  <LifecycleImagePickButtons
+                    onFiles={addPendingFiles}
+                    cameraLabel="Foto aufnehmen"
+                    galleryLabel="Galerie / Datei"
                   />
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => addPendingFiles(e.target.files)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="kwd-btn"
-                  >
-                    Foto aufnehmen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => photoInputRef.current?.click()}
-                    className="kwd-btn"
-                  >
-                    Galerie / Datei
-                  </button>
-                  <span className="text-kwd-muted text-xs">bis 8 Fotos · max. 10 MB</span>
+                  <p className="text-kwd-muted mt-1 text-xs">
+                    Handy: Galerie oder Dateien · bis 8 Fotos · max. 10 MB
+                  </p>
                 </div>
                 <PendingPhotoStrip
                   files={pendingPhotos}
@@ -448,10 +422,25 @@ export function MachineLifecyclePanel({
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="submit" disabled={saving} className="kwd-btn kwd-btn-primary">
+              <button type="submit" disabled={saving} className="kwd-btn kwd-btn-primary min-h-[44px]">
                 {saving ? 'Speichern…' : 'In Liste speichern'}
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="kwd-btn">
+              <button
+                type="button"
+                onClick={() => setFormPreviewOpen(true)}
+                className="kwd-btn min-h-[44px]"
+                title="Beschreibung und Fotos groß anzeigen"
+              >
+                Maximieren
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false)
+                  setFormPreviewOpen(false)
+                }}
+                className="kwd-btn min-h-[44px]"
+              >
                 Abbrechen
               </button>
             </div>
@@ -541,7 +530,7 @@ export function MachineLifecyclePanel({
                           </p>
                         )}
                         {item.description && (
-                          <p className="text-kwd-muted mt-0.5 whitespace-pre-wrap text-sm">
+                          <p className="text-kwd-muted mt-0.5 line-clamp-2 whitespace-pre-wrap text-sm">
                             {item.description}
                           </p>
                         )}
@@ -550,14 +539,24 @@ export function MachineLifecyclePanel({
                           <LifecyclePhotoPicker machineId={machineId} entryId={item.id} />
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void deleteOne(item)}
-                        disabled={deleteEntries.isPending}
-                        className="kwd-btn kwd-btn-danger shrink-0 self-start"
-                      >
-                        Löschen
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-2 self-start">
+                        <button
+                          type="button"
+                          onClick={() => setMaximized(item)}
+                          className="kwd-btn min-h-[40px]"
+                          title="Eintrag maximieren"
+                        >
+                          Maximieren
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteOne(item)}
+                          disabled={deleteEntries.isPending}
+                          className="kwd-btn kwd-btn-danger"
+                        >
+                          Löschen
+                        </button>
+                      </div>
                     </li>
                   )
                 })}
@@ -565,6 +564,263 @@ export function MachineLifecyclePanel({
             </section>
           )
         })}
+
+      {maximized && (
+        <LifecycleEntryMaximizeModal
+          item={
+            timeline.find((t) => t.id === maximized.id && t.source === maximized.source) ??
+            maximized
+          }
+          photos={
+            maximized.source === 'lifecycle'
+              ? (photosByEntry.get(maximized.id) ?? [])
+              : []
+          }
+          machineId={machineId}
+          onClose={() => setMaximized(null)}
+          onDelete={() => {
+            const item =
+              timeline.find((t) => t.id === maximized.id && t.source === maximized.source) ??
+              maximized
+            setMaximized(null)
+            void deleteOne(item)
+          }}
+          deleting={deleteEntries.isPending}
+        />
+      )}
+
+      {formPreviewOpen && showForm && (
+        <LifecycleFormPreviewModal
+          title={title || 'Neuer Eintrag'}
+          description={description}
+          occurredAt={occurredAt}
+          entryType={entryType}
+          pendingPhotos={pendingPhotos}
+          onClose={() => setFormPreviewOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function entryTypeLabel(type: string) {
+  return ENTRY_TYPES.find((t) => t.value === type)?.label ?? type
+}
+
+function LifecycleEntryMaximizeModal({
+  item,
+  photos,
+  machineId,
+  onClose,
+  onDelete,
+  deleting,
+}: {
+  item: TimelineItem
+  photos: LifecyclePhoto[]
+  machineId: string
+  onClose: () => void
+  onDelete: () => void
+  deleting: boolean
+}) {
+  const dueCls = maintenanceDueClass(item.next_due_date)
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black/50 p-2 sm:p-4"
+      role="dialog"
+      aria-modal
+      aria-label="Eintrag maximiert"
+      onClick={onClose}
+    >
+      <div
+        className="bg-kwd-paper border-kwd-border mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden border shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="border-kwd-border flex items-start justify-between gap-3 border-b px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-kwd-muted text-xs font-semibold tabular-nums">
+              {new Date(item.occurred_at).toLocaleString('de-DE')}
+              {item.source === 'ticket' && ' · Störung'}
+              {item.source === 'completion' && ' · Checkliste'}
+              {item.source === 'lifecycle' && ' · Manuell'}
+              {item.created_by_username && (
+                <span className="text-kwd-primary"> · {item.created_by_username}</span>
+              )}
+            </p>
+            <h3 className="text-lg font-bold leading-snug break-words">{item.title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="kwd-btn min-h-[44px] min-w-[44px] shrink-0 text-lg"
+            aria-label="Schließen"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          {(item.duration_days || item.next_due_date) && (
+            <p className="text-sm">
+              {item.duration_days != null && (
+                <span className="text-kwd-muted">
+                  Dauer: {formatDurationDays(item.duration_days)}
+                </span>
+              )}
+              {item.duration_days != null && item.next_due_date && ' · '}
+              {item.next_due_date && (
+                <span className={dueCls || 'text-kwd-muted'}>
+                  Nächste: {new Date(item.next_due_date).toLocaleDateString('de-DE')}
+                </span>
+              )}
+            </p>
+          )}
+
+          <section>
+            <h4 className="kwd-kpi-label">Beschreibung</h4>
+            {item.description?.trim() ? (
+              <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed">
+                {item.description}
+              </p>
+            ) : (
+              <p className="text-kwd-muted mt-1 text-sm">Keine Beschreibung</p>
+            )}
+          </section>
+
+          <section>
+            <h4 className="kwd-kpi-label">Fotos ({photos.length})</h4>
+            {photos.length > 0 ? (
+              <LifecyclePhotoStrip
+                photos={photos}
+                canDelete={item.source === 'lifecycle'}
+                size="lg"
+              />
+            ) : (
+              <p className="text-kwd-muted mt-1 text-sm">Noch keine Fotos</p>
+            )}
+            {item.source === 'lifecycle' && (
+              <div className="mt-3">
+                <LifecyclePhotoPicker machineId={machineId} entryId={item.id} />
+              </div>
+            )}
+          </section>
+        </div>
+
+        <footer className="border-kwd-border flex flex-wrap gap-2 border-t px-4 py-3">
+          <button type="button" onClick={onClose} className="kwd-btn kwd-btn-primary min-h-[44px]">
+            Schließen
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="kwd-btn kwd-btn-danger min-h-[44px]"
+          >
+            Löschen
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function LifecycleFormPreviewModal({
+  title,
+  description,
+  occurredAt,
+  entryType,
+  pendingPhotos,
+  onClose,
+}: {
+  title: string
+  description: string
+  occurredAt: string
+  entryType: LifecycleEntryType
+  pendingPhotos: File[]
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black/50 p-2 sm:p-4"
+      role="dialog"
+      aria-modal
+      aria-label="Vorschau vor dem Speichern"
+      onClick={onClose}
+    >
+      <div
+        className="bg-kwd-paper border-kwd-border mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden border shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="border-kwd-border flex items-start justify-between gap-3 border-b px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-kwd-muted text-xs font-semibold">
+              Vorschau · {entryTypeLabel(entryType)} ·{' '}
+              {new Date(`${occurredAt}T12:00:00`).toLocaleDateString('de-DE')}
+            </p>
+            <h3 className="text-lg font-bold leading-snug break-words">{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="kwd-btn min-h-[44px] min-w-[44px] shrink-0 text-lg"
+            aria-label="Schließen"
+          >
+            ×
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <section>
+            <h4 className="kwd-kpi-label">Beschreibung</h4>
+            {description.trim() ? (
+              <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed">{description}</p>
+            ) : (
+              <p className="text-kwd-muted mt-1 text-sm">Keine Beschreibung</p>
+            )}
+          </section>
+          <section>
+            <h4 className="kwd-kpi-label">Fotos ({pendingPhotos.length})</h4>
+            {pendingPhotos.length > 0 ? (
+              <PendingPhotoStrip files={pendingPhotos} />
+            ) : (
+              <p className="text-kwd-muted mt-1 text-sm">Noch keine Fotos gewählt</p>
+            )}
+            <p className="text-kwd-muted mt-2 text-xs">
+              Zum Speichern Vorschau schließen und „In Liste speichern“ tippen.
+            </p>
+          </section>
+        </div>
+        <footer className="border-kwd-border border-t px-4 py-3">
+          <button type="button" onClick={onClose} className="kwd-btn kwd-btn-primary min-h-[44px]">
+            Zurück zum Formular
+          </button>
+        </footer>
+      </div>
     </div>
   )
 }
