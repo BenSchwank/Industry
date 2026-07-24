@@ -658,6 +658,10 @@ export interface Database {
           activated_by: string | null
         }
       }
+      delete_user_account: {
+        Args: { target_id: string }
+        Returns: undefined
+      }
       is_active_admin: {
         Args: Record<string, never>
         Returns: boolean

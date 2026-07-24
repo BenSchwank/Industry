@@ -24,5 +24,5 @@ export const DESKTOP_NAV: { view: AppView; label: string }[] = [
 
 /** Nur sichtbar für aktive Admins */
 export const ADMIN_NAV: { view: AppView; label: string }[] = [
-  { view: 'users', label: 'Nutzer' },
+  { view: 'users', label: 'Nutzerverwaltung' },
 ]

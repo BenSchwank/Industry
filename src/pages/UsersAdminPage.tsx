@@ -15,6 +15,7 @@ export default function UsersAdminPage() {
   const listAllProfiles = useAuthStore((s) => s.listAllProfiles)
   const setProfileStatus = useAuthStore((s) => s.setProfileStatus)
   const setProfileRole = useAuthStore((s) => s.setProfileRole)
+  const deleteUserAccount = useAuthStore((s) => s.deleteUserAccount)
   const setActiveView = useAppStore((s) => s.setActiveView)
 
   const [rows, setRows] = useState<UserProfile[]>([])
@@ -72,9 +73,7 @@ export default function UsersAdminPage() {
   }
 
   if (!isAdmin) {
-    return (
-      <p className="text-kwd-muted p-6 text-sm">Nur für Admins.</p>
-    )
+    return <p className="text-kwd-muted p-6 text-sm">Nur für Admins.</p>
   }
 
   return (
@@ -82,7 +81,8 @@ export default function UsersAdminPage() {
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Nutzerverwaltung</h2>
         <p className="text-kwd-muted mt-1 text-sm">
-          Konten freigeben und Admins ernennen. Admins können ebenfalls Freigaben erteilen.
+          Freigaben, Admin-Rechte vergeben oder entziehen, Nutzer löschen. Admins erscheinen nicht in
+          der Zuständigen-Auswahl bei Störungen.
         </p>
       </header>
 
@@ -210,7 +210,7 @@ export default function UsersAdminPage() {
                       <button
                         type="button"
                         disabled={busy}
-                        className="kwd-btn kwd-btn-danger text-xs"
+                        className="kwd-btn text-xs"
                         onClick={() =>
                           void run(
                             p.id,
@@ -227,7 +227,7 @@ export default function UsersAdminPage() {
                         type="button"
                         disabled={busy || p.status === 'rejected'}
                         className="kwd-btn kwd-btn-primary text-xs"
-                        title="Darf danach Freigaben erteilen"
+                        title="Darf Freigaben und Nutzerverwaltung nutzen"
                         onClick={() =>
                           void run(
                             p.id,
@@ -236,7 +236,7 @@ export default function UsersAdminPage() {
                           )
                         }
                       >
-                        Zum Admin machen
+                        Admin-Recht geben
                       </button>
                     ) : (
                       <button
@@ -248,11 +248,34 @@ export default function UsersAdminPage() {
                           void run(
                             p.id,
                             () => setProfileRole(p.id, 'user'),
-                            `${p.username} ist nur noch Nutzer`,
+                            `${p.username}: Admin-Recht entzogen`,
                           )
                         }
                       >
-                        Admin entfernen
+                        Admin-Recht entziehen
+                      </button>
+                    )}
+                    {!isSelf && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="border-kwd-danger text-kwd-danger min-h-[36px] rounded-lg border px-3 text-xs font-semibold disabled:opacity-50"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Nutzer „${p.username}“ wirklich dauerhaft löschen?\n\nKonto und Anmeldung werden entfernt. Das kann nicht rückgängig gemacht werden.`,
+                            )
+                          ) {
+                            return
+                          }
+                          void run(
+                            p.id,
+                            () => deleteUserAccount(p.id),
+                            `${p.username} gelöscht`,
+                          )
+                        }}
+                      >
+                        Löschen
                       </button>
                     )}
                   </div>

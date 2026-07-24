@@ -20,8 +20,8 @@ export default function MobileMorePage() {
         ...LINKS.slice(0, -1),
         {
           view: 'users' as const,
-          label: 'Nutzer',
-          desc: 'Freigaben & Admins',
+          label: 'Nutzerverwaltung',
+          desc: 'Rechte, Freigaben, Nutzer löschen',
           icon: '👤',
         },
         LINKS[LINKS.length - 1],

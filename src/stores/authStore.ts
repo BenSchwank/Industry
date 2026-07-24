@@ -49,6 +49,7 @@ interface AuthState {
     status: 'active' | 'rejected' | 'pending',
   ) => Promise<{ error: string | null }>
   setProfileRole: (targetId: string, role: 'user' | 'admin') => Promise<{ error: string | null }>
+  deleteUserAccount: (targetId: string) => Promise<{ error: string | null }>
 }
 
 async function fetchOwnProfile(userId?: string | null): Promise<UserProfile | null> {
@@ -207,6 +208,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) return { error: formatSupabaseError(error) }
     if (get().user?.id === targetId) {
       await get().refreshProfile()
+    }
+    return { error: null }
+  },
+
+  deleteUserAccount: async (targetId) => {
+    if (get().user?.id === targetId) {
+      return { error: 'Eigenes Konto kann nicht gelöscht werden' }
+    }
+    const { error } = await supabase.rpc('delete_user_account', {
+      target_id: targetId,
+    })
+    if (error) {
+      if (/function.*delete_user_account|schema cache|does not exist/i.test(error.message)) {
+        return {
+          error:
+            'Löschen fehlt in der Datenbank. Bitte supabase/FIX_DELETE_USER.sql in Supabase ausführen.',
+        }
+      }
+      return { error: formatSupabaseError(error) }
     }
     return { error: null }
   },
