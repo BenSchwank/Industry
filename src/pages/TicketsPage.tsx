@@ -437,6 +437,7 @@ export default function TicketsPage() {
             undefined
           }
           initialAssigneeId={inProgressTicket.assigned_to}
+          canClear={inProgressTicket.status === 'in_progress'}
           onClose={() => setInProgressTicket(null)}
           onSuccess={(msg) => {
             setToast(msg)
