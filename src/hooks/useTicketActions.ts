@@ -16,6 +16,7 @@ function invalidateTicketQueries(queryClient: ReturnType<typeof useQueryClient>)
   void queryClient.invalidateQueries({ queryKey: ['machine-health'] })
   void queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
   void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+  void queryClient.invalidateQueries({ queryKey: ['maintenance-free-repairs'] })
   void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
   void queryClient.invalidateQueries({ queryKey: ['lifecycle-pick'] })
 }

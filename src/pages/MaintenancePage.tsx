@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
+import { PlannedRepairForm } from '../components/maintenance/PlannedRepairForm'
 import { TicketEditForm } from '../components/tickets/TicketEditForm'
 import { TICKET_STATUS_LABEL, useResolveTicket } from '../hooks/useTicketActions'
 import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
@@ -49,10 +50,21 @@ const ENTRY_TYPE_LABEL: Record<string, string> = {
 const LINK_SQL_HINT =
   'Verknüpfte Störungen brauchen: supabase/FIX_TICKET_LIFECYCLE_LINK.sql in Supabase ausführen.'
 
+interface FreeRepairRow {
+  id: string
+  description: string
+  status: string
+  priority: string
+  created_at: string
+  assigned_to?: string | null
+  reference_label?: string | null
+}
+
 export default function MaintenancePage() {
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [showPlannedRepair, setShowPlannedRepair] = useState(false)
   const [editTicket, setEditTicket] = useState<import('../components/tickets/TicketEditForm').TicketEditTarget | null>(
     null,
   )
@@ -193,6 +205,21 @@ export default function MaintenancePage() {
   const linkedTickets = linkedData?.tickets ?? []
   const linkHint = linkedData?.hint ?? null
 
+  /** Offene Meldungen ohne Maschine (eigener Bezugspunkt) */
+  const { data: freeRepairs = [] } = useQuery({
+    queryKey: ['maintenance-free-repairs'],
+    queryFn: async (): Promise<FreeRepairRow[]> => {
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('id, description, status, priority, created_at, assigned_to, reference_label')
+        .is('machine_id', null)
+        .in('status', ['open', 'in_progress'])
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as FreeRepairRow[]
+    },
+  })
+
   function flash(msg: string) {
     setToast(msg)
     window.setTimeout(() => setToast(null), 3500)
@@ -276,12 +303,21 @@ export default function MaintenancePage() {
   return (
     <>
       <div className="flex flex-col gap-4 p-4 pb-24">
-        <header>
-          <h2 className="text-xl font-bold">Reparaturen</h2>
-          <p className="text-kwd-muted mt-1 text-sm">
-            Monteur-Termine und geplante Arbeiten · darunter Störungen, die mit Wartung oder geplanter
-            Reparatur verknüpft sind.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold">Reparaturen</h2>
+            <p className="text-kwd-muted mt-1 text-sm">
+              Monteur-Termine und geplante Arbeiten · darunter Störungen, die mit Wartung oder geplanter
+              Reparatur verknüpft sind.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPlannedRepair(true)}
+            className="kwd-btn kwd-btn-primary min-h-[44px] shrink-0 px-4 font-bold"
+          >
+            + Geplante Reparatur
+          </button>
         </header>
 
         {toast && (
@@ -290,12 +326,12 @@ export default function MaintenancePage() {
           </p>
         )}
 
-        {tasks?.length === 0 && (
+        {tasks?.length === 0 && freeRepairs.length === 0 && (
           <div className="bg-kwd-surface rounded-xl p-6 text-center">
             <p className="text-kwd-muted">Keine Reparatur- oder Wartungs-Termine geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
-              In der Maschinenakte unter Lebenszyklus „+ Reparatur“ mit Monteur-Termin oder „+
-              Hauptuntersuchung“ eintragen.
+              Mit „+ Geplante Reparatur“ einen Termin für eine Maschine oder einen eigenen Bezugspunkt
+              anlegen – oder in der Maschinenakte unter Lebenszyklus eintragen.
             </p>
           </div>
         )}
@@ -393,6 +429,73 @@ export default function MaintenancePage() {
             </article>
           )
         })}
+
+        {/* Bezugspunkte ohne Maschine */}
+        {freeRepairs.length > 0 && (
+          <section className="mt-2 flex flex-col gap-3">
+            <header className="border-kwd-border border-t pt-4">
+              <h3 className="text-sm font-bold tracking-wide uppercase">
+                Eigene Bezugspunkte
+              </h3>
+              <p className="text-kwd-muted mt-1 text-xs">
+                Geplante Reparaturen und Meldungen ohne zugewiesene Maschine.
+              </p>
+            </header>
+
+            {freeRepairs.map((t) => {
+              const busy = busyId === t.id
+              const label = t.reference_label?.trim() || 'Bezugspunkt'
+              return (
+                <article
+                  key={t.id}
+                  className="border-kwd-border bg-kwd-surface rounded-xl border p-4"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-kwd-primary text-xs font-bold">Eigener Bezug</p>
+                      <h3 className="font-bold">{label}</h3>
+                      <p className="text-kwd-muted mt-1 line-clamp-4 whitespace-pre-wrap text-sm">
+                        {t.description}
+                      </p>
+                    </div>
+                    <span className="bg-kwd-bg shrink-0 rounded px-2 py-1 text-xs font-medium">
+                      {TICKET_STATUS_LABEL[t.status] ?? t.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[44px] px-3 text-sm font-semibold"
+                      disabled={busy}
+                      onClick={() =>
+                        setEditTicket({
+                          id: t.id,
+                          description: t.description,
+                          priority: t.priority as import('../types/database').TicketPriority,
+                          status: t.status as import('../types/database').TicketStatus,
+                          assigned_to: t.assigned_to ?? null,
+                          machine_id: null,
+                          reference_label: t.reference_label ?? null,
+                          machine_label: label,
+                        })
+                      }
+                    >
+                      Bearbeiten
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="bg-kwd-success min-h-[44px] flex-1 rounded-lg px-3 text-sm font-bold text-white disabled:opacity-50"
+                      onClick={() => void handleResolveLinked(t.id)}
+                    >
+                      {busy ? '…' : 'Erledigt'}
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+          </section>
+        )}
 
         {/* Unten: Störungen mit Verknüpfung Wartung / geplante Reparatur */}
         <section className="mt-2 flex flex-col gap-3">
@@ -525,6 +628,13 @@ export default function MaintenancePage() {
         <TicketEditForm
           ticket={editTicket}
           onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => flash(msg)}
+        />
+      )}
+
+      {showPlannedRepair && (
+        <PlannedRepairForm
+          onClose={() => setShowPlannedRepair(false)}
           onSuccess={(msg) => flash(msg)}
         />
       )}
