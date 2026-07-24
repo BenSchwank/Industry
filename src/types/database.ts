@@ -780,6 +780,126 @@ export interface Database {
           },
         ]
       }
+      machine_knowledge_pages: {
+        Row: {
+          id: string
+          machine_id: string
+          title: string
+          body: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          machine_id: string
+          title?: string
+          body?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          machine_id?: string
+          title?: string
+          body?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'machine_knowledge_pages_machine_id_fkey'
+            columns: ['machine_id']
+            isOneToOne: false
+            referencedRelation: 'machines'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      user_note_photos: {
+        Row: {
+          id: string
+          note_id: string
+          owner_id: string
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          note_id: string
+          owner_id: string
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          note_id?: string
+          owner_id?: string
+          storage_path?: string
+          filename?: string
+          mime_type?: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'user_note_photos_note_id_fkey'
+            columns: ['note_id']
+            isOneToOne: false
+            referencedRelation: 'user_notes'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      ticket_photos: {
+        Row: {
+          id: string
+          ticket_id: string
+          machine_id: string | null
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          ticket_id: string
+          machine_id?: string | null
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          ticket_id?: string
+          machine_id?: string | null
+          storage_path?: string
+          filename?: string
+          mime_type?: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'ticket_photos_ticket_id_fkey'
+            columns: ['ticket_id']
+            isOneToOne: false
+            referencedRelation: 'tickets'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: {

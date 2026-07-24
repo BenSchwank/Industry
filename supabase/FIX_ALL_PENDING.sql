@@ -828,3 +828,98 @@ CREATE TRIGGER trg_user_notes_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.set_user_notes_updated_at();
 
+
+-- ---------------------------------------------------------------------------
+-- Maschinenwissen: mehrere Seiten pro Maschine
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.machine_knowledge_pages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  machine_id UUID NOT NULL REFERENCES public.machines(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT 'Neue Seite',
+  body TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_machine_knowledge_machine
+  ON public.machine_knowledge_pages (machine_id, sort_order ASC, updated_at DESC);
+
+ALTER TABLE public.machine_knowledge_pages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Auth read machine knowledge" ON public.machine_knowledge_pages;
+DROP POLICY IF EXISTS "Auth write machine knowledge" ON public.machine_knowledge_pages;
+DROP POLICY IF EXISTS "Anon read machine knowledge" ON public.machine_knowledge_pages;
+DROP POLICY IF EXISTS "Anon write machine knowledge" ON public.machine_knowledge_pages;
+
+CREATE POLICY "Auth read machine knowledge" ON public.machine_knowledge_pages
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Auth write machine knowledge" ON public.machine_knowledge_pages
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Anon read machine knowledge" ON public.machine_knowledge_pages
+  FOR SELECT TO anon USING (true);
+CREATE POLICY "Anon write machine knowledge" ON public.machine_knowledge_pages
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+CREATE OR REPLACE FUNCTION public.set_machine_knowledge_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_machine_knowledge_updated_at ON public.machine_knowledge_pages;
+CREATE TRIGGER trg_machine_knowledge_updated_at
+  BEFORE UPDATE ON public.machine_knowledge_pages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_machine_knowledge_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Fotos an persönlichen Notizen
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_note_photos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  note_id UUID NOT NULL REFERENCES public.user_notes(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  storage_path TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  file_size_bytes BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_note_photos_note
+  ON public.user_note_photos (note_id, created_at ASC);
+
+ALTER TABLE public.user_note_photos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Note photos select visible" ON public.user_note_photos;
+DROP POLICY IF EXISTS "Note photos insert own" ON public.user_note_photos;
+DROP POLICY IF EXISTS "Note photos delete own" ON public.user_note_photos;
+
+CREATE POLICY "Note photos select visible" ON public.user_note_photos
+  FOR SELECT TO authenticated
+  USING (
+    owner_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.user_notes n
+      WHERE n.id = note_id AND (n.owner_id = auth.uid() OR n.is_public = true)
+    )
+  );
+
+CREATE POLICY "Note photos insert own" ON public.user_note_photos
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    owner_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.user_notes n
+      WHERE n.id = note_id AND n.owner_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Note photos delete own" ON public.user_note_photos
+  FOR DELETE TO authenticated
+  USING (owner_id = auth.uid());

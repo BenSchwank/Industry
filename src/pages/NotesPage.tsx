@@ -8,6 +8,8 @@ import {
   useUserNotes,
   type UserNote,
 } from '../hooks/useNotes'
+import { useNotePhotos } from '../hooks/useNotePhotos'
+import { NotePhotoPicker, NotePhotoStrip } from '../components/machines/LifecyclePhotos'
 import { resolveUsernames } from '../lib/resolveUsernames'
 import { useAuthStore } from '../stores/authStore'
 import { useQuery } from '@tanstack/react-query'
@@ -64,6 +66,7 @@ export default function NotesPage() {
     [notes, selectedId],
   )
   const isOwner = Boolean(selected && userId && selected.owner_id === userId)
+  const { data: notePhotos = [], refetch: refetchPhotos } = useNotePhotos(selectedId)
 
   const ownerIds = useMemo(
     () => [...new Set(sharedNotes.map((n) => n.owner_id))],
@@ -400,9 +403,26 @@ export default function NotesPage() {
                     ? 'Hier schreiben… (wird automatisch gespeichert)'
                     : 'Nur Lesezugriff – diese Notiz gehört einem Kollegen.'
                 }
-                className="border-kwd-border bg-kwd-paper text-kwd-text min-h-[280px] w-full flex-1 resize-none border-0 px-4 py-3 text-sm leading-relaxed focus:outline-none disabled:opacity-80"
+                className="border-kwd-border bg-kwd-paper text-kwd-text min-h-[220px] w-full flex-1 resize-none border-0 px-4 py-3 text-sm leading-relaxed focus:outline-none disabled:opacity-80"
                 aria-label="Notiztext"
               />
+
+              <div className="border-kwd-border border-t px-4 py-3">
+                <p className="text-kwd-muted mb-1 text-[11px] font-semibold tracking-wide uppercase">
+                  Fotos
+                </p>
+                {notePhotos.length > 0 ? (
+                  <NotePhotoStrip photos={notePhotos} canDelete={isOwner} size="lg" />
+                ) : (
+                  <p className="text-kwd-muted text-xs">Noch keine Fotos.</p>
+                )}
+                {isOwner && (
+                  <NotePhotoPicker
+                    noteId={selected.id}
+                    onUploaded={() => void refetchPhotos()}
+                  />
+                )}
+              </div>
 
               {actionError && !schemaError && (
                 <p className="text-kwd-danger border-kwd-border border-t px-3 py-2 text-xs">

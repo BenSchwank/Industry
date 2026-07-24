@@ -4,11 +4,14 @@
 
 Im **Supabase SQL Editor** einmal ausführen:
 
-1. Inhalt von [`supabase/FIX_ALL_PENDING.sql`](../supabase/FIX_ALL_PENDING.sql) (enthält alle FIX-Skripte inkl. Ticket-Art `kind` und Notizen)
-2. Oder gezielt nur neue Spalten: [`supabase/FIX_TICKET_KIND.sql`](../supabase/FIX_TICKET_KIND.sql)
-3. Nur Notizen: [`supabase/FIX_USER_NOTES.sql`](../supabase/FIX_USER_NOTES.sql)
+1. Inhalt von [`supabase/FIX_ALL_PENDING.sql`](../supabase/FIX_ALL_PENDING.sql) (alles inkl. Ticket-Art, Notizen, Maschinenwissen, Notiz-Fotos)
+2. Oder gezielt:
+   - [`supabase/FIX_TICKET_KIND.sql`](../supabase/FIX_TICKET_KIND.sql)
+   - [`supabase/FIX_USER_NOTES.sql`](../supabase/FIX_USER_NOTES.sql)
+   - [`supabase/FIX_MACHINE_KNOWLEDGE.sql`](../supabase/FIX_MACHINE_KNOWLEDGE.sql)
+   - [`supabase/FIX_NOTE_PHOTOS.sql`](../supabase/FIX_NOTE_PHOTOS.sql)
 
-Migrations unter `supabase/migrations/` sind die kanonische Historie (001–027).  
+Migrations unter `supabase/migrations/` sind die kanonische Historie (001–029).  
 Die `FIX_*.sql`-Dateien sind **idempotente** Nachzüge für bestehende Produktiv-DBs.
 
 ## Ticket-Art (`kind`)
@@ -27,9 +30,27 @@ Fallback in der App: Beschreibung beginnt mit `[Geplante Reparatur]`, falls die 
 | `owner_id` | Besitzer (nur der darf ändern/löschen) |
 | `is_public` | `false` = privat · `true` = alle authentifizierten Nutzer dürfen lesen |
 
+Fotos: Tabelle `user_note_photos` (Bucket `machine-lifecycle-media`, Pfad `notes/{ownerId}/{noteId}/…`).  
+SQL: [`FIX_NOTE_PHOTOS.sql`](../supabase/FIX_NOTE_PHOTOS.sql).
+
+## Maschinenwissen (`machine_knowledge_pages`)
+
+Pro Maschine mehrere **Seiten/Dokumente** (Titel + Text), gespeichert in der Cloud – nicht mehr nur lokal.
+
+| Aktion | Verhalten |
+|--------|-----------|
+| Speichern | Autosave + Button „Speichern“; gilt auch im **Vollbild** der Maschinenakte |
+| Umbenennen | Titel im Eingabefeld tippen |
+| Neue Seite | „+ Seite“ |
+| Löschen | Seite entfernen (mindestens eine bleibt) |
+| Migration | Alter localStorage-Text wird einmalig als erste Seite übernommen |
+
+SQL: [`FIX_MACHINE_KNOWLEDGE.sql`](../supabase/FIX_MACHINE_KNOWLEDGE.sql).
+
 ## Nach dem Deploy
 
 1. Schema Cache in Supabase ggf. neu laden (API neu starten / kurz warten)
-2. App neu laden und eine geplante Reparatur anlegen
-3. Prüfen: erscheint unter **Reparaturen**, nicht unter **Störungen**
-4. Unter **Notizen** eine Notiz anlegen und auf **Öffentlich** stellen
+2. App neu laden
+3. **Maschinenakte → Wissen**: Seite anlegen, speichern, Vollbild prüfen
+4. **Notizen**: Foto anhängen
+5. **Störungen**: „Vergrößern“ öffnen, Foto anhängen

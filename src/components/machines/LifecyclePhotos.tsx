@@ -8,6 +8,11 @@ import {
   type LifecyclePhoto,
 } from '../../hooks/useLifecyclePhotos'
 import { useDeleteTicketPhoto, useUploadTicketPhotos, type TicketPhoto } from '../../hooks/useTicketPhotos'
+import {
+  useDeleteNotePhoto,
+  useUploadNotePhotos,
+  type NotePhoto,
+} from '../../hooks/useNotePhotos'
 
 /** display:none bricht auf manchen Handys den Galerie-Dialog – optisch verstecken statt hidden */
 const fileInputCls =
@@ -199,6 +204,86 @@ export function TicketPhotoPicker({
       const files = [...list]
       for (const f of files) assertLifecycleImage(f)
       await upload.mutateAsync({ ticketId, machineId, files })
+      onUploaded?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload fehlgeschlagen')
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <LifecycleImagePickButtons
+        onFiles={(list) => void onFiles(list)}
+        disabled={upload.isPending}
+        cameraLabel="+ Foto"
+        galleryLabel="Galerie / Datei"
+        pendingLabel="Lade hoch…"
+      />
+      {error && <p className="text-kwd-danger mt-1 text-xs">{error}</p>}
+    </div>
+  )
+}
+
+/** Fotos an persönlichen Notizen */
+export function NotePhotoStrip({
+  photos,
+  canDelete,
+  size = 'sm',
+}: {
+  photos: NotePhoto[]
+  canDelete?: boolean
+  size?: 'sm' | 'lg'
+}) {
+  const deletePhoto = useDeleteNotePhoto()
+  if (photos.length === 0) return null
+
+  return (
+    <div className={`mt-2 flex flex-wrap gap-2 ${size === 'lg' ? 'gap-3' : ''}`}>
+      {photos.map((photo) => (
+        <div key={photo.id} className="relative">
+          <PhotoThumb
+            photo={{
+              id: photo.id,
+              entry_id: photo.note_id,
+              machine_id: photo.owner_id,
+              storage_path: photo.storage_path,
+              filename: photo.filename,
+              mime_type: photo.mime_type,
+              file_size_bytes: photo.file_size_bytes,
+              created_at: photo.created_at,
+            }}
+            size={size}
+            onRemove={
+              canDelete
+                ? () => {
+                    if (window.confirm('Foto löschen?')) void deletePhoto.mutateAsync(photo)
+                  }
+                : undefined
+            }
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function NotePhotoPicker({
+  noteId,
+  onUploaded,
+}: {
+  noteId: string
+  onUploaded?: () => void
+}) {
+  const upload = useUploadNotePhotos()
+  const [error, setError] = useState<string | null>(null)
+
+  async function onFiles(list: FileList | null) {
+    if (!list || list.length === 0) return
+    setError(null)
+    try {
+      const files = [...list]
+      for (const f of files) assertLifecycleImage(f)
+      await upload.mutateAsync({ noteId, files })
       onUploaded?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload fehlgeschlagen')

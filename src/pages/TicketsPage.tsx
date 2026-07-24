@@ -8,6 +8,7 @@ import {
 } from '../components/tickets/TicketPromoteRepairForm'
 import { TicketInProgressForm } from '../components/tickets/TicketInProgressForm'
 import { TicketCard } from '../components/tickets/TicketCard'
+import { TicketDetailModal } from '../components/tickets/TicketDetailModal'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
 import {
   TICKET_PRIORITY_LABEL,
@@ -54,6 +55,7 @@ export default function TicketsPage() {
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
   const [promoteTicket, setPromoteTicket] = useState<TicketPromoteTarget | null>(null)
   const [inProgressTicket, setInProgressTicket] = useState<TicketListItem | null>(null)
+  const [detailTicket, setDetailTicket] = useState<TicketListItem | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>('open')
   const [priorityFilter, setPriorityFilter] = useState<TicketPriorityFilter>('all')
@@ -241,6 +243,7 @@ export default function TicketsPage() {
         authorName={ticket.created_by ? nameMap?.get(ticket.created_by) : null}
         assigneeName={ticket.assigned_to ? nameMap?.get(ticket.assigned_to) : null}
         photos={photosByTicket.get(ticket.id) ?? []}
+        onOpenDetail={setDetailTicket}
         onEdit={setEditTicket}
         onPromoteToRepair={(t) => {
           setPromoteTicket({
@@ -450,6 +453,43 @@ export default function TicketsPage() {
             </section>
           ))
         : renderTicketList(filtered)}
+
+      {detailTicket && (
+        <TicketDetailModal
+          ticket={
+            (tickets ?? []).find((t) => t.id === detailTicket.id) ?? detailTicket
+          }
+          busy={busyId === detailTicket.id}
+          authorName={
+            detailTicket.created_by ? nameMap?.get(detailTicket.created_by) : null
+          }
+          assigneeName={
+            detailTicket.assigned_to ? nameMap?.get(detailTicket.assigned_to) : null
+          }
+          onClose={() => setDetailTicket(null)}
+          onEdit={(target) => {
+            setEditTicket(target)
+          }}
+          onPromoteToRepair={(t) => {
+            setPromoteTicket({
+              id: t.id,
+              description: t.description,
+              machine_id: t.machine_id ?? null,
+              machine_label: t.machines
+                ? `${t.machines.barcode} – ${t.machines.name}`
+                : undefined,
+              reference_label: t.reference_label ?? null,
+            })
+          }}
+          onSetInProgress={setInProgressTicket}
+          onClearInProgress={(id) => void handleClearInProgress(id)}
+          onResolve={(id) => void handleResolve(id)}
+          onDelete={(id) => {
+            setDetailTicket(null)
+            void handleDelete(id)
+          }}
+        />
+      )}
 
       {editTicket && (
         <TicketEditForm

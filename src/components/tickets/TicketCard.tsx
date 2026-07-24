@@ -21,6 +21,7 @@ interface TicketCardProps {
   authorName?: string | null
   assigneeName?: string | null
   photos?: TicketPhoto[]
+  onOpenDetail?: (ticket: TicketListItem) => void
   onEdit: (target: TicketEditTarget) => void
   onPromoteToRepair?: (ticket: TicketListItem) => void
   onSetInProgress: (ticket: TicketListItem) => void
@@ -35,6 +36,7 @@ export function TicketCard({
   authorName,
   assigneeName,
   photos = [],
+  onOpenDetail,
   onEdit,
   onPromoteToRepair,
   onSetInProgress,
@@ -51,16 +53,24 @@ export function TicketCard({
 
   return (
     <article className="bg-kwd-surface border-kwd-border rounded-xl border p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-kwd-primary text-xs font-bold">{ticketDisplaySubtitle(ticket)}</p>
-          <p className="truncate font-semibold">{ticketDisplayName(ticket)}</p>
+      <button
+        type="button"
+        className="hover:bg-kwd-surface-light -mx-1 w-[calc(100%+0.5rem)] rounded-lg px-1 py-1 text-left"
+        onClick={() => onOpenDetail?.(ticket)}
+        disabled={!onOpenDetail}
+        title="Details vergrößern"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-kwd-primary text-xs font-bold">{ticketDisplaySubtitle(ticket)}</p>
+            <p className="truncate font-semibold">{ticketDisplayName(ticket)}</p>
+          </div>
+          <span className={`shrink-0 text-xs font-bold uppercase ${PRIORITY_COLORS[ticket.priority]}`}>
+            {TICKET_PRIORITY_LABEL[ticket.priority] ?? ticket.priority}
+          </span>
         </div>
-        <span className={`shrink-0 text-xs font-bold uppercase ${PRIORITY_COLORS[ticket.priority]}`}>
-          {TICKET_PRIORITY_LABEL[ticket.priority] ?? ticket.priority}
-        </span>
-      </div>
-      <p className="text-kwd-muted mt-2 text-sm">{ticket.description}</p>
+        <p className="text-kwd-muted mt-2 line-clamp-3 text-sm">{ticket.description}</p>
+      </button>
       {photos.length > 0 && (
         <div className="mt-2">
           <p className="text-kwd-muted mb-1 text-[11px]">
@@ -98,6 +108,16 @@ export function TicketCard({
         </span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
+        {onOpenDetail && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onOpenDetail(ticket)}
+            className="kwd-btn kwd-btn-primary min-h-[44px] px-4 text-sm font-semibold"
+          >
+            Vergrößern
+          </button>
+        )}
         <button
           type="button"
           disabled={busy}
