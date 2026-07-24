@@ -4,6 +4,8 @@ import { analyzePlanPhotoWithAi, type PlanPhotoMachine } from '../../lib/aiPlanP
 import { suggestMachineBarcode } from '../../lib/barcode'
 import { preparePlanPhotoForAnalysis } from '../../lib/planPhotoImage'
 import { useBulkCreateMachines, type MachineInput } from '../../hooks/useMachines'
+import { useMachineCategoryAdmin } from '../../hooks/useMachineCategoryAdmin'
+import { useMachinesWithStats } from '../../hooks/useMachinesWithStats'
 import { useIsMobile } from '../../hooks/usePlatform'
 import { CategoryPickerButton } from './CategoryPickerButton'
 
@@ -99,6 +101,8 @@ export function PlanPhotoImportModal({
 }: PlanPhotoImportModalProps) {
   const queryClient = useQueryClient()
   const bulkCreate = useBulkCreateMachines()
+  const categoryAdmin = useMachineCategoryAdmin()
+  const { data: allMachines } = useMachinesWithStats()
   const isMobile = useIsMobile()
   const cameraRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -395,8 +399,41 @@ export function PlanPhotoImportModal({
                     value={defaultCategory}
                     suggestions={categorySuggestions}
                     buttonLabel={defaultCategory || 'Kategorie wählen'}
-                    title="Standard-Kategorie für Import"
+                    title="Standard-Kategorie · ✎ umbenennen · ✕ löschen"
+                    busy={categoryAdmin.isPending}
                     onChange={(c) => setDefaultCategory(c.trim())}
+                    onRename={async (from, to) => {
+                      const result = await categoryAdmin.renameCategory(allMachines ?? [], from, to)
+                      if (result.ok) {
+                        setDefaultCategory((prev) =>
+                          prev.trim().toLowerCase() === from.trim().toLowerCase()
+                            ? result.next
+                            : prev,
+                        )
+                        setRows((prev) =>
+                          prev.map((r) =>
+                            (r.category ?? '').trim().toLowerCase() === from.trim().toLowerCase()
+                              ? { ...r, category: result.next }
+                              : r,
+                          ),
+                        )
+                      }
+                    }}
+                    onDelete={async (cat) => {
+                      const result = await categoryAdmin.deleteCategory(allMachines ?? [], cat)
+                      if (result.ok) {
+                        setDefaultCategory((prev) =>
+                          prev.trim().toLowerCase() === result.label.toLowerCase() ? '' : prev,
+                        )
+                        setRows((prev) =>
+                          prev.map((r) =>
+                            (r.category ?? '').trim().toLowerCase() === result.label.toLowerCase()
+                              ? { ...r, category: null }
+                              : r,
+                          ),
+                        )
+                      }
+                    }}
                   />
                 </div>
                 <p className="text-kwd-muted mt-4 text-xs leading-relaxed">
@@ -467,13 +504,46 @@ export function PlanPhotoImportModal({
                           ? `Alle → ${defaultCategory}`
                           : 'Kategorie für Auswahl'
                       }
-                      title="Kategorie auf markierte Zeilen anwenden"
+                      title="Kategorie auf markierte Zeilen · ✎ umbenennen · ✕ löschen"
+                      busy={categoryAdmin.isPending}
                       onChange={(c) => {
                         const next = c.trim()
                         setDefaultCategory(next)
                         setRows((prev) =>
                           prev.map((r) => (r.selected ? { ...r, category: next || r.category } : r)),
                         )
+                      }}
+                      onRename={async (from, to) => {
+                        const result = await categoryAdmin.renameCategory(allMachines ?? [], from, to)
+                        if (result.ok) {
+                          setDefaultCategory((prev) =>
+                            prev.trim().toLowerCase() === from.trim().toLowerCase()
+                              ? result.next
+                              : prev,
+                          )
+                          setRows((prev) =>
+                            prev.map((r) =>
+                              (r.category ?? '').trim().toLowerCase() === from.trim().toLowerCase()
+                                ? { ...r, category: result.next }
+                                : r,
+                            ),
+                          )
+                        }
+                      }}
+                      onDelete={async (cat) => {
+                        const result = await categoryAdmin.deleteCategory(allMachines ?? [], cat)
+                        if (result.ok) {
+                          setDefaultCategory((prev) =>
+                            prev.trim().toLowerCase() === result.label.toLowerCase() ? '' : prev,
+                          )
+                          setRows((prev) =>
+                            prev.map((r) =>
+                              (r.category ?? '').trim().toLowerCase() === result.label.toLowerCase()
+                                ? { ...r, category: null }
+                                : r,
+                            ),
+                          )
+                        }
                       }}
                     />
                     <button

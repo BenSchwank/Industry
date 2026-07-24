@@ -33,7 +33,8 @@ import type { MachineWithStats } from '../../hooks/useMachinesWithStats'
 import type { MachineStatus } from '../../types/database'
 import { Tip } from '../ui/Tip'
 import { usePreferencesStore } from '../../stores/preferencesStore'
-import { rememberMachineFieldOption, forgetMachineFieldOption, renameMachineFieldOption } from '../../lib/machineFieldOptions'
+import { rememberMachineFieldOption } from '../../lib/machineFieldOptions'
+import { useMachineCategoryAdmin } from '../../hooks/useMachineCategoryAdmin'
 import {
   draftToInput,
   EMPTY_DRAFT,
@@ -631,6 +632,7 @@ export function MachineTable({
   const duplicateMachines = useDuplicateMachines()
   const updateMachine = useUpdateMachine()
   const setMachinesCategory = useSetMachinesCategory()
+  const categoryAdmin = useMachineCategoryAdmin()
   const quickComplete = useQuickCompleteMaintenance()
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [extraCategories, setExtraCategories] = useState<string[]>([])
@@ -793,63 +795,32 @@ export function MachineTable({
   }, [addingCategory])
 
   async function renameCategory(from: string, to: string) {
-    const next = to.trim()
-    if (!next) return
-    const targets = orderedMachines.filter(
-      (m) => (m.category ?? '').trim().toLowerCase() === from.trim().toLowerCase(),
-    )
-    if (targets.length > 0) {
-      await setMachinesCategory.mutateAsync({
-        ids: targets.map((m) => m.id),
-        category: next,
-      })
-    }
+    const result = await categoryAdmin.renameCategory(orderedMachines, from, to)
+    if (!result.ok) return
     setExtraCategories((prev) => {
-      const without = prev.filter((x) => x.toLowerCase() !== from.trim().toLowerCase())
-      if (!without.some((x) => x.toLowerCase() === next.toLowerCase())) without.push(next)
+      const without = prev.filter((x) => x.toLowerCase() !== result.from.toLowerCase())
+      if (!without.some((x) => x.toLowerCase() === result.next.toLowerCase())) {
+        without.push(result.next)
+      }
       return without
     })
-    await renameMachineFieldOption('category', from, next)
-    void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     flash(
-      targets.length > 0
-        ? `„${from}“ → „${next}“ (${targets.length})`
-        : `Kategorie „${next}“`,
+      result.count > 0
+        ? `„${result.from}“ → „${result.next}“ (${result.count})`
+        : `Kategorie „${result.next}“`,
     )
   }
 
   async function deleteCategory(category: string) {
-    const label = category.trim()
-    if (!label || label === UNCATEGORIZED_LABEL) return
-    const targets = orderedMachines.filter(
-      (m) => (m.category ?? '').trim().toLowerCase() === label.toLowerCase(),
-    )
-    if (
-      !window.confirm(
-        `Kategorie „${label}“ löschen?\n\n${
-          targets.length > 0
-            ? `${targets.length} Gerät(e) landen unter „${UNCATEGORIZED_LABEL}“.`
-            : `Der leere Ordner wird entfernt.`
-        }`,
-      )
-    ) {
-      return
-    }
-    if (targets.length > 0) {
-      await setMachinesCategory.mutateAsync({
-        ids: targets.map((m) => m.id),
-        category: null,
-      })
-    }
+    const result = await categoryAdmin.deleteCategory(orderedMachines, category)
+    if (!result.ok) return
     setExtraCategories((prev) =>
-      prev.filter((x) => x.toLowerCase() !== label.toLowerCase()),
+      prev.filter((x) => x.toLowerCase() !== result.label.toLowerCase()),
     )
-    await forgetMachineFieldOption('category', label)
-    void queryClient.invalidateQueries({ queryKey: ['machine-field-options'] })
     flash(
-      targets.length > 0
-        ? `„${label}“ gelöscht · ${targets.length} → ${UNCATEGORIZED_LABEL}`
-        : `„${label}“ gelöscht`,
+      result.count > 0
+        ? `„${result.label}“ gelöscht · ${result.count} → ${UNCATEGORIZED_LABEL}`
+        : `„${result.label}“ gelöscht`,
     )
   }
 
@@ -1415,23 +1386,35 @@ export function MachineTable({
           >
             Löschen{checkedList.length > 0 ? ` (${checkedList.length})` : ''}
           </button>
-          {checkedList.length > 0 && (
-            <CategoryPickerButton
-              value=""
-              suggestions={categorySuggestions}
-              buttonLabel={`Kategorie zuweisen (${checkedList.length})`}
-              title="Markierte Geräte in bestehende Kategorie verschieben oder neue anlegen"
-              className="kwd-btn-primary"
-              busy={updateMachine.isPending || setMachinesCategory.isPending}
-              onChange={(c) => {
-                const key = c.trim() || UNCATEGORIZED_LABEL
+          <CategoryPickerButton
+            value=""
+            suggestions={categorySuggestions}
+            buttonLabel={
+              checkedList.length > 0
+                ? `Kategorie zuweisen (${checkedList.length})`
+                : 'Kategorien'
+            }
+            title="Kategorie wählen/anlegen · ✎ umbenennen · ✕ löschen (auch ohne Markierung)"
+            className={checkedList.length > 0 ? 'kwd-btn-primary' : ''}
+            busy={
+              updateMachine.isPending ||
+              setMachinesCategory.isPending ||
+              categoryAdmin.isPending
+            }
+            onChange={(c) => {
+              const key = c.trim()
+              if (checkedList.length > 0) {
                 void moveMachinesToCategoryIds(
-                  key,
+                  key || UNCATEGORIZED_LABEL,
                   checkedList.map((m) => m.id),
                 )
-              }}
-            />
-          )}
+                return
+              }
+              if (key) void rememberCategory(key)
+            }}
+            onRename={(from, to) => renameCategory(from, to)}
+            onDelete={(cat) => deleteCategory(cat)}
+          />
           <span className="bg-kwd-border mx-1 hidden h-5 w-px sm:inline" aria-hidden />
           {addingCategory ? (
             <div className="flex flex-wrap items-center gap-1">

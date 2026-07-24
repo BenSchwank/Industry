@@ -4,6 +4,7 @@ import type {
   MachineDateFilter,
   MachineSortBy,
 } from '../../hooks/useMachinesWithStats'
+import { CategoryPickerButton } from './CategoryPickerButton'
 
 interface MachineFiltersProps {
   filter: MachineDateFilter
@@ -26,6 +27,9 @@ interface MachineFiltersProps {
   totalCount: number
   /** Nur Schnellfilter-Pills (Suche/Datum sitzen in der Kopfzeile) */
   pillsOnly?: boolean
+  onRenameCategory?: (from: string, to: string) => void | Promise<void>
+  onDeleteCategory?: (category: string) => void | Promise<void>
+  categoryBusy?: boolean
 }
 
 const QUICK_FILTERS: { value: MachineDateFilter; label: string; short: string }[] = [
@@ -69,6 +73,9 @@ export function MachineFilters({
   resultCount,
   totalCount,
   pillsOnly = false,
+  onRenameCategory,
+  onDeleteCategory,
+  categoryBusy = false,
 }: MachineFiltersProps) {
   const categories = machineCategorySuggestions(categoryOptions)
   const locations = machineLocationSuggestions(locationOptions)
@@ -94,22 +101,16 @@ export function MachineFilters({
   }
 
   const categoryFilter = (
-    <>
-      <input
-        list="kwd-filter-category"
-        value={category}
-        onChange={(e) => onCategoryChange(e.target.value)}
-        placeholder="Kategorie: alle"
-        className={filterInputCls}
-        aria-label="Kategorie filtern"
-        title="Kategorie wählen oder eintippen"
-      />
-      <datalist id="kwd-filter-category">
-        {categories.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
-    </>
+    <CategoryPickerButton
+      value={category}
+      suggestions={categories}
+      buttonLabel={category.trim() ? `Kat.: ${category}` : 'Kategorie: alle'}
+      title="Filtern · ✎ umbenennen · ✕ löschen"
+      busy={categoryBusy}
+      onChange={onCategoryChange}
+      onRename={onRenameCategory}
+      onDelete={onDeleteCategory}
+    />
   )
 
   const locationFilter = (

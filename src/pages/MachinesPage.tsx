@@ -17,6 +17,7 @@ import {
 import { machineCategorySuggestions } from '../lib/machineCategories'
 import { useMachineFieldOptions } from '../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../lib/machineLocations'
+import { useMachineCategoryAdmin } from '../hooks/useMachineCategoryAdmin'
 import { useIsDesktop } from '../hooks/usePlatform'
 import { useAppStore } from '../stores/appStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
@@ -47,6 +48,7 @@ export default function MachinesPage() {
   const { data: machines, isLoading } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const { data: timeline, isLoading: timelineLoading } = useMachineTimeline(selectedId)
+  const categoryAdmin = useMachineCategoryAdmin()
 
   const categoryOptions = useMemo(
     () =>
@@ -250,13 +252,26 @@ export default function MachinesPage() {
             resultCount={filtered.length}
             totalCount={machines?.length ?? 0}
             pillsOnly
+            categoryBusy={categoryAdmin.isPending}
+            onRenameCategory={async (from, to) => {
+              const result = await categoryAdmin.renameCategory(machines ?? [], from, to)
+              if (result.ok && categoryFilter.trim().toLowerCase() === from.trim().toLowerCase()) {
+                setCategoryFilter(result.next)
+              }
+            }}
+            onDeleteCategory={async (cat) => {
+              const result = await categoryAdmin.deleteCategory(machines ?? [], cat)
+              if (result.ok && categoryFilter.trim().toLowerCase() === result.label.toLowerCase()) {
+                setCategoryFilter('')
+              }
+            }}
           />
 
           {showTips && (
             <p className="text-kwd-muted border-kwd-border border-b px-3 py-1 text-[11px]">
               📷 <strong>Plan fotografieren</strong> (orange) · Häkchen →{' '}
-              <strong>Kategorie zuweisen</strong> · <strong>Kategorie hinzufügen</strong> →
-              Ordner anlegen · unten in jedem Ordner Maschinen eintragen
+              <strong>Kategorie zuweisen</strong> · in der Kategorie-Liste{' '}
+              <strong>✎ umbenennen / ✕ löschen</strong> · Ordner unten befüllen
             </p>
           )}
           <div

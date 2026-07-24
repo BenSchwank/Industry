@@ -7,6 +7,7 @@ import { useMachineFieldOptions } from '../../lib/machineFieldOptions'
 import { machineLocationSuggestions } from '../../lib/machineLocations'
 import { maintenanceDueTone } from '../../lib/maintenanceDue'
 import { useUpdateMachine } from '../../hooks/useMachines'
+import { useMachineCategoryAdmin } from '../../hooks/useMachineCategoryAdmin'
 import { useQuickCompleteMaintenance } from '../../hooks/useQuickCompleteMaintenance'
 import { useSetNextMaintenance } from '../../hooks/useSetNextMaintenance'
 import {
@@ -19,6 +20,7 @@ import type { MachineStatus } from '../../types/database'
 import { LoadingFallback } from '../ui/LoadingFallback'
 import { MachineLifecyclePanel } from './MachineLifecyclePanel'
 import { MachineProblemPanel } from './MachineProblemPanel'
+import { CategoryPickerButton } from './CategoryPickerButton'
 import {
   MACHINE_DETAIL_FIELD_CLS as fieldCls,
   MACHINE_DETAIL_TABS as BASE_TABS,
@@ -480,6 +482,7 @@ function MachineStammdatenForm({
   const updateMachine = useUpdateMachine()
   const setNextMaintenance = useSetNextMaintenance()
   const quickComplete = useQuickCompleteMaintenance()
+  const categoryAdmin = useMachineCategoryAdmin()
   const { data: allMachines } = useMachinesWithStats()
   const { data: fieldOptions } = useMachineFieldOptions()
   const [name, setName] = useState(machine.name)
@@ -767,24 +770,31 @@ function MachineStammdatenForm({
             </datalist>
           </label>
 
-          <label className="block min-w-0">
+          <div className="block min-w-0">
             <span className="kwd-kpi-label">Kategorie</span>
-            <input
-              list="kwd-machine-category-stammdaten"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="eigene Kategorie…"
-              className={fieldCls}
-            />
+            <div className="mt-1">
+              <CategoryPickerButton
+                value={category}
+                suggestions={categorySuggestions}
+                buttonLabel={category.trim() || 'Kategorie wählen'}
+                title="Kategorie zuweisen · ✎ umbenennen · ✕ löschen"
+                busy={categoryAdmin.isPending || updateMachine.isPending}
+                className="w-full max-w-none justify-start"
+                onChange={setCategory}
+                onRename={async (from, to) => {
+                  const result = await categoryAdmin.renameCategory(allMachines ?? [], from, to)
+                  if (result.ok) setCategory(result.next)
+                }}
+                onDelete={async (cat) => {
+                  const result = await categoryAdmin.deleteCategory(allMachines ?? [], cat)
+                  if (result.ok) setCategory('')
+                }}
+              />
+            </div>
             <p className="text-kwd-muted mt-1 text-[11px]">
-              Wird als Ordner in der Liste geführt – einmal angelegt, später wieder wählbar.
+              Wird als Ordner in der Liste geführt – ✎ umbenennen, ✕ aus der Liste löschen.
             </p>
-            <datalist id="kwd-machine-category-stammdaten">
-              {categorySuggestions.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </label>
+          </div>
 
           <label className="block min-w-0">
             <span className="kwd-kpi-label">Maschinennummer</span>
