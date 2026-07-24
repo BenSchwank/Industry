@@ -144,6 +144,7 @@ export async function createTicketOptimistic(
     client.invalidateQueries({ queryKey: ['tickets'] }),
     client.invalidateQueries({ queryKey: ['overview-stats'] }),
     client.invalidateQueries({ queryKey: ['machines-with-stats'] }),
+    client.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] }),
   ]
   if (ticket.machine_id) {
     invalidations.push(
