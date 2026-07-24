@@ -1663,7 +1663,7 @@ export function MachineTable({
                       : 'bg-kwd-surface/90'
                   }`}
                 >
-                  <td colSpan={16} className="px-2 py-1.5">
+                  <td colSpan={17} className="px-2 py-1.5">
                       <div className="flex w-full flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -1760,7 +1760,7 @@ export function MachineTable({
                       ))}
                       {group.machines.length === 0 && (
                         <tr className={dropActive ? 'bg-kwd-primary/15' : 'bg-kwd-paper/40'}>
-                          <td colSpan={16} className="text-kwd-muted px-4 py-1 text-[11px]">
+                          <td colSpan={17} className="text-kwd-muted px-4 py-1 text-[11px]">
                             {dropActive
                               ? 'Loslassen → in diesen Ordner'
                               : 'Leer – Geräte ziehen oder unten direkt anlegen'}
@@ -1816,7 +1816,7 @@ export function MachineTable({
           {orderedMachines.length === 0 && !showAddRow && (
             <tbody>
               <tr>
-                <td colSpan={16} className="text-kwd-muted px-4 py-12 text-center">
+                <td colSpan={17} className="text-kwd-muted px-4 py-12 text-center">
                   Keine Treffer – Suche ändern oder Strg+V aus Excel.
                 </td>
               </tr>

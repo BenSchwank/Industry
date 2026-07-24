@@ -682,7 +682,7 @@ function MachineStammdatenForm({
     <div className="flex flex-col gap-3">
       <div
         className={`grid gap-px bg-kwd-border ${
-          compact ? 'grid-cols-2' : 'grid-cols-2 xl:grid-cols-4'
+          compact ? 'grid-cols-2' : 'grid-cols-2 xl:grid-cols-5'
         }`}
       >
         <StatTile
