@@ -6,8 +6,8 @@ function toDateOnly(value: string): string {
 }
 
 /**
- * Setzt oder entfernt die „nächste geplante Wartung / Reparatur“ (HU-Aufgabe).
- * Reparatur-Monteur-Termine bleiben als eigene Tasks erhalten.
+ * Setzt oder entfernt die nächste geplante Wartung (HU-Aufgabe).
+ * Geplante Reparatur-Termine bleiben als eigene Tasks erhalten.
  */
 export async function setMachineNextMaintenance(
   machineId: string,

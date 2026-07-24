@@ -42,7 +42,8 @@ const SORT_OPTIONS: { value: MachineSortBy; label: string }[] = [
   { value: 'name', label: 'Name' },
   { value: 'category', label: 'Kategorie' },
   { value: 'location', label: 'Standort' },
-  { value: 'next_maintenance', label: 'nächste geplante Wartung / Reparatur' },
+  { value: 'next_maintenance', label: 'nächste geplante Wartung' },
+  { value: 'next_repair', label: 'nächste geplante Reparatur' },
 ]
 
 const filterInputCls =

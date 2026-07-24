@@ -104,6 +104,9 @@ export function MachineDetailPanel({
   const maintenanceTone = maintenanceDueTone(machine.next_maintenance_at)
   const maintenanceOverdue = maintenanceTone === 'overdue'
   const maintenanceSoon = maintenanceTone === 'soon'
+  const repairTone = maintenanceDueTone(machine.next_repair_at)
+  const repairOverdue = repairTone === 'overdue'
+  const repairSoon = repairTone === 'soon'
 
   const showPlansTab =
     machine.documents_analyzed > 0 ||
@@ -169,6 +172,9 @@ export function MachineDetailPanel({
           }
           maintenanceOverdue={Boolean(maintenanceOverdue)}
           maintenanceSoon={Boolean(maintenanceSoon)}
+          repairOverdue={Boolean(repairOverdue)}
+          repairSoon={Boolean(repairSoon)}
+          nextRepairAt={machine.next_repair_at}
         />
       )}
 
@@ -406,6 +412,9 @@ export function MachineDetailPanel({
             }
             maintenanceOverdue={Boolean(maintenanceOverdue)}
             maintenanceSoon={Boolean(maintenanceSoon)}
+            repairOverdue={Boolean(repairOverdue)}
+            repairSoon={Boolean(repairSoon)}
+            nextRepairAt={machine.next_repair_at}
           />
           <p className="text-kwd-muted mt-3 px-1 text-xs">
             Unterlagen, Pläne, Lebenszyklus & Störungen → Vollbild-Akte
@@ -483,6 +492,9 @@ function MachineStammdatenForm({
   healthHint,
   maintenanceOverdue,
   maintenanceSoon,
+  repairOverdue,
+  repairSoon,
+  nextRepairAt,
 }: {
   machine: MachineWithStats
   compact: boolean
@@ -492,6 +504,9 @@ function MachineStammdatenForm({
   healthHint: string
   maintenanceOverdue: boolean
   maintenanceSoon: boolean
+  repairOverdue: boolean
+  repairSoon: boolean
+  nextRepairAt: string | null
 }) {
   const updateMachine = useUpdateMachine()
   const setNextMaintenance = useSetNextMaintenance()
@@ -678,7 +693,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="nächste geplante Wartung / Reparatur"
+          label="nächste geplante Wartung"
           value={formatDate(machine.next_maintenance_at)}
           hint={
             maintenanceOverdue
@@ -689,6 +704,22 @@ function MachineStammdatenForm({
           }
           alert={maintenanceOverdue}
           warn={maintenanceSoon}
+          compact={compact}
+        />
+        <StatTile
+          label="nächste geplante Reparatur"
+          value={formatDate(nextRepairAt)}
+          hint={
+            repairOverdue
+              ? 'Überfällig'
+              : repairSoon
+                ? 'Innerhalb 3 Monate'
+                : nextRepairAt
+                  ? 'Geplant'
+                  : 'Kein Termin'
+          }
+          alert={repairOverdue}
+          warn={repairSoon}
           compact={compact}
         />
         <StatTile
@@ -821,7 +852,7 @@ function MachineStammdatenForm({
           </label>
 
           <div className="block min-w-0 sm:col-span-2">
-            <span className="kwd-kpi-label">nächste geplante Wartung / Reparatur</span>
+            <span className="kwd-kpi-label">nächste geplante Wartung (HU)</span>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <input
                 type="date"

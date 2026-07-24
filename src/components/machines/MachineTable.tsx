@@ -282,11 +282,17 @@ function SortableTh({
   className = '',
 }: {
   label: string
-  column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>
+  column: Extract<
+    MachineSortBy,
+    'name' | 'category' | 'location' | 'next_maintenance' | 'next_repair'
+  >
   sortBy: MachineSortBy
   sortDescending: boolean
   onSort?: (
-    column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>,
+    column: Extract<
+      MachineSortBy,
+      'name' | 'category' | 'location' | 'next_maintenance' | 'next_repair'
+    >,
   ) => void
   className?: string
 }) {
@@ -371,6 +377,7 @@ function MachineRow({
 }) {
   const problemHit = searchQuery ? matchProblemSnippet(m, searchQuery) : null
   const dueTone = maintenanceDueTone(m.next_maintenance_at)
+  const repairTone = maintenanceDueTone(m.next_repair_at)
   const showQuick =
     Boolean(onQuickComplete && m.next_maintenance_at) &&
     (dueTone === 'overdue' || dueTone === 'soon' || Boolean(m.next_maintenance_at))
@@ -482,9 +489,9 @@ function MachineRow({
         className={dateCellClass(m.next_maintenance_at, true)}
         title={
           dueTone === 'overdue'
-            ? 'Überfällig'
+            ? 'HU überfällig'
             : dueTone === 'soon'
-              ? 'Fällig innerhalb von 3 Monaten'
+              ? 'HU fällig innerhalb von 3 Monaten'
               : undefined
         }
         onClick={(e) => e.stopPropagation()}
@@ -505,6 +512,18 @@ function MachineRow({
             </button>
           )}
         </div>
+      </td>
+      <td
+        className={dateCellClass(m.next_repair_at, true)}
+        title={
+          repairTone === 'overdue'
+            ? 'Reparatur-Termin überfällig'
+            : repairTone === 'soon'
+              ? 'Reparatur-Termin innerhalb von 3 Monaten'
+              : undefined
+        }
+      >
+        {formatDate(m.next_repair_at)}
       </td>
       <td>{formatDateWithCode(m.last_cutting_oil_at, null, formatDate)}</td>
       <td className={dateCellClass(m.next_cutting_oil_at, true)}>
@@ -632,7 +651,10 @@ export function MachineTable({
   }, [machines, machineOrder, useManualOrder])
 
   function handleHeaderSort(
-    column: Extract<MachineSortBy, 'name' | 'category' | 'location' | 'next_maintenance'>,
+    column: Extract<
+      MachineSortBy,
+      'name' | 'category' | 'location' | 'next_maintenance' | 'next_repair'
+    >,
   ) {
     if (!onSortByChange) return
     if (sortBy === column) {
@@ -1600,8 +1622,15 @@ export function MachineTable({
               <th className="min-w-[100px]">Docs / Plan</th>
               <th>letzte Wartung</th>
               <SortableTh
-                label="nächste geplante Wartung / Reparatur"
+                label="nächste geplante Wartung"
                 column="next_maintenance"
+                sortBy={sortBy}
+                sortDescending={sortDescending}
+                onSort={onSortByChange ? handleHeaderSort : undefined}
+              />
+              <SortableTh
+                label="nächste geplante Reparatur"
+                column="next_repair"
                 sortBy={sortBy}
                 sortDescending={sortDescending}
                 onSort={onSortByChange ? handleHeaderSort : undefined}

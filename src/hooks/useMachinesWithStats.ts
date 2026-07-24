@@ -25,8 +25,11 @@ export interface MachineWithStats {
   external_source: string | null
   created_at: string
   last_maintenance_at: string | null
+  /** Nächste HU / geplante Wartung */
   next_maintenance_at: string | null
   last_repair_at: string | null
+  /** Nächster Monteur- / Reparatur-Termin */
+  next_repair_at: string | null
   last_cutting_oil_at: string | null
   next_cutting_oil_at: string | null
   last_hydraulic_oil_at: string | null
@@ -45,6 +48,30 @@ export interface MachineWithStats {
   plan_label: string | null
   /** Stichworte aus Störungen & Lebenslauf (für Fehlersuche) */
   problem_texts: string[]
+}
+
+function earliestDate(dates: string[]): string | null {
+  if (dates.length === 0) return null
+  return dates.slice().sort()[0] ?? null
+}
+
+function isHuTaskTitle(title: string | null | undefined) {
+  return /hauptuntersuchung|^hu\b/i.test(title ?? '')
+}
+
+function pushDueFromLifecycle(
+  target: string[],
+  entry: {
+    next_due_date: string | null
+    duration_days: number | null
+    occurred_at: string
+  },
+) {
+  if (entry.next_due_date) {
+    target.push(entry.next_due_date)
+  } else if (entry.duration_days && entry.duration_days > 0) {
+    target.push(addDaysIso(entry.occurred_at, entry.duration_days))
+  }
 }
 
 function buildSearchHaystack(m: MachineWithStats): string {
@@ -256,7 +283,7 @@ export function useMachinesWithStats() {
       const [tasksRes, ticketsRes, attachmentsRes, draftsRes] = await Promise.all([
         supabase
           .from('maintenance_tasks')
-          .select('machine_id, next_due_date')
+          .select('machine_id, title, next_due_date')
           .in('machine_id', ids),
         supabase
           .from('tickets')
@@ -274,6 +301,24 @@ export function useMachinesWithStats() {
           .in('machine_id', ids)
           .in('status', ['draft', 'processing', 'ready', 'failed']),
       ])
+
+      let taskRows: { machine_id: string; title: string; next_due_date: string | null }[] =
+        []
+      if (!tasksRes.error) {
+        taskRows = (tasksRes.data ?? []) as typeof taskRows
+      } else {
+        const bare = await supabase
+          .from('maintenance_tasks')
+          .select('machine_id, next_due_date')
+          .in('machine_id', ids)
+        if (!bare.error) {
+          taskRows = (bare.data ?? []).map((t) => ({
+            machine_id: t.machine_id,
+            title: 'Hauptuntersuchung',
+            next_due_date: t.next_due_date,
+          }))
+        }
+      }
 
       const attachments = attachmentsRes.error ? [] : (attachmentsRes.data ?? [])
       const drafts = draftsRes.error ? [] : (draftsRes.data ?? [])
@@ -296,10 +341,13 @@ export function useMachinesWithStats() {
       const taskToMachine = new Map((allTasks ?? []).map((t) => [t.id, t.machine_id]))
 
       return machinesReady.map((m) => {
-        const taskNextDates = (tasksRes.data ?? [])
-          .filter((t) => t.machine_id === m.id)
-          .map((t) => t.next_due_date)
-          .filter(Boolean) as string[]
+        const machineTasks = taskRows.filter((t) => t.machine_id === m.id)
+        const huTaskDates = machineTasks
+          .filter((t) => isHuTaskTitle(t.title) && t.next_due_date)
+          .map((t) => t.next_due_date as string)
+        const repairTaskDates = machineTasks
+          .filter((t) => !isHuTaskTitle(t.title) && t.next_due_date)
+          .map((t) => t.next_due_date as string)
 
         const machineTickets = (ticketsRes.data ?? []).filter((t) => t.machine_id === m.id)
         const openTickets = machineTickets.filter(
@@ -317,14 +365,12 @@ export function useMachinesWithStats() {
 
         const latestLifecycleMaint = lifecycleMaint[0] ?? null
 
-        const lifecycleRepair = lifecycleRows
+        const lifecycleRepairOccurred = lifecycleRows
           .filter((e) => e.machine_id === m.id && e.entry_type === 'repair')
           .map((e) => e.occurred_at)
 
-        const lifecyclePlanned = lifecycleRows.filter(
-          (e) =>
-            e.machine_id === m.id &&
-            (e.entry_type === 'maintenance' || e.entry_type === 'repair'),
+        const lifecycleRepairPlanned = lifecycleRows.filter(
+          (e) => e.machine_id === m.id && e.entry_type === 'repair',
         )
 
         const completionDates = completions
@@ -335,7 +381,7 @@ export function useMachinesWithStats() {
           ...completionDates,
           ...lifecycleMaint.map((e) => e.occurred_at),
         ]
-        const allRepair = [...ticketDates, ...lifecycleRepair]
+        const allRepair = [...ticketDates, ...lifecycleRepairOccurred]
 
         const maxDate = (dates: string[]) => {
           if (dates.length === 0) return null
@@ -344,36 +390,26 @@ export function useMachinesWithStats() {
 
         const last_maintenance_at = maxDate(allMaint)
 
-        // Nächste Wartung / geplante Reparatur: frühester Termin aus Lebenszyklus + Aufgaben
-        const dueCandidates: string[] = []
-        for (const e of lifecyclePlanned) {
-          if (e.next_due_date) {
-            dueCandidates.push(e.next_due_date)
-          } else if (e.duration_days && e.duration_days > 0) {
-            dueCandidates.push(addDaysIso(e.occurred_at, e.duration_days))
-          }
+        // Geplante Wartung (HU): nur maintenance-Einträge + HU-Aufgaben
+        const maintDueCandidates: string[] = []
+        for (const e of lifecycleMaint) {
+          pushDueFromLifecycle(maintDueCandidates, e)
         }
-        dueCandidates.push(...taskNextDates)
+        maintDueCandidates.push(...huTaskDates)
 
-        // Fallback: nur neuester HU-Eintrag (ältere Logik), falls keine Kandidaten
-        if (dueCandidates.length === 0 && latestLifecycleMaint) {
-          if (latestLifecycleMaint.next_due_date) {
-            dueCandidates.push(latestLifecycleMaint.next_due_date)
-          } else if (
-            latestLifecycleMaint.duration_days &&
-            latestLifecycleMaint.duration_days > 0
-          ) {
-            dueCandidates.push(
-              addDaysIso(
-                latestLifecycleMaint.occurred_at,
-                latestLifecycleMaint.duration_days,
-              ),
-            )
-          }
+        if (maintDueCandidates.length === 0 && latestLifecycleMaint) {
+          pushDueFromLifecycle(maintDueCandidates, latestLifecycleMaint)
         }
 
-        const next_maintenance_at =
-          dueCandidates.length > 0 ? dueCandidates.slice().sort()[0] ?? null : null
+        // Geplante Reparatur: repair-Einträge mit Termin + Nicht-HU-Aufgaben
+        const repairDueCandidates: string[] = []
+        for (const e of lifecycleRepairPlanned) {
+          if (e.next_due_date) repairDueCandidates.push(e.next_due_date)
+        }
+        repairDueCandidates.push(...repairTaskDates)
+
+        const next_maintenance_at = earliestDate(maintDueCandidates)
+        const next_repair_at = earliestDate(repairDueCandidates)
 
         const machineAttachments = attachments.filter((a) => a.machine_id === m.id)
         const machineDrafts = drafts.filter((d) => d.machine_id === m.id)
@@ -393,6 +429,7 @@ export function useMachinesWithStats() {
           last_maintenance_at,
           next_maintenance_at,
           last_repair_at: maxDate(allRepair),
+          next_repair_at,
           open_ticket_count: openTickets.length,
           document_count: machineAttachments.length,
           documents_analyzed: machineAttachments.filter(
@@ -415,7 +452,13 @@ export type MachineDateFilter =
   | 'repair_recent'
   | 'open_problems'
 
-export type MachineSortBy = 'manual' | 'name' | 'category' | 'location' | 'next_maintenance'
+export type MachineSortBy =
+  | 'manual'
+  | 'name'
+  | 'category'
+  | 'location'
+  | 'next_maintenance'
+  | 'next_repair'
 
 export interface MachineListFilters {
   filter?: MachineDateFilter
@@ -488,6 +531,7 @@ export function filterMachines(
           m.last_maintenance_at,
           m.next_maintenance_at,
           m.last_repair_at,
+          m.next_repair_at,
           m.warranty_until,
         ].filter(Boolean) as string[]
         if (dates.length === 0) return false
@@ -563,6 +607,17 @@ function sortMachinesAsc(
       if (!b.next_maintenance_at) return -1
       const c =
         new Date(a.next_maintenance_at).getTime() - new Date(b.next_maintenance_at).getTime()
+      return c !== 0 ? c : byName(a, b)
+    })
+  }
+
+  if (sortBy === 'next_repair') {
+    return list.sort((a, b) => {
+      if (!a.next_repair_at && !b.next_repair_at) return byName(a, b)
+      if (!a.next_repair_at) return 1
+      if (!b.next_repair_at) return -1
+      const c =
+        new Date(a.next_repair_at).getTime() - new Date(b.next_repair_at).getTime()
       return c !== 0 ? c : byName(a, b)
     })
   }
