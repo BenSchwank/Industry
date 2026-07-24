@@ -200,6 +200,7 @@ export function useDeleteTicketPhoto() {
     },
     onSuccess: (photo) => {
       void queryClient.invalidateQueries({ queryKey: ['ticket-photos-one', photo.ticket_id] })
+      void queryClient.invalidateQueries({ queryKey: ['ticket-photos-many'] })
       if (photo.machine_id) {
         void queryClient.invalidateQueries({ queryKey: ['ticket-photos', photo.machine_id] })
       }
