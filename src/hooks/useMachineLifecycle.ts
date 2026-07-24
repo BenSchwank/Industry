@@ -16,6 +16,11 @@ export interface LifecycleEntryInput {
   duration_days?: number | null
   /** Absolutes Monteur-/Fälligkeitsdatum (v. a. Reparatur) */
   next_due_date?: string | null
+  /**
+   * Geplante Reparatur: erscheint unter Reparaturen (maintenance_tasks).
+   * Datum optional – ohne Datum bleibt die Spalte „nächste geplante Reparatur“ leer.
+   */
+  planned_repair?: boolean
 }
 
 export interface TimelineItem {
@@ -320,11 +325,15 @@ export function useAddLifecycleEntry() {
 
       if (error) throw error
 
-      if (nextDue && duration != null) {
-        if (input.entry_type === 'maintenance') {
-          await syncHuTask(input.machine_id, duration, nextDue)
-        } else if (input.entry_type === 'repair') {
-          await syncRepairTask(input.machine_id, title, nextDue, duration)
+      if (input.entry_type === 'maintenance' && nextDue && duration != null) {
+        await syncHuTask(input.machine_id, duration, nextDue)
+      } else if (input.entry_type === 'repair') {
+        const shouldSyncTask =
+          Boolean(input.planned_repair) || (nextDue != null && duration != null)
+        if (shouldSyncTask) {
+          const taskDue = nextDue ?? toDateOnly(occurred)
+          const taskDays = duration ?? 30
+          await syncRepairTask(input.machine_id, title, taskDue, taskDays)
         }
       }
 
@@ -335,6 +344,7 @@ export function useAddLifecycleEntry() {
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
       queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['maintenance-free-repairs'] })
       queryClient.invalidateQueries({ queryKey: ['lifecycle-pick', vars.machine_id] })
     },
   })

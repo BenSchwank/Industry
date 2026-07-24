@@ -32,7 +32,6 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
 
   const canSubmit =
     Boolean(title.trim()) &&
-    Boolean(dueDate.trim()) &&
     (refMode === 'machine' ? Boolean(machineId) : Boolean(freeLabel.trim()))
 
   async function handleSubmit(e: FormEvent) {
@@ -53,11 +52,16 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
           title: cleanTitle,
           description: cleanDesc || null,
           next_due_date: due,
+          planned_repair: true,
         })
         void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
         void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
         void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
-        onSuccess('Geplante Reparatur mit Termin angelegt.')
+        onSuccess(
+          due
+            ? 'Geplante Reparatur mit Termin angelegt.'
+            : 'Geplante Reparatur angelegt (ohne festen Termin).',
+        )
         onClose()
         return
       }
@@ -188,12 +192,13 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
         </label>
 
         <label className="mt-4 block">
-          <span className="text-kwd-muted text-sm font-medium">Monteur-Termin</span>
+          <span className="text-kwd-muted text-sm font-medium">
+            Monteur-Termin (optional)
+          </span>
           <input
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
-            required
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
           />
         </label>

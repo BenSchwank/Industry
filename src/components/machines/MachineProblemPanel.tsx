@@ -7,6 +7,7 @@ import {
   useResolveTicket,
 } from '../../hooks/useTicketActions'
 import { assertLifecycleImage } from '../../hooks/useLifecyclePhotos'
+import { useAddLifecycleEntry } from '../../hooks/useMachineLifecycle'
 import {
   TICKET_PHOTOS_SQL_HINT,
   useTicketPhotosForMachine,
@@ -23,7 +24,6 @@ import { resolveUsernames } from '../../lib/resolveUsernames'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority, TicketStatus } from '../../types/database'
-import { LifecycleRepairSelect } from './LifecycleRepairSelect'
 import {
   LifecycleImagePickButtons,
   PendingPhotoStrip,
@@ -37,6 +37,8 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: 'high', label: 'Hoch' },
   { value: 'critical', label: 'Kritisch' },
 ]
+
+type ReportKind = 'issue' | 'planned_repair'
 
 interface MachineOpenTicket {
   id: string
@@ -60,11 +62,13 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const deleteTicket = useDeleteTicket()
   const clearInProgress = useClearTicketInProgress()
   const uploadPhotos = useUploadTicketPhotos()
+  const addEntry = useAddLifecycleEntry()
   const { data: allTicketPhotos = [] } = useTicketPhotosForMachine(machineId)
+  const [reportKind, setReportKind] = useState<ReportKind>('issue')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
+  const [plannedDate, setPlannedDate] = useState('')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
-  const [lifecycleEntryId, setLifecycleEntryId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -137,84 +141,128 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
     setError(null)
     setMessage(null)
 
-    const result = await createTicketOptimistic(
-      {
-        machine_id: machineId,
-        machine_name: machineName,
-        description: description.trim(),
-        priority,
-        lifecycle_entry_id: lifecycleEntryId || null,
-      },
-      isOnline,
-      queryClient,
-    )
+    const desc = description.trim()
+    const due = plannedDate.trim() || null
+    const isPlanned = reportKind === 'planned_repair'
 
-    if (result.mode === 'error') {
-      setSubmitting(false)
-      setError(result.message ?? 'Fehler beim Speichern')
-      return
-    }
+    try {
+      let lifecycleEntryId: string | null = null
 
-    if (result.mode === 'synced' && result.ticketId && pendingPhotos.length > 0) {
-      const photosToUpload = pendingPhotos
-      try {
-        await uploadPhotos.mutateAsync({
-          ticketId: result.ticketId,
-          machineId,
-          files: photosToUpload,
+      if (isPlanned) {
+        const title = desc.slice(0, 80) || 'Geplante Reparatur'
+        const entry = await addEntry.mutateAsync({
+          machine_id: machineId,
+          entry_type: 'repair',
+          title,
+          description: desc,
+          next_due_date: due,
+          planned_repair: true,
         })
-      } catch (photoErr) {
+        lifecycleEntryId =
+          entry && typeof entry === 'object' && 'id' in entry
+            ? String((entry as { id: string }).id)
+            : null
+      }
+
+      const result = await createTicketOptimistic(
+        {
+          machine_id: machineId,
+          machine_name: machineName,
+          description:
+            isPlanned && due
+              ? `${desc}\nGeplanter Termin: ${new Date(`${due}T12:00:00`).toLocaleDateString('de-DE')}`
+              : desc,
+          priority,
+          lifecycle_entry_id: lifecycleEntryId,
+        },
+        isOnline,
+        queryClient,
+      )
+
+      if (result.mode === 'error') {
+        setSubmitting(false)
+        setError(result.message ?? 'Fehler beim Speichern')
+        return
+      }
+
+      if (result.mode === 'synced' && result.ticketId && pendingPhotos.length > 0) {
+        const photosToUpload = pendingPhotos
+        try {
+          await uploadPhotos.mutateAsync({
+            ticketId: result.ticketId,
+            machineId,
+            files: photosToUpload,
+          })
+        } catch (photoErr) {
+          setSubmitting(false)
+          setDescription('')
+          setPlannedDate('')
+          setPendingPhotos([])
+          setError(
+            photoErr instanceof Error
+              ? `Gespeichert, Fotos fehlgeschlagen: ${photoErr.message}`
+              : `Gespeichert, Fotos fehlgeschlagen. ${TICKET_PHOTOS_SQL_HINT}`,
+          )
+          void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+          void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+          onLogged?.()
+          return
+        }
         setSubmitting(false)
         setDescription('')
+        setPlannedDate('')
         setPendingPhotos([])
-        setError(
-          photoErr instanceof Error
-            ? `Störung gespeichert, Fotos fehlgeschlagen: ${photoErr.message}`
-            : `Störung gespeichert, Fotos fehlgeschlagen. ${TICKET_PHOTOS_SQL_HINT}`,
+        setMessage(
+          isPlanned
+            ? due
+              ? 'Geplante Reparatur mit Fotos angelegt – Termin in Liste und unter Reparaturen.'
+              : 'Geplante Reparatur mit Fotos angelegt – erscheint unter Reparaturen.'
+            : 'Problem mit Fotos erfasst.',
         )
         void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+        void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+        void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+        void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
         onLogged?.()
         return
       }
-      setSubmitting(false)
-      setDescription('')
-      setPendingPhotos([])
-      setMessage('Problem mit Fotos erfasst.')
-      void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
-      void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
-      onLogged?.()
-      return
-    }
 
-    if (result.mode === 'queued' && pendingPhotos.length > 0) {
+      if (result.mode === 'queued' && pendingPhotos.length > 0) {
+        setSubmitting(false)
+        setDescription('')
+        setPlannedDate('')
+        setPendingPhotos([])
+        setMessage(
+          'Offline gespeichert – Fotos bitte nach dem Sync erneut anhängen (Online).',
+        )
+        onLogged?.()
+        return
+      }
+
       setSubmitting(false)
       setDescription('')
+      setPlannedDate('')
       setPendingPhotos([])
       setMessage(
-        'Problem offline gespeichert – Fotos bitte nach dem Sync erneut anhängen (Online).',
+        result.message
+          ? result.message
+          : result.mode === 'queued'
+            ? 'Offline gespeichert – wird synchronisiert.'
+            : isPlanned
+              ? due
+                ? 'Geplante Reparatur angelegt – Termin in Maschinenliste und unter Reparaturen.'
+                : 'Geplante Reparatur angelegt – erscheint unter Reparaturen.'
+              : 'Problem erfasst – erscheint sofort in der Historie.',
       )
+      void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+      void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+      void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+      void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
       onLogged?.()
-      return
+    } catch (err) {
+      setSubmitting(false)
+      setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
     }
-
-    setSubmitting(false)
-    setDescription('')
-    setPendingPhotos([])
-    const linked = Boolean(lifecycleEntryId)
-    setLifecycleEntryId('')
-    setMessage(
-      result.message
-        ? result.message
-        : result.mode === 'queued'
-          ? 'Problem offline gespeichert – wird synchronisiert.'
-          : linked
-            ? 'Problem erfasst – erscheint unter Reparaturen bei „Störungen zu Wartung / Reparatur“.'
-            : 'Problem erfasst – erscheint sofort in der Historie.',
-    )
-    void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
-    void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
-    void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
-    onLogged?.()
   }
 
   async function handleClearInProgress(id: string) {
@@ -266,7 +314,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
       <article className="bg-kwd-surface border-kwd-danger/30 rounded-xl border-2 p-4">
         <header className="mb-3">
           <h3 className="font-bold">Problem melden</h3>
-          <p className="text-kwd-muted text-sm">Störung für {machineName} erfassen</p>
+          <p className="text-kwd-muted text-sm">Störung oder geplante Reparatur für {machineName}</p>
         </header>
 
         {!isOnline && (
@@ -276,6 +324,48 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <fieldset>
+            <legend className="text-kwd-muted text-sm font-medium">Art</legend>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setReportKind('issue')}
+                className={`min-h-[44px] rounded-xl border px-3 text-sm font-semibold ${
+                  reportKind === 'issue'
+                    ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                    : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
+                }`}
+              >
+                Einfache Störung
+              </button>
+              <button
+                type="button"
+                onClick={() => setReportKind('planned_repair')}
+                className={`min-h-[44px] rounded-xl border px-3 text-sm font-semibold ${
+                  reportKind === 'planned_repair'
+                    ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                    : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
+                }`}
+              >
+                Geplante Reparatur
+              </button>
+            </div>
+          </fieldset>
+
+          {reportKind === 'planned_repair' && (
+            <label className="block">
+              <span className="text-kwd-muted text-sm font-medium">
+                Monteur-Termin (optional)
+              </span>
+              <input
+                type="date"
+                value={plannedDate}
+                onChange={(e) => setPlannedDate(e.target.value)}
+                className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4 text-base"
+              />
+            </label>
+          )}
+
           <label className="block">
             <span className="text-kwd-muted text-sm font-medium">Priorität</span>
             <select
@@ -292,29 +382,22 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
           </label>
 
           <label className="block">
-            <span className="text-kwd-muted text-sm font-medium">Problembeschreibung *</span>
+            <span className="text-kwd-muted text-sm font-medium">
+              {reportKind === 'planned_repair' ? 'Beschreibung *' : 'Problembeschreibung *'}
+            </span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
               rows={4}
-              placeholder="Was ist passiert? Symptome, Geräusche, Fehlermeldungen…"
+              placeholder={
+                reportKind === 'planned_repair'
+                  ? 'Was ist geplant?'
+                  : 'Was ist passiert? Symptome, Geräusche, Fehlermeldungen…'
+              }
               className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[120px] w-full rounded-xl border px-4 py-3 text-base"
             />
           </label>
-
-          <LifecycleRepairSelect
-            machineId={machineId}
-            value={lifecycleEntryId}
-            onChange={(entryId, entry) => {
-              setLifecycleEntryId(entryId)
-              if (entry && !description.trim()) {
-                setDescription(
-                  `${entry.title}${entry.description ? `\n${entry.description}` : ''}`,
-                )
-              }
-            }}
-          />
 
           <div>
             <span className="text-kwd-muted text-sm font-medium">Fotos (optional)</span>
@@ -340,7 +423,11 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
             disabled={submitting || !description.trim()}
             className="bg-kwd-danger text-kwd-bg min-h-[52px] rounded-xl text-base font-bold disabled:opacity-50"
           >
-            {submitting ? 'Speichern…' : 'Problem erfassen'}
+            {submitting
+              ? 'Speichern…'
+              : reportKind === 'planned_repair'
+                ? 'Geplante Reparatur anlegen'
+                : 'Problem erfassen'}
           </button>
         </form>
       </article>

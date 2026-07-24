@@ -345,9 +345,6 @@ export function useMachinesWithStats() {
         const huTaskDates = machineTasks
           .filter((t) => isHuTaskTitle(t.title) && t.next_due_date)
           .map((t) => t.next_due_date as string)
-        const repairTaskDates = machineTasks
-          .filter((t) => !isHuTaskTitle(t.title) && t.next_due_date)
-          .map((t) => t.next_due_date as string)
 
         const machineTickets = (ticketsRes.data ?? []).filter((t) => t.machine_id === m.id)
         const openTickets = machineTickets.filter(
@@ -401,12 +398,11 @@ export function useMachinesWithStats() {
           pushDueFromLifecycle(maintDueCandidates, latestLifecycleMaint)
         }
 
-        // Geplante Reparatur: repair-Einträge mit Termin + Nicht-HU-Aufgaben
+        // Geplante Reparatur-Spalte: nur Reparaturen mit explizitem Monteur-Termin
         const repairDueCandidates: string[] = []
         for (const e of lifecycleRepairPlanned) {
           if (e.next_due_date) repairDueCandidates.push(e.next_due_date)
         }
-        repairDueCandidates.push(...repairTaskDates)
 
         const next_maintenance_at = earliestDate(maintDueCandidates)
         const next_repair_at = earliestDate(repairDueCandidates)
