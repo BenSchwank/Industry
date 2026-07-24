@@ -2,8 +2,10 @@ import {
   TICKET_PRIORITY_LABEL,
   TICKET_STATUS_LABEL,
 } from '../../hooks/useTicketActions'
+import type { TicketPhoto } from '../../hooks/useTicketPhotos'
 import type { TicketListItem } from '../../lib/ticketFilters'
 import { ticketDisplayName, ticketDisplaySubtitle } from '../../lib/ticketFilters'
+import { TicketPhotoStrip } from '../machines/LifecyclePhotos'
 import type { TicketEditTarget } from './TicketEditForm'
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -18,6 +20,7 @@ interface TicketCardProps {
   busy: boolean
   authorName?: string | null
   assigneeName?: string | null
+  photos?: TicketPhoto[]
   onEdit: (target: TicketEditTarget) => void
   onSetInProgress: (ticket: TicketListItem) => void
   onClearInProgress: (id: string) => void
@@ -30,6 +33,7 @@ export function TicketCard({
   busy,
   authorName,
   assigneeName,
+  photos = [],
   onEdit,
   onSetInProgress,
   onClearInProgress,
@@ -54,6 +58,14 @@ export function TicketCard({
         </span>
       </div>
       <p className="text-kwd-muted mt-2 text-sm">{ticket.description}</p>
+      {photos.length > 0 && (
+        <div className="mt-2">
+          <p className="text-kwd-muted mb-1 text-[11px]">
+            Fotos · antippen zum Vergrößern / Download
+          </p>
+          <TicketPhotoStrip photos={photos} canDelete={false} />
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           <span

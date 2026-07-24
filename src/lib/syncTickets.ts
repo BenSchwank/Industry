@@ -88,7 +88,12 @@ export async function syncPendingTickets(): Promise<number> {
 export async function createTicket(
   ticket: TicketCreateInput,
   isOnline: boolean,
-): Promise<{ mode: 'synced' | 'queued' | 'error'; message?: string }> {
+): Promise<{
+  mode: 'synced' | 'queued' | 'error'
+  message?: string
+  localId?: string
+  ticketId?: string
+}> {
   return createTicketOptimistic(ticket, isOnline, queryClient)
 }
 

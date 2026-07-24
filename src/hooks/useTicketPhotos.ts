@@ -149,6 +149,29 @@ export function useTicketPhotos(ticketId: string | null) {
   })
 }
 
+export function useTicketPhotosForTickets(ticketIds: string[]) {
+  const key = ticketIds.slice().sort().join(',')
+  return useQuery({
+    queryKey: ['ticket-photos-many', key],
+    enabled: ticketIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ticket_photos')
+        .select(
+          'id, ticket_id, machine_id, storage_path, filename, mime_type, file_size_bytes, created_at',
+        )
+        .in('ticket_id', ticketIds)
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        if (isMissingTicketPhotosSchema(error)) return [] as TicketPhoto[]
+        throw new Error(formatSupabaseError(error))
+      }
+      return (data ?? []) as TicketPhoto[]
+    },
+  })
+}
+
 export function useUploadTicketPhotos() {
   const queryClient = useQueryClient()
 
@@ -156,6 +179,7 @@ export function useUploadTicketPhotos() {
     mutationFn: uploadTicketPhotoFiles,
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['ticket-photos-one', vars.ticketId] })
+      void queryClient.invalidateQueries({ queryKey: ['ticket-photos-many'] })
       if (vars.machineId) {
         void queryClient.invalidateQueries({ queryKey: ['ticket-photos', vars.machineId] })
         void queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machineId] })

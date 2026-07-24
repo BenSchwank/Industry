@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
+import { downloadFromUrl } from '../../lib/downloadFile'
 import {
   assertLifecycleImage,
   useDeleteLifecyclePhoto,
@@ -24,7 +25,19 @@ function PhotoThumb({
 }) {
   const { data: url, isLoading } = useLifecyclePhotoUrl(photo.storage_path)
   const [lightbox, setLightbox] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const box = size === 'lg' ? 'h-28 w-28 sm:h-36 sm:w-36' : 'h-16 w-16'
+
+  async function handleDownload(e: MouseEvent) {
+    e.stopPropagation()
+    if (!url) return
+    setDownloading(true)
+    try {
+      await downloadFromUrl(url, photo.filename || 'foto.jpg')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <>
@@ -61,17 +74,30 @@ function PhotoThumb({
           <img
             src={url}
             alt={photo.filename}
-            className="max-h-[92vh] max-w-[96vw] object-contain"
+            className="max-h-[85vh] max-w-[96vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
-          <button
-            type="button"
-            className="absolute top-3 right-3 min-h-[44px] min-w-[44px] rounded-full bg-white/90 text-lg font-bold"
-            onClick={() => setLightbox(false)}
-            aria-label="Schließen"
+          <div
+            className="absolute top-3 right-3 flex gap-2"
+            onClick={(e) => e.stopPropagation()}
           >
-            ×
-          </button>
+            <button
+              type="button"
+              className="min-h-[44px] rounded-full bg-white/90 px-4 text-sm font-bold"
+              onClick={(e) => void handleDownload(e)}
+              disabled={downloading}
+            >
+              {downloading ? '…' : 'Download'}
+            </button>
+            <button
+              type="button"
+              className="min-h-[44px] min-w-[44px] rounded-full bg-white/90 text-lg font-bold"
+              onClick={() => setLightbox(false)}
+              aria-label="Schließen"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
     </>

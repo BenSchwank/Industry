@@ -12,6 +12,7 @@ import {
   useDeleteTicket,
   useResolveTicket,
 } from '../hooks/useTicketActions'
+import { useTicketPhotosForTickets } from '../hooks/useTicketPhotos'
 import {
   filterTickets,
   groupTicketsByPriority,
@@ -123,6 +124,18 @@ export default function TicketsPage() {
     },
   })
 
+  const ticketIds = useMemo(() => (tickets ?? []).map((t) => t.id), [tickets])
+  const { data: allTicketPhotos = [] } = useTicketPhotosForTickets(ticketIds)
+  const photosByTicket = useMemo(() => {
+    const map = new Map<string, typeof allTicketPhotos>()
+    for (const p of allTicketPhotos) {
+      const list = map.get(p.ticket_id) ?? []
+      list.push(p)
+      map.set(p.ticket_id, list)
+    }
+    return map
+  }, [allTicketPhotos])
+
   const filtered = useMemo(
     () =>
       filterTickets(tickets ?? [], {
@@ -218,6 +231,7 @@ export default function TicketsPage() {
         busy={busyId === ticket.id}
         authorName={ticket.created_by ? nameMap?.get(ticket.created_by) : null}
         assigneeName={ticket.assigned_to ? nameMap?.get(ticket.assigned_to) : null}
+        photos={photosByTicket.get(ticket.id) ?? []}
         onEdit={setEditTicket}
         onSetInProgress={setInProgressTicket}
         onClearInProgress={(id) => void handleClearInProgress(id)}

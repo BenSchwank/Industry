@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { LifecycleImagePickButtons } from '../components/machines/LifecyclePhotos'
 import {
   CHAT_SQL_HINT,
@@ -31,6 +31,20 @@ function conversationLabel(
 function ChatImage({ attachment }: { attachment: ChatAttachment }) {
   const { data: url, isLoading } = useChatAttachmentUrl(attachment.storage_path)
   const [open, setOpen] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleDownload(e: MouseEvent) {
+    e.stopPropagation()
+    if (!url) return
+    setDownloading(true)
+    try {
+      const { downloadFromUrl } = await import('../lib/downloadFile')
+      await downloadFromUrl(url, attachment.filename || 'chat-bild.jpg')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   if (isLoading || !url) {
     return (
       <div className="bg-kwd-surface-light text-kwd-muted flex h-28 w-28 items-center justify-center rounded-lg text-xs">
@@ -53,9 +67,30 @@ function ChatImage({ attachment }: { attachment: ChatAttachment }) {
           <img
             src={url}
             alt={attachment.filename}
-            className="max-h-[92vh] max-w-[96vw] object-contain"
+            className="max-h-[85vh] max-w-[96vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+          <div
+            className="absolute top-3 right-3 flex gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="min-h-[44px] rounded-full bg-white/90 px-4 text-sm font-bold"
+              onClick={(e) => void handleDownload(e)}
+              disabled={downloading}
+            >
+              {downloading ? '…' : 'Download'}
+            </button>
+            <button
+              type="button"
+              className="min-h-[44px] min-w-[44px] rounded-full bg-white/90 text-lg font-bold"
+              onClick={() => setOpen(false)}
+              aria-label="Schließen"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
     </>

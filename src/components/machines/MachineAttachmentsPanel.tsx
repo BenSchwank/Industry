@@ -162,7 +162,8 @@ export function MachineAttachmentsPanel({
         </div>
 
         <p className="text-kwd-muted text-xs">
-          Unterlagen nur in der Software ansehen – kein Download, kein Öffnen in neuem Tab.
+          Unterlagen in der Software ansehen. Bilder können heruntergeladen werden; PDFs bleiben
+          nur zur Ansicht.
         </p>
         {queueStatus.length > 0 && (
           <p className="bg-kwd-primary/10 text-kwd-primary border-kwd-primary/30 border px-3 py-2 text-sm font-medium">
@@ -325,6 +326,7 @@ export function MachineAttachmentsPanel({
 
 function AttachmentImageViewer({ attachment }: { attachment: MachineAttachment }) {
   const { data: url, isLoading, error } = useAttachmentSignedUrl(attachment)
+  const [downloading, setDownloading] = useState(false)
 
   if (isLoading) {
     return <p className="text-kwd-muted p-8 text-center text-sm">Bild wird geladen…</p>
@@ -338,12 +340,34 @@ function AttachmentImageViewer({ attachment }: { attachment: MachineAttachment }
   }
 
   return (
-    <div className="flex max-h-[70vh] items-center justify-center bg-black/5 p-2">
-      <img
-        src={url}
-        alt={attachment.filename}
-        className="max-h-[68vh] max-w-full object-contain"
-      />
+    <div className="flex flex-col gap-2">
+      <div className="flex max-h-[70vh] items-center justify-center bg-black/5 p-2">
+        <img
+          src={url}
+          alt={attachment.filename}
+          className="max-h-[68vh] max-w-full object-contain"
+        />
+      </div>
+      <div className="flex justify-end px-2 pb-2">
+        <button
+          type="button"
+          disabled={downloading}
+          className="kwd-btn min-h-[44px] px-4 text-sm font-semibold"
+          onClick={() => {
+            void (async () => {
+              setDownloading(true)
+              try {
+                const { downloadFromUrl } = await import('../../lib/downloadFile')
+                await downloadFromUrl(url, attachment.filename || 'bild.jpg')
+              } finally {
+                setDownloading(false)
+              }
+            })()
+          }}
+        >
+          {downloading ? 'Download…' : 'Bild herunterladen'}
+        </button>
+      </div>
     </div>
   )
 }

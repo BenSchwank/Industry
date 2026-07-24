@@ -1,6 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { LifecycleRepairSelect } from '../machines/LifecycleRepairSelect'
 import { MachineSearchSelect } from '../machines/MachineSearchSelect'
+import {
+  LifecycleImagePickButtons,
+  PendingPhotoStrip,
+} from '../machines/LifecyclePhotos'
+import { assertLifecycleImage } from '../../hooks/useLifecyclePhotos'
+import {
+  TICKET_PHOTOS_SQL_HINT,
+  useUploadTicketPhotos,
+} from '../../hooks/useTicketPhotos'
 import { createTicket } from '../../lib/syncTickets'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
@@ -30,6 +40,8 @@ export function TicketForm({
 }: TicketFormProps) {
   const isOnline = useAppStore((s) => s.isOnline)
   const selectedMachineId = useAppStore((s) => s.selectedMachineId)
+  const queryClient = useQueryClient()
+  const uploadPhotos = useUploadTicketPhotos()
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>('machine')
   const [machineId, setMachineId] = useState(initialMachineId ?? selectedMachineId ?? '')
   const [machineName, setMachineName] = useState(initialMachineName ?? '')
@@ -37,6 +49,7 @@ export function TicketForm({
   const [referenceLabel, setReferenceLabel] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TicketPriority>('medium')
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,6 +64,18 @@ export function TicketForm({
   const canSubmit =
     description.trim() &&
     (referenceMode === 'machine' ? Boolean(machineId) : Boolean(referenceLabel.trim()))
+
+  function addPendingFiles(list: FileList | null) {
+    if (!list || list.length === 0) return
+    try {
+      const next = [...list]
+      for (const f of next) assertLifecycleImage(f)
+      setPendingPhotos((prev) => [...prev, ...next].slice(0, 8))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ungültiges Bild')
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -81,16 +106,47 @@ export function TicketForm({
       isOnline,
     )
 
-    setSubmitting(false)
-
     if (result.mode === 'error') {
+      setSubmitting(false)
       setError(result.message ?? 'Fehler beim Speichern')
       return
     }
 
+    if (result.mode === 'queued') {
+      setSubmitting(false)
+      onSuccess(
+        pendingPhotos.length > 0
+          ? 'Störung offline gespeichert – Fotos bitte nach dem Sync erneut anhängen (Online).'
+          : 'Störung offline gespeichert – wird synchronisiert sobald das Netz da ist.',
+      )
+      onClose()
+      return
+    }
+
+    if (result.ticketId && pendingPhotos.length > 0) {
+      try {
+        await uploadPhotos.mutateAsync({
+          ticketId: result.ticketId,
+          machineId: referenceMode === 'machine' ? machineId || null : null,
+          files: pendingPhotos,
+        })
+      } catch (photoErr) {
+        setSubmitting(false)
+        void queryClient.invalidateQueries({ queryKey: ['tickets'] })
+        onSuccess(
+          photoErr instanceof Error
+            ? `Störung gemeldet, Fotos fehlgeschlagen: ${photoErr.message}`
+            : `Störung gemeldet, Fotos fehlgeschlagen. ${TICKET_PHOTOS_SQL_HINT}`,
+        )
+        onClose()
+        return
+      }
+    }
+
+    setSubmitting(false)
     onSuccess(
-      result.mode === 'queued'
-        ? 'Störung offline gespeichert – wird synchronisiert sobald das Netz da ist.'
+      pendingPhotos.length > 0
+        ? 'Störung mit Fotos gemeldet.'
         : lifecycleEntryId
           ? 'Störung gemeldet und mit Lebenszyklus verknüpft.'
           : 'Störung erfolgreich gemeldet.',
@@ -211,6 +267,22 @@ export function TicketForm({
             className="bg-kwd-bg border-kwd-surface-light mt-1 w-full rounded-xl border px-4 py-3 text-base"
           />
         </label>
+
+        <div className="mt-4">
+          <span className="text-kwd-muted text-sm font-medium">Fotos (optional)</span>
+          <div className="mt-1">
+            <LifecycleImagePickButtons
+              onFiles={addPendingFiles}
+              cameraLabel="Foto aufnehmen"
+              galleryLabel="Galerie / Datei"
+            />
+            <p className="text-kwd-muted mt-1 text-xs">Handy: Galerie oder Dateien · bis 8 Fotos</p>
+          </div>
+          <PendingPhotoStrip
+            files={pendingPhotos}
+            onRemove={(i) => setPendingPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+          />
+        </div>
 
         {error && <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>}
 
