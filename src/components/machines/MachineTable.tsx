@@ -513,6 +513,16 @@ function MachineRow({
           )}
         </div>
       </td>
+      <td>{formatDateWithCode(m.last_cutting_oil_at, null, formatDate)}</td>
+      <td className={dateCellClass(m.next_cutting_oil_at, true)}>
+        {formatDateWithCode(m.next_cutting_oil_at, null, formatDate)}
+      </td>
+      <td>
+        {formatDateWithCode(m.last_hydraulic_oil_at, m.last_hydraulic_code, formatDate)}
+      </td>
+      <td className={dateCellClass(m.next_hydraulic_oil_at, true)}>
+        {formatDateWithCode(m.next_hydraulic_oil_at, null, formatDate)}
+      </td>
       <td
         className={dateCellClass(m.next_repair_at, true)}
         title={
@@ -524,16 +534,6 @@ function MachineRow({
         }
       >
         {formatDate(m.next_repair_at)}
-      </td>
-      <td>{formatDateWithCode(m.last_cutting_oil_at, null, formatDate)}</td>
-      <td className={dateCellClass(m.next_cutting_oil_at, true)}>
-        {formatDateWithCode(m.next_cutting_oil_at, null, formatDate)}
-      </td>
-      <td>
-        {formatDateWithCode(m.last_hydraulic_oil_at, m.last_hydraulic_code, formatDate)}
-      </td>
-      <td className={dateCellClass(m.next_hydraulic_oil_at, true)}>
-        {formatDateWithCode(m.next_hydraulic_oil_at, null, formatDate)}
       </td>
       <td>{formatDate(m.last_repair_at)}</td>
       <td className={dateCellClass(m.warranty_until)}>
@@ -1628,6 +1628,10 @@ export function MachineTable({
                 sortDescending={sortDescending}
                 onSort={onSortByChange ? handleHeaderSort : undefined}
               />
+              <th className="min-w-[6rem]">letzter Schneidöl-Wechsel</th>
+              <th className="min-w-[6rem]">nächster Schneidöl-Wechsel</th>
+              <th className="min-w-[6rem]">letzter Hyd.-Ölwechsel</th>
+              <th className="min-w-[6rem]">nächster Hyd.-Ölwechsel</th>
               <SortableTh
                 label="nächste geplante Reparatur"
                 column="next_repair"
@@ -1635,10 +1639,6 @@ export function MachineTable({
                 sortDescending={sortDescending}
                 onSort={onSortByChange ? handleHeaderSort : undefined}
               />
-              <th className="min-w-[6rem]">letzter Schneidöl-Wechsel</th>
-              <th className="min-w-[6rem]">nächster Schneidöl-Wechsel</th>
-              <th className="min-w-[6rem]">letzter Hyd.-Ölwechsel</th>
-              <th className="min-w-[6rem]">nächster Hyd.-Ölwechsel</th>
               <th>Letzte Reparatur</th>
               <th>Garantie</th>
               <th className="min-w-[4.5rem]"> </th>
