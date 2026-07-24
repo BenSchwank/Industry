@@ -175,6 +175,102 @@ export interface Database {
           },
         ]
       }
+      chat_conversations: {
+        Row: {
+          id: string
+          kind: 'dm' | 'group'
+          title: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          kind: 'dm' | 'group'
+          title?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          kind?: 'dm' | 'group'
+          title?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      chat_members: {
+        Row: {
+          conversation_id: string
+          user_id: string
+          joined_at: string
+        }
+        Insert: {
+          conversation_id: string
+          user_id: string
+          joined_at?: string
+        }
+        Update: {
+          conversation_id?: string
+          user_id?: string
+          joined_at?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          sender_id: string | null
+          body: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          sender_id?: string | null
+          body?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          sender_id?: string | null
+          body?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      chat_attachments: {
+        Row: {
+          id: string
+          message_id: string
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          message_id: string
+          storage_path: string
+          filename: string
+          mime_type: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          message_id?: string
+          storage_path?: string
+          filename?: string
+          mime_type?: string
+          file_size_bytes?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       inventory_items: {
         Row: {
           id: string
@@ -661,6 +757,14 @@ export interface Database {
       delete_user_account: {
         Args: { target_id: string }
         Returns: undefined
+      }
+      create_chat_conversation: {
+        Args: { p_kind: string; p_title: string | null; p_member_ids: string[] }
+        Returns: string
+      }
+      is_chat_member: {
+        Args: { conv_id: string }
+        Returns: boolean
       }
       is_active_admin: {
         Args: Record<string, never>

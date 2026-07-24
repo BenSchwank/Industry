@@ -6,6 +6,7 @@ export type AppView =
   | 'tickets'
   | 'maintenance'
   | 'messages'
+  | 'chat'
   | 'import'
   | 'users'
   | 'settings'
@@ -19,6 +20,7 @@ export const DESKTOP_NAV: { view: AppView; label: string }[] = [
   { view: 'tickets', label: 'Störungen' },
   { view: 'maintenance', label: 'Reparaturen' },
   { view: 'messages', label: 'Nachrichten' },
+  { view: 'chat', label: 'Chat' },
   { view: 'import', label: 'QS1 Import' },
 ]
 

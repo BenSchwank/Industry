@@ -11,6 +11,7 @@ const SHORT: Record<string, string> = {
   tickets: 'Stör.',
   maintenance: 'Rep.',
   messages: 'Nachr.',
+  chat: 'Chat',
   import: 'QS1',
   users: 'Verw.',
   settings: 'Einst.',

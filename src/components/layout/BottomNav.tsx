@@ -22,7 +22,9 @@ export function BottomNav() {
           const isActive =
             activeView === view ||
             (view === 'more' &&
-              ['machines', 'inventory', 'import', 'settings', 'messages'].includes(activeView))
+              ['machines', 'inventory', 'import', 'settings', 'messages', 'chat', 'users'].includes(
+                activeView,
+              ))
           return (
             <li key={view} className="flex-1">
               <button

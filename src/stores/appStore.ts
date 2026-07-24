@@ -8,6 +8,7 @@ export type AppView =
   | 'tickets'
   | 'maintenance'
   | 'messages'
+  | 'chat'
   | 'import'
   | 'users'
   | 'settings'
