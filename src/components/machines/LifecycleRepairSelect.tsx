@@ -19,18 +19,11 @@ interface LifecycleRepairSelectProps {
   disabled?: boolean
 }
 
-type PickFilter = 'work' | 'repair' | 'all'
-
-const TYPE_LABEL: Record<string, string> = {
-  repair: 'Reparatur',
-  maintenance: 'Wartung',
-  inspection: 'Inspektion',
-  note: 'Notiz',
-}
+/** Keine Verknüpfung | normale Reparatur | geplante Reparatur (mit Monteur-Termin) */
+type PickMode = 'none' | 'repair' | 'planned'
 
 /**
- * Auswahl bestehender Lebenszyklus-Einträge zur Verknüpfung mit einer Störung.
- * Standard: Wartungen und geplante Reparaturen (Monteur-Termine).
+ * Auswahl: Störung optional mit Reparatur oder geplanter Reparatur verknüpfen.
  */
 export function LifecycleRepairSelect({
   machineId,
@@ -39,17 +32,17 @@ export function LifecycleRepairSelect({
   disabled,
 }: LifecycleRepairSelectProps) {
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<PickFilter>('work')
+  const [mode, setMode] = useState<PickMode>('none')
 
   const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['lifecycle-pick', machineId],
+    queryKey: ['lifecycle-pick-repairs', machineId],
     enabled: Boolean(machineId),
     queryFn: async () => {
       const full = await supabase
         .from('machine_lifecycle_entries')
         .select('id, entry_type, title, description, occurred_at, next_due_date')
         .eq('machine_id', machineId!)
-        .in('entry_type', ['repair', 'maintenance', 'inspection', 'note'])
+        .eq('entry_type', 'repair')
         .order('occurred_at', { ascending: false })
         .limit(80)
 
@@ -60,7 +53,7 @@ export function LifecycleRepairSelect({
           .from('machine_lifecycle_entries')
           .select('id, entry_type, title, description, occurred_at')
           .eq('machine_id', machineId!)
-          .in('entry_type', ['repair', 'maintenance', 'inspection', 'note'])
+          .eq('entry_type', 'repair')
           .order('occurred_at', { ascending: false })
           .limit(80)
         if (basic.error) throw basic.error
@@ -74,51 +67,56 @@ export function LifecycleRepairSelect({
   })
 
   const filtered = useMemo(() => {
+    if (mode === 'none') return []
     const terms = query
       .trim()
       .toLowerCase()
       .split(/\s+/)
       .filter(Boolean)
     return entries.filter((e) => {
-      if (filter === 'work' && e.entry_type !== 'repair' && e.entry_type !== 'maintenance') {
-        return false
-      }
-      if (filter === 'repair' && e.entry_type !== 'repair') return false
+      const planned = Boolean(e.next_due_date?.trim())
+      if (mode === 'planned' && !planned) return false
+      if (mode === 'repair' && planned) return false
       if (terms.length === 0) return true
-      const hay = [
-        e.title,
-        e.description ?? '',
-        TYPE_LABEL[e.entry_type] ?? '',
-        e.next_due_date ?? '',
-      ]
+      const hay = [e.title, e.description ?? '', e.next_due_date ?? '']
         .join(' ')
         .toLowerCase()
       return terms.every((t) => hay.includes(t))
     })
-  }, [entries, filter, query])
+  }, [entries, mode, query])
 
   const selected = entries.find((e) => e.id === value) ?? null
 
   if (!machineId) return null
 
+  function setPickMode(next: PickMode) {
+    setMode(next)
+    if (next === 'none') {
+      onChange('', null)
+      return
+    }
+    // Auswahl zurücksetzen, wenn Filter wechselt und bisheriger Eintrag nicht passt
+    if (value) {
+      const cur = entries.find((e) => e.id === value)
+      const planned = Boolean(cur?.next_due_date?.trim())
+      if (next === 'planned' && !planned) onChange('', null)
+      if (next === 'repair' && planned) onChange('', null)
+    }
+  }
+
   return (
     <fieldset className="mt-4" disabled={disabled}>
-      <legend className="text-kwd-muted text-sm font-medium">
-        Wartung / geplante Reparatur
-      </legend>
+      <legend className="text-kwd-muted text-sm font-medium">Reparatur verknüpfen</legend>
       <p className="text-kwd-muted mt-1 text-xs">
-        Optional verknüpfen – inkl. geplanter Monteur-Termine bei Reparaturen.
+        Optional: bestehende Reparatur oder geplante Reparatur (Monteur-Termin) wählen.
       </p>
 
       <div className="mt-2 grid grid-cols-3 gap-2">
         <button
           type="button"
-          onClick={() => {
-            onChange('', null)
-            setFilter('work')
-          }}
+          onClick={() => setPickMode('none')}
           className={`min-h-[44px] rounded-xl border px-2 text-xs font-semibold sm:text-sm ${
-            !value
+            mode === 'none'
               ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
               : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
           }`}
@@ -127,88 +125,93 @@ export function LifecycleRepairSelect({
         </button>
         <button
           type="button"
-          onClick={() => setFilter('work')}
+          onClick={() => setPickMode('repair')}
           className={`min-h-[44px] rounded-xl border px-2 text-xs font-semibold sm:text-sm ${
-            filter === 'work'
+            mode === 'repair'
               ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
               : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
           }`}
         >
-          Wartung / Reparatur
+          Reparatur
         </button>
         <button
           type="button"
-          onClick={() => setFilter(filter === 'all' ? 'repair' : 'all')}
+          onClick={() => setPickMode('planned')}
           className={`min-h-[44px] rounded-xl border px-2 text-xs font-semibold sm:text-sm ${
-            filter === 'all' || filter === 'repair'
+            mode === 'planned'
               ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
               : 'border-kwd-surface-light bg-kwd-bg text-kwd-muted'
           }`}
         >
-          {filter === 'all' ? 'Alle Einträge' : 'Nur Reparaturen'}
+          Geplante Reparatur
         </button>
       </div>
 
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Eintrag suchen…"
-        className="bg-kwd-bg border-kwd-surface-light mt-2 min-h-[44px] w-full rounded-xl border px-4 text-sm"
-      />
+      {mode !== 'none' && (
+        <>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              mode === 'planned' ? 'Geplante Reparatur suchen…' : 'Reparatur suchen…'
+            }
+            className="bg-kwd-bg border-kwd-surface-light mt-2 min-h-[44px] w-full rounded-xl border px-4 text-sm"
+          />
 
-      {selected && (
-        <p className="bg-kwd-primary/10 text-kwd-primary mt-2 rounded-lg px-3 py-2 text-sm">
-          Verknüpft: {TYPE_LABEL[selected.entry_type] ?? selected.entry_type} · {selected.title} ·{' '}
-          {new Date(selected.occurred_at).toLocaleDateString('de-DE')}
-          {selected.next_due_date
-            ? ` · Monteur: ${new Date(selected.next_due_date).toLocaleDateString('de-DE')}`
-            : ''}
-        </p>
+          {selected && (
+            <p className="bg-kwd-primary/10 text-kwd-primary mt-2 rounded-lg px-3 py-2 text-sm">
+              Verknüpft:{' '}
+              {selected.next_due_date ? 'Geplante Reparatur' : 'Reparatur'} · {selected.title} ·{' '}
+              {new Date(selected.occurred_at).toLocaleDateString('de-DE')}
+              {selected.next_due_date
+                ? ` · Monteur: ${new Date(selected.next_due_date).toLocaleDateString('de-DE')}`
+                : ''}
+            </p>
+          )}
+
+          <ul className="border-kwd-border mt-2 max-h-48 overflow-y-auto rounded-xl border">
+            {isLoading && (
+              <li className="text-kwd-muted px-3 py-3 text-sm">Lade Reparaturen…</li>
+            )}
+            {!isLoading && filtered.length === 0 && (
+              <li className="text-kwd-muted px-3 py-3 text-sm">
+                {mode === 'planned'
+                  ? 'Keine geplanten Reparaturen (mit Monteur-Termin) für diese Maschine.'
+                  : 'Keine Reparaturen ohne Termin für diese Maschine.'}
+              </li>
+            )}
+            {filtered.map((e) => {
+              const active = e.id === value
+              return (
+                <li key={e.id} className="border-kwd-border border-b last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => onChange(active ? '' : e.id, active ? null : e)}
+                    className={`w-full px-3 py-2.5 text-left ${
+                      active ? 'bg-kwd-primary/15' : 'hover:bg-kwd-surface-light'
+                    }`}
+                  >
+                    <span className="text-kwd-muted block text-xs font-semibold">
+                      {e.next_due_date ? 'Geplante Reparatur' : 'Reparatur'} ·{' '}
+                      {new Date(e.occurred_at).toLocaleDateString('de-DE')}
+                      {e.next_due_date
+                        ? ` · Monteur ${new Date(e.next_due_date).toLocaleDateString('de-DE')}`
+                        : ''}
+                    </span>
+                    <span className="block text-sm font-semibold">{e.title}</span>
+                    {e.description && (
+                      <span className="text-kwd-muted mt-0.5 line-clamp-2 block text-xs">
+                        {e.description}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
       )}
-
-      <ul className="border-kwd-border mt-2 max-h-48 overflow-y-auto rounded-xl border">
-        {isLoading && (
-          <li className="text-kwd-muted px-3 py-3 text-sm">Lade Lebenszyklus…</li>
-        )}
-        {!isLoading && filtered.length === 0 && (
-          <li className="text-kwd-muted px-3 py-3 text-sm">
-            {filter === 'work'
-              ? 'Keine Wartungen oder Reparaturen – ggf. „Alle Einträge“ wählen.'
-              : filter === 'repair'
-                ? 'Keine Reparaturen für diese Maschine.'
-                : 'Keine Einträge gefunden.'}
-          </li>
-        )}
-        {filtered.map((e) => {
-          const active = e.id === value
-          return (
-            <li key={e.id} className="border-kwd-border border-b last:border-b-0">
-              <button
-                type="button"
-                onClick={() => onChange(active ? '' : e.id, active ? null : e)}
-                className={`w-full px-3 py-2.5 text-left ${
-                  active ? 'bg-kwd-primary/15' : 'hover:bg-kwd-surface-light'
-                }`}
-              >
-                <span className="text-kwd-muted block text-xs font-semibold">
-                  {TYPE_LABEL[e.entry_type] ?? e.entry_type} ·{' '}
-                  {new Date(e.occurred_at).toLocaleDateString('de-DE')}
-                  {e.next_due_date
-                    ? ` · Monteur ${new Date(e.next_due_date).toLocaleDateString('de-DE')}`
-                    : ''}
-                </span>
-                <span className="block text-sm font-semibold">{e.title}</span>
-                {e.description && (
-                  <span className="text-kwd-muted mt-0.5 line-clamp-2 block text-xs">
-                    {e.description}
-                  </span>
-                )}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
     </fieldset>
   )
 }
