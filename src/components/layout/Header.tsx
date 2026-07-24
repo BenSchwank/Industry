@@ -45,7 +45,7 @@ export function Header() {
 
         {topNav && (
           <nav
-            className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto lg:flex"
+            className="hidden min-w-0 flex-1 flex-wrap items-center gap-0.5 lg:flex"
             aria-label="Hauptmenü"
           >
             {navItems.map(({ view, label }) => {
@@ -57,7 +57,7 @@ export function Header() {
                   key={view}
                   type="button"
                   onClick={() => setActiveView(view)}
-                  className={`kwd-nav-item w-auto shrink-0 px-2.5 py-1.5 text-sm ${
+                  className={`kwd-nav-item w-auto shrink-0 px-2 py-1.5 text-sm ${
                     isActive ? 'kwd-nav-item-active' : ''
                   }`}
                 >

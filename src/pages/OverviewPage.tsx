@@ -7,8 +7,8 @@ import { NavCount } from '../components/ui/NavCount'
 const QUICK_LINKS: { view: AppView; label: string; desc: string }[] = [
   { view: 'scanner', label: 'Scanner', desc: 'Code erfassen' },
   { view: 'machines', label: 'Maschinen', desc: 'Liste & Akte' },
-  { view: 'messages', label: 'Nachrichten', desc: 'Wartung & Docs' },
   { view: 'chat', label: 'Chat', desc: 'Team schreiben' },
+  { view: 'messages', label: 'Nachrichten', desc: 'Wartung & Docs' },
   { view: 'tickets', label: 'Störungen', desc: 'Meldungen' },
   { view: 'maintenance', label: 'Reparaturen', desc: 'HU & Termine' },
 ]
