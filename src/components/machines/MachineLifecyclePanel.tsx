@@ -351,9 +351,9 @@ export function MachineLifecyclePanel({
         </div>
 
         <Tip>
-          <p className="text-kwd-muted border-kwd-border border-b px-3 py-2 text-xs">
-            Hauptuntersuchung: Dauer → nächste Fälligkeit. Reparatur: optional Monteur-Termin – erscheint
-            unter Reparaturen und bei Störungen (Wartung / geplante Reparatur).
+          <p className="text-kwd-muted mt-1 text-xs">
+            Hauptuntersuchung: Dauer → nächste Fälligkeit. Reparatur: nur geplantes Datum
+            (optional) – erscheint unter Reparaturen.
           </p>
         </Tip>
 
@@ -424,7 +424,7 @@ export function MachineLifecyclePanel({
               )}
               {entryType === 'repair' && (
                 <label className="block">
-                  <span className="kwd-kpi-label">Geplanter Monteur-Termin (optional)</span>
+                  <span className="kwd-kpi-label">Geplantes Datum (optional)</span>
                   <input
                     type="date"
                     value={repairDueAt}

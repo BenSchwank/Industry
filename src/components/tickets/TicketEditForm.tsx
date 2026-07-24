@@ -5,6 +5,12 @@ import {
   useActiveAssignees,
   useUpdateTicket,
 } from '../../hooks/useTicketActions'
+import {
+  isPlannedRepairTicket,
+  stripPlannedRepairMarker,
+  withPlannedRepairMarker,
+} from '../../lib/plannedRepairTicket'
+import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import type { TicketPriority, TicketStatus } from '../../types/database'
 
@@ -17,6 +23,9 @@ export interface TicketEditTarget {
   machine_id?: string | null
   reference_label?: string | null
   machine_label?: string
+  /** Verknüpfte geplante Reparatur – Termin bearbeiten */
+  lifecycle_entry_id?: string | null
+  planned_due_date?: string | null
 }
 
 interface TicketEditFormProps {
@@ -25,18 +34,44 @@ interface TicketEditFormProps {
   onSuccess: (message: string) => void
 }
 
+function parsePlannedDueFromDescription(description: string): string {
+  const m = description.match(/Geplanter Termin:\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/)
+  if (!m) return ''
+  const [, d, mo, y] = m
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
+function stripPlannedDueLine(description: string): string {
+  return description
+    .split('\n')
+    .filter((line) => !/^\s*Geplanter Termin:/i.test(line.trim()))
+    .join('\n')
+    .trim()
+}
+
 export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormProps) {
   const updateTicket = useUpdateTicket()
   const userId = useAuthStore((s) => s.user?.id)
   const { data: assignees = [], isLoading: loadingAssignees } = useActiveAssignees()
-  const [description, setDescription] = useState(ticket.description)
+  const isFreeReference = !ticket.machine_id
+  const isPlanned =
+    isPlannedRepairTicket(ticket.description) || Boolean(ticket.lifecycle_entry_id)
+
+  const initialDesc = isPlanned
+    ? stripPlannedDueLine(stripPlannedRepairMarker(ticket.description))
+    : ticket.description
+
+  const [description, setDescription] = useState(initialDesc)
   const [priority, setPriority] = useState<TicketPriority>(ticket.priority)
   const [status, setStatus] = useState<TicketStatus>(ticket.status)
   const [assignedTo, setAssignedTo] = useState(ticket.assigned_to ?? '')
   const [referenceLabel, setReferenceLabel] = useState(ticket.reference_label ?? '')
+  const [plannedDue, setPlannedDue] = useState(
+    ticket.planned_due_date?.slice(0, 10) ||
+      parsePlannedDueFromDescription(ticket.description) ||
+      '',
+  )
   const [error, setError] = useState<string | null>(null)
-
-  const isFreeReference = !ticket.machine_id
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -63,15 +98,38 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
 
     setError(null)
     try {
+      let nextDescription = description.trim()
+      if (isPlanned) {
+        const due = plannedDue.trim()
+        const parts = [nextDescription]
+        if (due) {
+          parts.push(
+            `Geplanter Termin: ${new Date(`${due}T12:00:00`).toLocaleDateString('de-DE')}`,
+          )
+        }
+        nextDescription = isFreeReference
+          ? withPlannedRepairMarker(parts.join('\n'))
+          : parts.join('\n')
+      }
+
       await updateTicket.mutateAsync({
         id: ticket.id,
-        description: description.trim(),
+        description: nextDescription,
         priority,
         status,
         assigned_to: nextAssigned,
         ...(isFreeReference ? { reference_label: referenceLabel.trim() } : {}),
       })
-      onSuccess('Störung gespeichert.')
+
+      if (ticket.lifecycle_entry_id) {
+        const due = plannedDue.trim() || null
+        await supabase
+          .from('machine_lifecycle_entries')
+          .update({ next_due_date: due })
+          .eq('id', ticket.lifecycle_entry_id)
+      }
+
+      onSuccess(isPlanned ? 'Geplante Reparatur gespeichert.' : 'Störung gespeichert.')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
@@ -84,7 +142,9 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
         onSubmit={handleSubmit}
         className="bg-kwd-surface border-kwd-border text-kwd-text max-h-[90vh] w-full max-w-lg overflow-auto rounded-t-2xl border p-5 shadow-xl sm:rounded-2xl"
       >
-        <h3 className="text-lg font-bold">Störung bearbeiten</h3>
+        <h3 className="text-lg font-bold">
+          {isPlanned ? 'Geplante Reparatur bearbeiten' : 'Störung bearbeiten'}
+        </h3>
         {ticket.machine_label && (
           <p className="text-kwd-muted mt-1 text-sm">{ticket.machine_label}</p>
         )}
@@ -99,6 +159,23 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
               required
               className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
             />
+          </label>
+        )}
+
+        {isPlanned && (
+          <label className="mt-4 block">
+            <span className="text-kwd-muted text-sm font-medium">
+              Geplantes Datum (optional)
+            </span>
+            <input
+              type="date"
+              value={plannedDue}
+              onChange={(e) => setPlannedDue(e.target.value)}
+              className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
+            />
+            <p className="text-kwd-muted mt-1 text-xs">
+              Leer = keine Anlauffrist, nur das Datum der geplanten Reparatur.
+            </p>
           </label>
         )}
 
@@ -161,9 +238,6 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
               </option>
             ))}
           </select>
-          <p className="text-kwd-muted mt-1 text-xs">
-            Zeigt in der Liste, wer an der Störung arbeitet.
-          </p>
         </label>
 
         <label className="mt-4 block">

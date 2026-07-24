@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
 import { PlannedRepairForm } from '../components/maintenance/PlannedRepairForm'
+import {
+  RepairTaskEditForm,
+  type RepairTaskEditTarget,
+} from '../components/maintenance/RepairTaskEditForm'
 import { TicketEditForm } from '../components/tickets/TicketEditForm'
 import { TICKET_STATUS_LABEL, useResolveTicket } from '../hooks/useTicketActions'
 import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
@@ -10,6 +14,10 @@ import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
 import { isPlannedRepairTicket, stripPlannedRepairMarker } from '../lib/plannedRepairTicket'
 import { supabase } from '../lib/supabase'
 import { useAppStore } from '../stores/appStore'
+
+function isHuTaskTitle(title: string | null | undefined) {
+  return /hauptuntersuchung|^hu\b/i.test(title ?? '')
+}
 
 interface ActiveTask {
   id: string
@@ -66,6 +74,7 @@ export default function MaintenancePage() {
   const [toast, setToast] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showPlannedRepair, setShowPlannedRepair] = useState(false)
+  const [editTask, setEditTask] = useState<RepairTaskEditTarget | null>(null)
   const [editTicket, setEditTicket] = useState<import('../components/tickets/TicketEditForm').TicketEditTarget | null>(
     null,
   )
@@ -344,6 +353,7 @@ export default function MaintenancePage() {
           const tone = maintenanceDueTone(task.next_due_date)
           const dueDate = new Date(task.next_due_date)
           const busy = busyId === task.id
+          const isHu = isHuTaskTitle(task.title)
 
           return (
             <article
@@ -358,7 +368,11 @@ export default function MaintenancePage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-kwd-primary text-xs font-bold">{machine?.barcode}</p>
+                  <p className="text-kwd-primary text-xs font-bold">
+                    {machine?.barcode}
+                    {!isHu && ' · Geplante Reparatur'}
+                    {isHu && ' · Wartung'}
+                  </p>
                   <h3 className="font-bold">{task.title}</h3>
                   <p className="text-kwd-muted text-sm">{machine?.name}</p>
                 </div>
@@ -388,11 +402,16 @@ export default function MaintenancePage() {
                         : ''
                   }
                 >
-                  Nächste: {dueDate.toLocaleDateString('de-DE')}
+                  {isHu ? 'Nächste HU: ' : 'Geplant: '}
+                  {dueDate.toLocaleDateString('de-DE')}
                   {tone === 'overdue' && ' · überfällig'}
                   {tone === 'soon' && ' · bald'}
                 </span>
-                <span className="text-kwd-muted">Dauer: {formatDurationDays(task.frequency_days)}</span>
+                {isHu && (
+                  <span className="text-kwd-muted">
+                    Dauer: {formatDurationDays(task.frequency_days)}
+                  </span>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -410,6 +429,25 @@ export default function MaintenancePage() {
                   className="kwd-btn kwd-btn-primary min-h-[44px] flex-1"
                 >
                   {busy ? 'Speichern…' : 'Erledigt'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    setEditTask({
+                      id: task.id,
+                      machineId: task.machine_id,
+                      title: task.title,
+                      next_due_date: task.next_due_date,
+                      isHu,
+                      machineLabel: machine
+                        ? `${machine.barcode} – ${machine.name}`
+                        : undefined,
+                    })
+                  }
+                  className="kwd-btn min-h-[44px] flex-1"
+                >
+                  Bearbeiten
                 </button>
                 <button
                   type="button"
@@ -585,6 +623,8 @@ export default function MaintenancePage() {
                         machine_label: machine
                           ? `${machine.barcode} – ${machine.name}`
                           : undefined,
+                        lifecycle_entry_id: t.lifecycle_entry_id,
+                        planned_due_date: entry?.next_due_date ?? null,
                       })
                     }
                   >
@@ -633,6 +673,14 @@ export default function MaintenancePage() {
         <TicketEditForm
           ticket={editTicket}
           onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => flash(msg)}
+        />
+      )}
+
+      {editTask && (
+        <RepairTaskEditForm
+          task={editTask}
+          onClose={() => setEditTask(null)}
           onSuccess={(msg) => flash(msg)}
         />
       )}
