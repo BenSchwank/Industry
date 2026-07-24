@@ -171,17 +171,21 @@ export function TicketForm({
           }
 
           const photoErr = await uploadIfNeeded(result.ticketId)
-          await resolvePlannedMachineTicket(result.ticketId)
+          // Nur mit Termin aus Störungen nehmen; ohne Termin bleibt verknüpft offen unter Reparaturen
+          if (due) {
+            await resolvePlannedMachineTicket(result.ticketId)
+          }
           void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
           void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
           void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+          void queryClient.invalidateQueries({ queryKey: ['tickets'] })
           setSubmitting(false)
           onSuccess(
             photoErr
               ? `Geplante Reparatur angelegt, Fotos fehlgeschlagen: ${photoErr}`
               : due
                 ? 'Geplante Reparatur angelegt – Termin in Maschinenliste und unter Reparaturen.'
-                : 'Geplante Reparatur angelegt – erscheint unter Reparaturen.',
+                : 'Geplante Reparatur angelegt – unter Reparaturen ohne festen Termin.',
           )
           onClose()
           return
@@ -344,7 +348,7 @@ export function TicketForm({
               className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[52px] w-full rounded-xl border px-4 text-base"
             />
             <p className="text-kwd-muted mt-1 text-xs">
-              Mit Datum erscheint der Termin in der Maschinenliste und unter Reparaturen.
+              Mit Datum: Termin in der Maschinenliste. Ohne Datum: keine Anlauffrist, Reparatur bleibt offen.
             </p>
           </label>
         )}

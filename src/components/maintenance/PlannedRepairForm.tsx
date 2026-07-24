@@ -47,7 +47,7 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
 
     try {
       if (refMode === 'machine') {
-        await addEntry.mutateAsync({
+        const entry = await addEntry.mutateAsync({
           machine_id: machineId,
           entry_type: 'repair',
           title: cleanTitle,
@@ -55,9 +55,36 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
           next_due_date: due,
           planned_repair: true,
         })
+        const entryId =
+          entry && typeof entry === 'object' && 'id' in entry
+            ? String((entry as { id: string }).id)
+            : null
+
+        // Ohne Termin: offenes Ticket verknüpfen (sichtbar unter Reparaturen, kein Fälligkeitsdatum)
+        if (!due && entryId) {
+          const body = cleanDesc ? `${cleanTitle}\n${cleanDesc}` : cleanTitle
+          const result = await createTicket(
+            {
+              machine_id: machineId,
+              machine_name: machineName || 'Unbekannt',
+              reference_label: null,
+              description: body,
+              priority: 'medium',
+              lifecycle_entry_id: entryId,
+            },
+            isOnline,
+          )
+          if (result.mode === 'error') {
+            setError(result.message ?? 'Reparatur angelegt, Ticket fehlgeschlagen')
+            setSubmitting(false)
+            return
+          }
+        }
+
         void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
         void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
         void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+        void queryClient.invalidateQueries({ queryKey: ['tickets'] })
         onSuccess(
           due
             ? 'Geplante Reparatur mit Termin angelegt.'
@@ -202,6 +229,9 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
             onChange={(e) => setDueDate(e.target.value)}
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
           />
+          <p className="text-kwd-muted mt-1 text-xs">
+            Leer lassen = keine Anlauffrist / kein nächster Termin.
+          </p>
         </label>
 
         <label className="mt-4 block">

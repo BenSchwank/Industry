@@ -206,42 +206,49 @@ export function usePromoteTicketToRepair() {
       if (lifeErr) throw lifeErr
       if (!entry?.id) throw new Error('Reparatur-Eintrag konnte nicht angelegt werden')
 
-      // Mit oder ohne Datum: Termin-Aufgabe anlegen, damit sie oben unter Reparaturen steht
-      const taskDue = nextDue ?? occurred.slice(0, 10)
-      const taskDays = durationDays ?? 30
-      const taskTitle = title
-      const { data: existing } = await supabase
-        .from('maintenance_tasks')
-        .select('id')
-        .eq('machine_id', machineId)
-        .eq('title', taskTitle)
-        .limit(1)
-
-      if (existing?.[0]?.id) {
-        const { error } = await supabase
+      // Nur mit Monteur-Termin eine Fälligkeits-Aufgabe anlegen (kein künstliches Datum)
+      if (nextDue) {
+        const taskDays = durationDays ?? 30
+        const taskTitle = title
+        const { data: existing } = await supabase
           .from('maintenance_tasks')
-          .update({
-            frequency_days: taskDays,
-            next_due_date: taskDue,
-            title: taskTitle,
-          })
-          .eq('id', existing[0].id)
-        if (error) throw error
-      } else {
-        const { error } = await supabase.from('maintenance_tasks').insert({
-          machine_id: machineId,
-          title: taskTitle,
-          frequency_days: taskDays,
-          next_due_date: taskDue,
-        })
-        if (error) throw error
-      }
+          .select('id')
+          .eq('machine_id', machineId)
+          .eq('title', taskTitle)
+          .limit(1)
 
-      await updateTicketRow(input.ticketId, {
-        lifecycle_entry_id: entry.id,
-        status: 'resolved',
-        resolved_at: new Date().toISOString(),
-      })
+        if (existing?.[0]?.id) {
+          const { error } = await supabase
+            .from('maintenance_tasks')
+            .update({
+              frequency_days: taskDays,
+              next_due_date: nextDue,
+              title: taskTitle,
+            })
+            .eq('id', existing[0].id)
+          if (error) throw error
+        } else {
+          const { error } = await supabase.from('maintenance_tasks').insert({
+            machine_id: machineId,
+            title: taskTitle,
+            frequency_days: taskDays,
+            next_due_date: nextDue,
+          })
+          if (error) throw error
+        }
+
+        // Mit Termin: aus offenen Störungen entfernen (Aufgabe steht unter Reparaturen)
+        await updateTicketRow(input.ticketId, {
+          lifecycle_entry_id: entry.id,
+          status: 'resolved',
+          resolved_at: new Date().toISOString(),
+        })
+      } else {
+        // Ohne Termin: offen lassen, unter Reparaturen bei „ohne festen Termin“ – nicht unter Störungen
+        await updateTicketRow(input.ticketId, {
+          lifecycle_entry_id: entry.id,
+        })
+      }
       return entry.id as string
     },
     onSuccess: (_id, vars) => {

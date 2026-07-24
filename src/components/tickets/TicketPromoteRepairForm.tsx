@@ -69,7 +69,7 @@ export function TicketPromoteRepairForm({
         onSuccess(
           dueDate.trim()
             ? 'Als geplante Reparatur übernommen – unter Reparaturen (mit Termin), nicht mehr unter Störungen.'
-            : 'Als geplante Reparatur übernommen – unter Reparaturen, nicht mehr unter Störungen.',
+            : 'Als geplante Reparatur übernommen – unter Reparaturen ohne Termin, nicht mehr unter Störungen.',
         )
       }
       onClose()
@@ -115,6 +115,9 @@ export function TicketPromoteRepairForm({
             onChange={(e) => setDueDate(e.target.value)}
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
           />
+          <p className="text-kwd-muted mt-1 text-xs">
+            Leer lassen = keine Anlauffrist / kein nächster Termin (geplante Reparatur bleibt offen).
+          </p>
         </label>
 
         {error && <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>}

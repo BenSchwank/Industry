@@ -92,13 +92,17 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
     queryFn: async () => {
       const full = await supabase
         .from('tickets')
-        .select('id, description, status, priority, created_at, assigned_to')
+        .select('id, description, status, priority, created_at, assigned_to, lifecycle_entry_id')
         .eq('machine_id', machineId)
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
-      if (!full.error) return (full.data ?? []) as MachineOpenTicket[]
+      if (!full.error) {
+        return ((full.data ?? []) as (MachineOpenTicket & { lifecycle_entry_id?: string | null })[])
+          .filter((t) => !t.lifecycle_entry_id)
+          .map(({ lifecycle_entry_id: _l, ...t }) => t)
+      }
 
-      if (/assigned_to|schema cache/i.test(full.error.message)) {
+      if (/assigned_to|lifecycle_entry_id|schema cache/i.test(full.error.message)) {
         const fb = await supabase
           .from('tickets')
           .select('id, description, status, priority, created_at')
@@ -194,13 +198,15 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
               files: pendingPhotos,
             })
           } catch (photoErr) {
-            await supabase
-              .from('tickets')
-              .update({
-                status: 'resolved',
-                resolved_at: new Date().toISOString(),
-              })
-              .eq('id', result.ticketId)
+            if (due) {
+              await supabase
+                .from('tickets')
+                .update({
+                  status: 'resolved',
+                  resolved_at: new Date().toISOString(),
+                })
+                .eq('id', result.ticketId)
+            }
             setSubmitting(false)
             setDescription('')
             setPlannedDate('')
@@ -212,18 +218,22 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
             )
             void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
             void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+            void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
             void queryClient.invalidateQueries({ queryKey: ['tickets'] })
             onLogged?.()
             return
           }
         }
-        await supabase
-          .from('tickets')
-          .update({
-            status: 'resolved',
-            resolved_at: new Date().toISOString(),
-          })
-          .eq('id', result.ticketId)
+        // Mit Termin: aus offenen Störungen; ohne Termin offen unter Reparaturen (kein Fälligkeitsdatum)
+        if (due) {
+          await supabase
+            .from('tickets')
+            .update({
+              status: 'resolved',
+              resolved_at: new Date().toISOString(),
+            })
+            .eq('id', result.ticketId)
+        }
         setSubmitting(false)
         setDescription('')
         setPlannedDate('')
@@ -231,7 +241,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         setMessage(
           due
             ? 'Geplante Reparatur angelegt – Termin in Liste und unter Reparaturen (nicht unter Störungen).'
-            : 'Geplante Reparatur angelegt – erscheint unter Reparaturen (nicht unter Störungen).',
+            : 'Geplante Reparatur angelegt – unter Reparaturen ohne festen Termin (nicht unter Störungen).',
         )
         void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
         void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })

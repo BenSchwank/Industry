@@ -327,14 +327,13 @@ export function useAddLifecycleEntry() {
 
       if (input.entry_type === 'maintenance' && nextDue && duration != null) {
         await syncHuTask(input.machine_id, duration, nextDue)
-      } else if (input.entry_type === 'repair') {
-        const shouldSyncTask =
-          Boolean(input.planned_repair) || (nextDue != null && duration != null)
-        if (shouldSyncTask) {
-          const taskDue = nextDue ?? toDateOnly(occurred)
-          const taskDays = duration ?? 30
-          await syncRepairTask(input.machine_id, title, taskDue, taskDays)
-        }
+      } else if (
+        input.entry_type === 'repair' &&
+        nextDue != null &&
+        duration != null
+      ) {
+        // Nur mit gesetztem Termin – kein künstliches Fälligkeitsdatum
+        await syncRepairTask(input.machine_id, title, nextDue, duration)
       }
 
       return data
