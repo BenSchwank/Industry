@@ -22,7 +22,7 @@ export function BottomNav() {
           const isActive =
             activeView === view ||
             (view === 'more' &&
-              ['machines', 'inventory', 'import', 'settings', 'messages', 'chat', 'users'].includes(
+              ['machines', 'inventory', 'import', 'settings', 'messages', 'chat', 'notes', 'users'].includes(
                 activeView,
               ))
           return (

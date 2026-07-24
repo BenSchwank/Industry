@@ -18,6 +18,7 @@ const ImportPage = lazy(() => import('./pages/ImportPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const MessagesPage = lazy(() => import('./pages/MessagesPage'))
 const ChatPage = lazy(() => import('./pages/ChatPage'))
+const NotesPage = lazy(() => import('./pages/NotesPage'))
 const UsersAdminPage = lazy(() => import('./pages/UsersAdminPage'))
 const MobileMorePage = lazy(() => import('./pages/MobileMorePage'))
 
@@ -46,6 +47,8 @@ function ActivePage() {
       return <MessagesPage />
     case 'chat':
       return <ChatPage />
+    case 'notes':
+      return <NotesPage />
     case 'import':
       return <ImportPage />
     case 'users':

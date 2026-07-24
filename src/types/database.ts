@@ -742,6 +742,44 @@ export interface Database {
           },
         ]
       }
+      user_notes: {
+        Row: {
+          id: string
+          owner_id: string
+          title: string
+          body: string
+          is_public: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          title?: string
+          body?: string
+          is_public?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          title?: string
+          body?: string
+          is_public?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'user_notes_owner_id_fkey'
+            columns: ['owner_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: {
