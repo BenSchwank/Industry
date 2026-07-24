@@ -321,6 +321,12 @@ export function useMachinesWithStats() {
           .filter((e) => e.machine_id === m.id && e.entry_type === 'repair')
           .map((e) => e.occurred_at)
 
+        const lifecyclePlanned = lifecycleRows.filter(
+          (e) =>
+            e.machine_id === m.id &&
+            (e.entry_type === 'maintenance' || e.entry_type === 'repair'),
+        )
+
         const completionDates = completions
           .filter((c) => taskToMachine.get(c.task_id) === m.id)
           .map((c) => c.completed_at)
@@ -338,25 +344,36 @@ export function useMachinesWithStats() {
 
         const last_maintenance_at = maxDate(allMaint)
 
-        // Nächste Wartung: zuerst vom letzten Lebenszyklus-Eintrag (Dauer),
-        // sonst frühester Wartungsaufgaben-Termin
-        let next_maintenance_at: string | null = null
-        if (latestLifecycleMaint) {
+        // Nächste Wartung / geplante Reparatur: frühester Termin aus Lebenszyklus + Aufgaben
+        const dueCandidates: string[] = []
+        for (const e of lifecyclePlanned) {
+          if (e.next_due_date) {
+            dueCandidates.push(e.next_due_date)
+          } else if (e.duration_days && e.duration_days > 0) {
+            dueCandidates.push(addDaysIso(e.occurred_at, e.duration_days))
+          }
+        }
+        dueCandidates.push(...taskNextDates)
+
+        // Fallback: nur neuester HU-Eintrag (ältere Logik), falls keine Kandidaten
+        if (dueCandidates.length === 0 && latestLifecycleMaint) {
           if (latestLifecycleMaint.next_due_date) {
-            next_maintenance_at = latestLifecycleMaint.next_due_date
+            dueCandidates.push(latestLifecycleMaint.next_due_date)
           } else if (
             latestLifecycleMaint.duration_days &&
             latestLifecycleMaint.duration_days > 0
           ) {
-            next_maintenance_at = addDaysIso(
-              latestLifecycleMaint.occurred_at,
-              latestLifecycleMaint.duration_days,
+            dueCandidates.push(
+              addDaysIso(
+                latestLifecycleMaint.occurred_at,
+                latestLifecycleMaint.duration_days,
+              ),
             )
           }
         }
-        if (!next_maintenance_at && taskNextDates.length > 0) {
-          next_maintenance_at = taskNextDates.slice().sort()[0] ?? null
-        }
+
+        const next_maintenance_at =
+          dueCandidates.length > 0 ? dueCandidates.slice().sort()[0] ?? null : null
 
         const machineAttachments = attachments.filter((a) => a.machine_id === m.id)
         const machineDrafts = drafts.filter((d) => d.machine_id === m.id)

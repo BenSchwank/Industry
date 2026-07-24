@@ -1600,7 +1600,7 @@ export function MachineTable({
               <th className="min-w-[100px]">Docs / Plan</th>
               <th>letzte Wartung</th>
               <SortableTh
-                label="nächste geplante Wartung"
+                label="nächste geplante Wartung / Reparatur"
                 column="next_maintenance"
                 sortBy={sortBy}
                 sortDescending={sortDescending}

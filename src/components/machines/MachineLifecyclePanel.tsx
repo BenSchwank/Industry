@@ -80,6 +80,7 @@ export function MachineLifecyclePanel({
   const [occurredAt, setOccurredAt] = useState(new Date().toISOString().slice(0, 10))
   const [durationValue, setDurationValue] = useState('90')
   const [durationUnit, setDurationUnit] = useState<DurationUnit>('days')
+  const [repairDueAt, setRepairDueAt] = useState('')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -140,11 +141,12 @@ export function MachineLifecyclePanel({
 
   function openForm(type: LifecycleEntryType = 'maintenance') {
     setEntryType(type)
-    setTitle(type === 'maintenance' ? 'Hauptuntersuchung' : '')
+    setTitle(type === 'maintenance' ? 'Hauptuntersuchung' : type === 'repair' ? '' : '')
     setDescription('')
     setOccurredAt(new Date().toISOString().slice(0, 10))
     setDurationValue('90')
     setDurationUnit('days')
+    setRepairDueAt('')
     setPendingPhotos([])
     setError(null)
     setShowForm(true)
@@ -154,7 +156,9 @@ export function MachineLifecyclePanel({
   const nextDuePreview =
     entryType === 'maintenance' && parsedDuration.ok
       ? addDaysIso(occurredAt, parsedDuration.days)
-      : null
+      : entryType === 'repair' && repairDueAt
+        ? repairDueAt
+        : null
 
   function addPendingFiles(list: FileList | null) {
     if (!list || list.length === 0) return
@@ -176,6 +180,7 @@ export function MachineLifecyclePanel({
       return
     }
     let days: number | null = null
+    let repairDue: string | null = null
     if (entryType === 'maintenance') {
       const parsed = parseDurationInput(durationValue, durationUnit)
       if (!parsed.ok) {
@@ -183,6 +188,8 @@ export function MachineLifecyclePanel({
         return
       }
       days = parsed.days
+    } else if (entryType === 'repair' && repairDueAt) {
+      repairDue = repairDueAt
     }
     try {
       const entry = await addEntry.mutateAsync({
@@ -192,6 +199,7 @@ export function MachineLifecyclePanel({
         description: description.trim() || null,
         occurred_at: new Date(occurredAt).toISOString(),
         duration_days: days,
+        next_due_date: repairDue,
       })
       if (pendingPhotos.length > 0 && entry?.id) {
         try {
@@ -217,6 +225,7 @@ export function MachineLifecyclePanel({
       setTitle('')
       setDescription('')
       setPendingPhotos([])
+      setRepairDueAt('')
       setShowForm(false)
     } catch (err) {
       setError(err instanceof Error ? formatSupabaseError(err) : 'Speichern fehlgeschlagen')
@@ -342,8 +351,8 @@ export function MachineLifecyclePanel({
 
         <Tip>
           <p className="text-kwd-muted border-kwd-border border-b px-3 py-2 text-xs">
-            Hauptuntersuchung: Dauer in Tagen oder Jahren → nächste Fälligkeit (gelb ≤ 3 Monate, rot
-            überfällig).
+            Hauptuntersuchung: Dauer → nächste Fälligkeit. Reparatur: optional Monteur-Termin – erscheint
+            unter Reparaturen und bei Störungen (Wartung / geplante Reparatur).
           </p>
         </Tip>
 
@@ -412,6 +421,27 @@ export function MachineLifecyclePanel({
                   }
                 />
               )}
+              {entryType === 'repair' && (
+                <label className="block">
+                  <span className="kwd-kpi-label">Geplanter Monteur-Termin (optional)</span>
+                  <input
+                    type="date"
+                    value={repairDueAt}
+                    onChange={(e) => setRepairDueAt(e.target.value)}
+                    className={fieldCls}
+                  />
+                  {repairDueAt && (
+                    <p
+                      className={`mt-1 text-xs ${maintenanceDueClass(repairDueAt) || 'text-kwd-muted'}`}
+                    >
+                      Termin: {new Date(repairDueAt).toLocaleDateString('de-DE')}
+                      {maintenanceDueTone(repairDueAt) === 'soon' && ' · bald'}
+                      {maintenanceDueTone(repairDueAt) === 'overdue' && ' · überfällig'}
+                      {' · sichtbar unter Reparaturen'}
+                    </p>
+                  )}
+                </label>
+              )}
               <label className="block sm:col-span-2">
                 <span className="kwd-kpi-label">Titel *</span>
                 <input
@@ -421,7 +451,9 @@ export function MachineLifecyclePanel({
                   placeholder={
                     entryType === 'maintenance'
                       ? 'z.B. Jahres-HU, TÜV…'
-                      : 'z.B. Lager getauscht…'
+                      : entryType === 'repair'
+                        ? 'z.B. Spindel tauschen, Monteur bestellt…'
+                        : 'z.B. Lager getauscht…'
                   }
                   className={fieldCls}
                 />

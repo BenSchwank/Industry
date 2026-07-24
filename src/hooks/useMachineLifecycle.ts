@@ -12,8 +12,10 @@ export interface LifecycleEntryInput {
   title: string
   description?: string | null
   occurred_at?: string
-  /** Nur Wartung: Intervall in Tagen bis zur nächsten */
+  /** Intervall in Tagen bis zur nächsten Fälligkeit (HU / geplante Reparatur) */
   duration_days?: number | null
+  /** Absolutes Monteur-/Fälligkeitsdatum (v. a. Reparatur) */
+  next_due_date?: string | null
 }
 
 export interface TimelineItem {
@@ -28,16 +30,26 @@ export interface TimelineItem {
   next_due_date: string | null
 }
 
-async function syncMaintenanceTask(
-  machineId: string,
-  frequencyDays: number,
-  nextDueDate: string,
-) {
+const HU_TASK_TITLE = 'Hauptuntersuchung'
+
+function toDateOnly(value: string): string {
+  return value.includes('T') ? value.slice(0, 10) : value.slice(0, 10)
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const a = new Date(toDateOnly(fromIso) + 'T12:00:00')
+  const b = new Date(toDateOnly(toIso) + 'T12:00:00')
+  const diff = Math.round((b.getTime() - a.getTime()) / 86_400_000)
+  return Math.max(1, diff)
+}
+
+/** HU-Aufgabe: eigene Zeile, überschreibt keine Reparatur-Termine. */
+async function syncHuTask(machineId: string, frequencyDays: number, nextDueDate: string) {
   const { data: existing } = await supabase
     .from('maintenance_tasks')
     .select('id')
     .eq('machine_id', machineId)
-    .order('next_due_date', { ascending: true })
+    .eq('title', HU_TASK_TITLE)
     .limit(1)
 
   if (existing?.[0]?.id) {
@@ -46,19 +58,57 @@ async function syncMaintenanceTask(
       .update({
         frequency_days: frequencyDays,
         next_due_date: nextDueDate,
-        title: 'Hauptuntersuchung',
+        title: HU_TASK_TITLE,
       })
       .eq('id', existing[0].id)
     if (error) throw error
-  } else {
-    const { error } = await supabase.from('maintenance_tasks').insert({
-      machine_id: machineId,
-      title: 'Hauptuntersuchung',
-      frequency_days: frequencyDays,
-      next_due_date: nextDueDate,
-    })
-    if (error) throw error
+    return
   }
+
+  const { error } = await supabase.from('maintenance_tasks').insert({
+    machine_id: machineId,
+    title: HU_TASK_TITLE,
+    frequency_days: frequencyDays,
+    next_due_date: nextDueDate,
+  })
+  if (error) throw error
+}
+
+/** Geplante Reparatur / Monteur-Termin als eigene Aufgabe. */
+async function syncRepairTask(
+  machineId: string,
+  title: string,
+  nextDueDate: string,
+  frequencyDays: number,
+) {
+  const taskTitle = title.trim() || 'Geplante Reparatur'
+  const { data: existing } = await supabase
+    .from('maintenance_tasks')
+    .select('id')
+    .eq('machine_id', machineId)
+    .eq('title', taskTitle)
+    .limit(1)
+
+  if (existing?.[0]?.id) {
+    const { error } = await supabase
+      .from('maintenance_tasks')
+      .update({
+        frequency_days: frequencyDays,
+        next_due_date: nextDueDate,
+        title: taskTitle,
+      })
+      .eq('id', existing[0].id)
+    if (error) throw error
+    return
+  }
+
+  const { error } = await supabase.from('maintenance_tasks').insert({
+    machine_id: machineId,
+    title: taskTitle,
+    frequency_days: frequencyDays,
+    next_due_date: nextDueDate,
+  })
+  if (error) throw error
 }
 
 export function useMachineTimeline(machineId: string | null) {
@@ -236,16 +286,31 @@ export function useAddLifecycleEntry() {
     mutationFn: async (input: LifecycleEntryInput) => {
       const userId = useAuthStore.getState().user?.id ?? null
       const occurred = input.occurred_at ?? new Date().toISOString()
-      const duration =
-        input.entry_type === 'maintenance' && input.duration_days && input.duration_days > 0
-          ? Math.round(input.duration_days)
-          : null
-      const nextDue = duration != null ? addDaysIso(occurred, duration) : null
+      const title = input.title.trim()
+
+      let duration: number | null = null
+      let nextDue: string | null = null
+
+      if (input.entry_type === 'maintenance') {
+        duration =
+          input.duration_days && input.duration_days > 0
+            ? Math.round(input.duration_days)
+            : null
+        nextDue = duration != null ? addDaysIso(occurred, duration) : null
+      } else if (input.entry_type === 'repair') {
+        if (input.next_due_date?.trim()) {
+          nextDue = toDateOnly(input.next_due_date.trim())
+          duration = daysBetween(occurred, nextDue)
+        } else if (input.duration_days && input.duration_days > 0) {
+          duration = Math.round(input.duration_days)
+          nextDue = addDaysIso(occurred, duration)
+        }
+      }
 
       const { data, error } = await insertLifecycleEntry({
         machine_id: input.machine_id,
         entry_type: input.entry_type,
-        title: input.title.trim(),
+        title,
         description: input.description?.trim() || null,
         occurred_at: occurred,
         created_by: userId,
@@ -255,8 +320,12 @@ export function useAddLifecycleEntry() {
 
       if (error) throw error
 
-      if (duration != null && nextDue) {
-        await syncMaintenanceTask(input.machine_id, duration, nextDue)
+      if (nextDue && duration != null) {
+        if (input.entry_type === 'maintenance') {
+          await syncHuTask(input.machine_id, duration, nextDue)
+        } else if (input.entry_type === 'repair') {
+          await syncRepairTask(input.machine_id, title, nextDue, duration)
+        }
       }
 
       return data
@@ -265,6 +334,8 @@ export function useAddLifecycleEntry() {
       queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machine_id] })
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
+      queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['lifecycle-pick', vars.machine_id] })
     },
   })
 }

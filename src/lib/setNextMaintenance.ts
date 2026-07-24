@@ -6,9 +6,8 @@ function toDateOnly(value: string): string {
 }
 
 /**
- * Setzt oder entfernt die „nächste geplante Wartung“.
- * Speichert in maintenance_tasks und (falls vorhanden) am neuesten
- * Lebenszyklus-Wartungseintrag – so bleibt die Listenberechnung konsistent.
+ * Setzt oder entfernt die „nächste geplante Wartung / Reparatur“ (HU-Aufgabe).
+ * Reparatur-Monteur-Termine bleiben als eigene Tasks erhalten.
  */
 export async function setMachineNextMaintenance(
   machineId: string,
@@ -21,39 +20,37 @@ export async function setMachineNextMaintenance(
   }
 }
 
+const HU_TASK_TITLE = 'Hauptuntersuchung'
+
 async function setNextDue(machineId: string, nextDueDate: string): Promise<void> {
   const { data: existing, error: findError } = await supabase
     .from('maintenance_tasks')
     .select('id, frequency_days')
     .eq('machine_id', machineId)
-    .order('next_due_date', { ascending: true })
+    .eq('title', HU_TASK_TITLE)
     .limit(1)
 
   if (findError) throw new Error(formatSupabaseError(findError))
 
-  const frequencyDays = existing?.[0]?.frequency_days && existing[0].frequency_days > 0
-    ? existing[0].frequency_days
-    : 90
+  const frequencyDays =
+    existing?.[0]?.frequency_days && existing[0].frequency_days > 0
+      ? existing[0].frequency_days
+      : 90
 
   if (existing?.[0]?.id) {
-    const keepId = existing[0].id
     const { error } = await supabase
       .from('maintenance_tasks')
       .update({
         next_due_date: nextDueDate,
-        title: 'Hauptuntersuchung',
+        title: HU_TASK_TITLE,
         frequency_days: frequencyDays,
       })
-      .eq('id', keepId)
+      .eq('id', existing[0].id)
     if (error) throw new Error(formatSupabaseError(error))
-
-    // Extra Tasks derselben Maschine entfernen, damit nicht eine ältere
-    // Fälligkeit die Listen-Anzeige überschreibt.
-    await supabase.from('maintenance_tasks').delete().eq('machine_id', machineId).neq('id', keepId)
   } else {
     const { error } = await supabase.from('maintenance_tasks').insert({
       machine_id: machineId,
-      title: 'Hauptuntersuchung',
+      title: HU_TASK_TITLE,
       frequency_days: frequencyDays,
       next_due_date: nextDueDate,
     })
@@ -85,10 +82,12 @@ async function setNextDue(machineId: string, nextDueDate: string): Promise<void>
 }
 
 async function clearNextDue(machineId: string): Promise<void> {
+  // Nur HU-Aufgabe entfernen – geplante Reparaturen bleiben
   const { error: taskError } = await supabase
     .from('maintenance_tasks')
     .delete()
     .eq('machine_id', machineId)
+    .eq('title', HU_TASK_TITLE)
   if (taskError) throw new Error(formatSupabaseError(taskError))
 
   const { data: life, error: lifeFindError } = await supabase

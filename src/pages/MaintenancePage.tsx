@@ -100,8 +100,9 @@ export default function MaintenancePage() {
         <header>
           <h2 className="text-xl font-bold">Reparaturen</h2>
           <p className="text-kwd-muted mt-1 text-sm">
-            Größere Arbeiten · <strong>Erledigt</strong> schließt ab · <strong>Entfernen</strong>{' '}
-            löscht die Planung. Hauptuntersuchungen gehören in die Maschinenliste.
+            Monteur-Termine und geplante Arbeiten · <strong>Erledigt</strong> schließt ab ·{' '}
+            <strong>Entfernen</strong> löscht die Planung. Hauptuntersuchungen und geplante
+            Reparaturen aus dem Lebenszyklus erscheinen hier.
           </p>
         </header>
 
@@ -113,10 +114,10 @@ export default function MaintenancePage() {
 
         {tasks?.length === 0 && (
           <div className="bg-kwd-surface rounded-xl p-6 text-center">
-            <p className="text-kwd-muted">Keine Reparatur-Aufgaben geplant.</p>
+            <p className="text-kwd-muted">Keine Reparatur- oder Wartungs-Termine geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
-              In der Maschinenakte unter Lebenszyklus „+ Reparatur“ eintragen. Fällige
-              Hauptuntersuchungen siehst du in der Maschinenliste (Spalte „nächste geplante Wartung“).
+              In der Maschinenakte unter Lebenszyklus „+ Reparatur“ mit Monteur-Termin oder „+
+              Hauptuntersuchung“ eintragen.
             </p>
           </div>
         )}

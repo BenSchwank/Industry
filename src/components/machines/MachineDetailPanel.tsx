@@ -678,7 +678,7 @@ function MachineStammdatenForm({
           compact={compact}
         />
         <StatTile
-          label="nächste geplante Wartung"
+          label="nächste geplante Wartung / Reparatur"
           value={formatDate(machine.next_maintenance_at)}
           hint={
             maintenanceOverdue
@@ -821,7 +821,7 @@ function MachineStammdatenForm({
           </label>
 
           <div className="block min-w-0 sm:col-span-2">
-            <span className="kwd-kpi-label">nächste geplante Wartung</span>
+            <span className="kwd-kpi-label">nächste geplante Wartung / Reparatur</span>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <input
                 type="date"
