@@ -185,6 +185,63 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         return
       }
 
+      if (result.mode === 'synced' && result.ticketId && isPlanned) {
+        if (pendingPhotos.length > 0) {
+          try {
+            await uploadPhotos.mutateAsync({
+              ticketId: result.ticketId,
+              machineId,
+              files: pendingPhotos,
+            })
+          } catch (photoErr) {
+            await supabase
+              .from('tickets')
+              .update({
+                status: 'resolved',
+                resolved_at: new Date().toISOString(),
+              })
+              .eq('id', result.ticketId)
+            setSubmitting(false)
+            setDescription('')
+            setPlannedDate('')
+            setPendingPhotos([])
+            setError(
+              photoErr instanceof Error
+                ? `Reparatur angelegt, Fotos fehlgeschlagen: ${photoErr.message}`
+                : `Reparatur angelegt, Fotos fehlgeschlagen. ${TICKET_PHOTOS_SQL_HINT}`,
+            )
+            void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+            void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+            void queryClient.invalidateQueries({ queryKey: ['tickets'] })
+            onLogged?.()
+            return
+          }
+        }
+        await supabase
+          .from('tickets')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', result.ticketId)
+        setSubmitting(false)
+        setDescription('')
+        setPlannedDate('')
+        setPendingPhotos([])
+        setMessage(
+          due
+            ? 'Geplante Reparatur angelegt – Termin in Liste und unter Reparaturen (nicht unter Störungen).'
+            : 'Geplante Reparatur angelegt – erscheint unter Reparaturen (nicht unter Störungen).',
+        )
+        void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+        void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+        void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+        void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+        void queryClient.invalidateQueries({ queryKey: ['tickets'] })
+        onLogged?.()
+        return
+      }
+
       if (result.mode === 'synced' && result.ticketId && pendingPhotos.length > 0) {
         const photosToUpload = pendingPhotos
         try {
@@ -212,13 +269,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
         setDescription('')
         setPlannedDate('')
         setPendingPhotos([])
-        setMessage(
-          isPlanned
-            ? due
-              ? 'Geplante Reparatur mit Fotos angelegt – Termin in Liste und unter Reparaturen.'
-              : 'Geplante Reparatur mit Fotos angelegt – erscheint unter Reparaturen.'
-            : 'Problem mit Fotos erfasst.',
-        )
+        setMessage('Problem mit Fotos erfasst.')
         void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
         void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
         void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })

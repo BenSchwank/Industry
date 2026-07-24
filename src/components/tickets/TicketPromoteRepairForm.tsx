@@ -1,11 +1,15 @@
 import { useState, type FormEvent } from 'react'
-import { usePromoteTicketToRepair } from '../../hooks/useTicketActions'
+import {
+  usePromoteFreeTicketToRepair,
+  usePromoteTicketToRepair,
+} from '../../hooks/useTicketActions'
 
 export interface TicketPromoteTarget {
   id: string
   description: string
-  machine_id: string
+  machine_id: string | null
   machine_label?: string
+  reference_label?: string | null
 }
 
 interface TicketPromoteRepairFormProps {
@@ -15,19 +19,23 @@ interface TicketPromoteRepairFormProps {
 }
 
 /**
- * Störung → geplante Reparatur auf dem Reparaturen-Tab (optional mit Monteur-Termin).
+ * Störung → geplante Reparatur (Maschine oder eigener Bezugspunkt).
+ * Danach verschwindet sie unter offenen Störungen.
  */
 export function TicketPromoteRepairForm({
   ticket,
   onClose,
   onSuccess,
 }: TicketPromoteRepairFormProps) {
-  const promote = usePromoteTicketToRepair()
+  const promoteMachine = usePromoteTicketToRepair()
+  const promoteFree = usePromoteFreeTicketToRepair()
+  const isFree = !ticket.machine_id
   const defaultTitle =
     ticket.description.trim().slice(0, 80) || 'Geplante Reparatur'
   const [title, setTitle] = useState(defaultTitle)
   const [dueDate, setDueDate] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const pending = promoteMachine.isPending || promoteFree.isPending
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -37,18 +45,33 @@ export function TicketPromoteRepairForm({
     }
     setError(null)
     try {
-      await promote.mutateAsync({
-        ticketId: ticket.id,
-        machineId: ticket.machine_id,
-        title: title.trim(),
-        description: ticket.description,
-        next_due_date: dueDate.trim() || null,
-      })
-      onSuccess(
-        dueDate.trim()
-          ? 'Als geplante Reparatur übernommen – erscheint unter Reparaturen (mit Termin).'
-          : 'Als geplante Reparatur übernommen – erscheint unter Reparaturen.',
-      )
+      if (isFree) {
+        const due = dueDate.trim()
+        const descParts = [title.trim()]
+        const rest = ticket.description.trim()
+        if (rest && rest !== title.trim()) descParts.push(rest)
+        await promoteFree.mutateAsync({
+          ticketId: ticket.id,
+          description: descParts.join('\n'),
+          next_due_date: due || null,
+        })
+        onSuccess(
+          'Als geplante Reparatur übernommen – erscheint unter Reparaturen, nicht mehr unter Störungen.',
+        )
+      } else {
+        await promoteMachine.mutateAsync({
+          ticketId: ticket.id,
+          machineId: ticket.machine_id!,
+          title: title.trim(),
+          description: ticket.description,
+          next_due_date: dueDate.trim() || null,
+        })
+        onSuccess(
+          dueDate.trim()
+            ? 'Als geplante Reparatur übernommen – unter Reparaturen (mit Termin), nicht mehr unter Störungen.'
+            : 'Als geplante Reparatur übernommen – unter Reparaturen, nicht mehr unter Störungen.',
+        )
+      }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verschieben fehlgeschlagen')
@@ -63,11 +86,12 @@ export function TicketPromoteRepairForm({
       >
         <h3 className="text-lg font-bold">Nach Reparaturen verschieben</h3>
         <p className="text-kwd-muted mt-1 text-sm">
-          Legt eine geplante Reparatur an und verknüpft die Störung. Mit Datum erscheint sie als
-          Monteur-Termin; ohne Datum unter „Störungen zu Wartung / Reparatur“.
+          Wird unter Reparaturen geführt und verschwindet aus den offenen Störungen.
         </p>
-        {ticket.machine_label && (
-          <p className="text-kwd-primary mt-2 text-sm font-semibold">{ticket.machine_label}</p>
+        {(ticket.machine_label || ticket.reference_label) && (
+          <p className="text-kwd-primary mt-2 text-sm font-semibold">
+            {ticket.machine_label ?? ticket.reference_label}
+          </p>
         )}
 
         <label className="mt-4 block">
@@ -91,9 +115,6 @@ export function TicketPromoteRepairForm({
             onChange={(e) => setDueDate(e.target.value)}
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4 text-base"
           />
-          <p className="text-kwd-muted mt-1 text-xs">
-            Leer lassen = längere Reparatur ohne festen Termin, trotzdem im Reparaturen-Tab.
-          </p>
         </label>
 
         {error && <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>}
@@ -108,10 +129,10 @@ export function TicketPromoteRepairForm({
           </button>
           <button
             type="submit"
-            disabled={promote.isPending}
+            disabled={pending}
             className="bg-kwd-primary text-kwd-bg min-h-[48px] flex-1 rounded-xl font-bold disabled:opacity-50"
           >
-            {promote.isPending ? 'Speichern…' : 'Verschieben'}
+            {pending ? 'Speichern…' : 'Verschieben'}
           </button>
         </div>
       </form>

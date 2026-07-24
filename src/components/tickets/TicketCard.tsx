@@ -47,7 +47,7 @@ export function TicketCard({
   const isFreeReference = !machine && Boolean(referenceLabel?.trim())
   const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
   const inProgress = ticket.status === 'in_progress'
-  const canPromote = Boolean(onPromoteToRepair && ticket.machine_id && isOpen)
+  const canPromote = Boolean(onPromoteToRepair && isOpen)
 
   return (
     <article className="bg-kwd-surface border-kwd-border rounded-xl border p-4">

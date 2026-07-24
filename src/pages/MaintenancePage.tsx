@@ -7,6 +7,7 @@ import { TICKET_STATUS_LABEL, useResolveTicket } from '../hooks/useTicketActions
 import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
 import { useQuickCompleteMaintenance } from '../hooks/useQuickCompleteMaintenance'
 import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
+import { isPlannedRepairTicket, stripPlannedRepairMarker } from '../lib/plannedRepairTicket'
 import { supabase } from '../lib/supabase'
 import { useAppStore } from '../stores/appStore'
 
@@ -205,7 +206,7 @@ export default function MaintenancePage() {
   const linkedTickets = linkedData?.tickets ?? []
   const linkHint = linkedData?.hint ?? null
 
-  /** Offene Meldungen ohne Maschine (eigener Bezugspunkt) */
+  /** Nur geplante Reparaturen ohne Maschine (eigener Bezugspunkt) */
   const { data: freeRepairs = [] } = useQuery({
     queryKey: ['maintenance-free-repairs'],
     queryFn: async (): Promise<FreeRepairRow[]> => {
@@ -216,7 +217,9 @@ export default function MaintenancePage() {
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
       if (error) throw error
-      return (data ?? []) as FreeRepairRow[]
+      return ((data ?? []) as FreeRepairRow[]).filter((t) =>
+        isPlannedRepairTicket(t.description),
+      )
     },
   })
 
@@ -435,16 +438,18 @@ export default function MaintenancePage() {
           <section className="mt-2 flex flex-col gap-3">
             <header className="border-kwd-border border-t pt-4">
               <h3 className="text-sm font-bold tracking-wide uppercase">
-                Eigene Bezugspunkte
+                Geplante Reparaturen (Bezugspunkt)
               </h3>
               <p className="text-kwd-muted mt-1 text-xs">
-                Geplante Reparaturen und Meldungen ohne zugewiesene Maschine.
+                Nur wenn ausdrücklich als geplante Reparatur angelegt – normale Störungen mit
+                Bezugspunkt bleiben unter Störungen.
               </p>
             </header>
 
             {freeRepairs.map((t) => {
               const busy = busyId === t.id
               const label = t.reference_label?.trim() || 'Bezugspunkt'
+              const displayDesc = stripPlannedRepairMarker(t.description)
               return (
                 <article
                   key={t.id}
@@ -455,7 +460,7 @@ export default function MaintenancePage() {
                       <p className="text-kwd-primary text-xs font-bold">Eigener Bezug</p>
                       <h3 className="font-bold">{label}</h3>
                       <p className="text-kwd-muted mt-1 line-clamp-4 whitespace-pre-wrap text-sm">
-                        {t.description}
+                        {displayDesc}
                       </p>
                     </div>
                     <span className="bg-kwd-bg shrink-0 rounded px-2 py-1 text-xs font-medium">

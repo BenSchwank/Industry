@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { MachineSearchSelect } from '../machines/MachineSearchSelect'
 import { useAddLifecycleEntry } from '../../hooks/useMachineLifecycle'
 import { createTicket } from '../../lib/syncTickets'
+import { withPlannedRepairMarker } from '../../lib/plannedRepairTicket'
 import { useAppStore } from '../../stores/appStore'
 
 interface PlannedRepairFormProps {
@@ -66,7 +67,7 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
         return
       }
 
-      // Eigener Bezugspunkt → als offene Störung/Meldung unter Reparaturen sichtbar
+      // Eigener Bezugspunkt → nur als geplante Reparatur unter Reparaturen
       const bodyParts = [cleanTitle]
       if (due) {
         bodyParts.push(
@@ -80,7 +81,7 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
           machine_id: null,
           machine_name: freeLabel.trim(),
           reference_label: freeLabel.trim(),
-          description: bodyParts.join('\n'),
+          description: withPlannedRepairMarker(bodyParts.join('\n')),
           priority: 'medium',
           lifecycle_entry_id: null,
         },

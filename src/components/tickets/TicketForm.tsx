@@ -12,6 +12,8 @@ import {
   useUploadTicketPhotos,
 } from '../../hooks/useTicketPhotos'
 import { createTicket } from '../../lib/syncTickets'
+import { withPlannedRepairMarker } from '../../lib/plannedRepairTicket'
+import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
 
@@ -97,6 +99,19 @@ export function TicketForm({
     }
   }
 
+  /** Geplante Reparatur mit Maschine: Ticket aus offenen Störungen nehmen. */
+  async function resolvePlannedMachineTicket(ticketId: string | undefined) {
+    if (!ticketId) return
+    await supabase
+      .from('tickets')
+      .update({
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+      })
+      .eq('id', ticketId)
+    void queryClient.invalidateQueries({ queryKey: ['tickets'] })
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
@@ -156,6 +171,7 @@ export function TicketForm({
           }
 
           const photoErr = await uploadIfNeeded(result.ticketId)
+          await resolvePlannedMachineTicket(result.ticketId)
           void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
           void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
           void queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
@@ -171,7 +187,7 @@ export function TicketForm({
           return
         }
 
-        // Eigener Bezugspunkt
+        // Eigener Bezugspunkt → nur bei geplanter Reparatur unter Reparaturen
         const bodyParts = [desc]
         if (due) {
           bodyParts.push(
@@ -183,7 +199,7 @@ export function TicketForm({
             machine_id: null,
             machine_name: freeLabel,
             reference_label: freeLabel,
-            description: bodyParts.join('\n'),
+            description: withPlannedRepairMarker(bodyParts.join('\n')),
             priority,
             lifecycle_entry_id: null,
           },

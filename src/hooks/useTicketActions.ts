@@ -237,7 +237,11 @@ export function usePromoteTicketToRepair() {
         if (error) throw error
       }
 
-      await updateTicketRow(input.ticketId, { lifecycle_entry_id: entry.id })
+      await updateTicketRow(input.ticketId, {
+        lifecycle_entry_id: entry.id,
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+      })
       return entry.id as string
     },
     onSuccess: (_id, vars) => {
@@ -245,6 +249,31 @@ export function usePromoteTicketToRepair() {
       void queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machineId] })
       void queryClient.invalidateQueries({ queryKey: ['lifecycle-pick', vars.machineId] })
     },
+  })
+}
+
+/**
+ * Freie Störung (Bezugspunkt) nach Reparaturen verschieben:
+ * als geplante Reparatur markieren – verschwindet unter Störungen, erscheint unter Reparaturen.
+ */
+export function usePromoteFreeTicketToRepair() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      ticketId: string
+      description: string
+      next_due_date?: string | null
+    }) => {
+      const { withPlannedRepairMarker } = await import('../lib/plannedRepairTicket')
+      let body = withPlannedRepairMarker(input.description)
+      const due = input.next_due_date?.trim()
+      if (due && !body.includes('Geplanter Termin:')) {
+        body = `${body}\nGeplanter Termin: ${new Date(`${due}T12:00:00`).toLocaleDateString('de-DE')}`
+      }
+      await updateTicketRow(input.ticketId, { description: body })
+    },
+    onSuccess: () => invalidateTicketQueries(queryClient),
   })
 }
 

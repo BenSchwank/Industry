@@ -239,14 +239,14 @@ export default function TicketsPage() {
         photos={photosByTicket.get(ticket.id) ?? []}
         onEdit={setEditTicket}
         onPromoteToRepair={(t) => {
-          if (!t.machine_id) return
           setPromoteTicket({
             id: t.id,
             description: t.description,
-            machine_id: t.machine_id,
+            machine_id: t.machine_id ?? null,
             machine_label: t.machines
               ? `${t.machines.barcode} – ${t.machines.name}`
               : undefined,
+            reference_label: t.reference_label ?? null,
           })
         }}
         onSetInProgress={setInProgressTicket}

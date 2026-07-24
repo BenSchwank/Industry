@@ -2,6 +2,7 @@ import {
   TICKET_PRIORITY_LABEL,
   TICKET_STATUS_LABEL,
 } from '../hooks/useTicketActions'
+import { isPlannedRepairTicket } from './plannedRepairTicket'
 import type { TicketPriority, TicketStatus } from '../types/database'
 
 export type TicketStatusFilter = 'all' | 'open' | 'in_progress' | 'resolved' | 'closed'
@@ -76,6 +77,9 @@ export function filterTickets(
   const names = opts.nameById
 
   return tickets.filter((t) => {
+    // Geplante Reparaturen (Bezugspunkt) gehören nur zum Reparaturen-Tab
+    if (isPlannedRepairTicket(t.description)) return false
+
     if (opts.statusFilter === 'open') {
       if (t.status !== 'open' && t.status !== 'in_progress') return false
     } else if (opts.statusFilter !== 'all' && t.status !== opts.statusFilter) {
