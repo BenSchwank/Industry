@@ -57,8 +57,8 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
         return
       }
     }
-    if (status === 'open' && !assignedTo.trim()) {
-      nextAssigned = null
+    if (status === 'open') {
+      nextAssigned = assignedTo.trim() || null
     }
 
     setError(null)
@@ -126,6 +126,9 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
               setStatus(next)
               if (next === 'in_progress' && !assignedTo && userId) {
                 setAssignedTo(userId)
+              }
+              if (next === 'open') {
+                setAssignedTo('')
               }
             }}
             className="bg-kwd-bg border-kwd-surface-light mt-1 min-h-[48px] w-full rounded-xl border px-4"

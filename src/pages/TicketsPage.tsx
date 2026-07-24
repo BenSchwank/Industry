@@ -8,6 +8,7 @@ import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
 import {
   TICKET_PRIORITY_LABEL,
   TICKET_PRIORITIES,
+  useClearTicketInProgress,
   useDeleteTicket,
   useResolveTicket,
 } from '../hooks/useTicketActions'
@@ -60,6 +61,7 @@ export default function TicketsPage() {
 
   const resolveTicket = useResolveTicket()
   const deleteTicket = useDeleteTicket()
+  const clearInProgress = useClearTicketInProgress()
 
   useTicketSync()
   useTicketsRealtime()
@@ -163,6 +165,20 @@ export default function TicketsPage() {
     setDatePreset('all')
   }
 
+  async function handleClearInProgress(id: string) {
+    setBusyId(id)
+    setActionError(null)
+    try {
+      await clearInProgress.mutateAsync(id)
+      setToast('Zuständigkeit freigegeben – wieder offen.')
+      setTimeout(() => setToast(null), 3000)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Freigeben fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function handleResolve(id: string) {
     setBusyId(id)
     setActionError(null)
@@ -204,6 +220,7 @@ export default function TicketsPage() {
         assigneeName={ticket.assigned_to ? nameMap?.get(ticket.assigned_to) : null}
         onEdit={setEditTicket}
         onSetInProgress={setInProgressTicket}
+        onClearInProgress={(id) => void handleClearInProgress(id)}
         onResolve={(id) => void handleResolve(id)}
         onDelete={(id) => void handleDelete(id)}
       />

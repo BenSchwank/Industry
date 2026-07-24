@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   useActiveAssignees,
+  useClearTicketInProgress,
   useSetTicketInProgress,
 } from '../../hooks/useTicketActions'
 import { useAuthStore } from '../../stores/authStore'
@@ -9,6 +10,8 @@ interface TicketInProgressFormProps {
   ticketId: string
   ticketLabel?: string
   initialAssigneeId?: string | null
+  /** Bereits „In Arbeit“ – Freigeben anbieten */
+  canClear?: boolean
   onClose: () => void
   onSuccess: (message: string) => void
 }
@@ -18,12 +21,14 @@ export function TicketInProgressForm({
   ticketId,
   ticketLabel,
   initialAssigneeId = null,
+  canClear = Boolean(initialAssigneeId),
   onClose,
   onSuccess,
 }: TicketInProgressFormProps) {
   const userId = useAuthStore((s) => s.user?.id)
   const { data: assignees = [], isLoading } = useActiveAssignees()
   const setInProgress = useSetTicketInProgress()
+  const clearInProgress = useClearTicketInProgress()
   const [assignedTo, setAssignedTo] = useState(initialAssigneeId || userId || '')
   const [error, setError] = useState<string | null>(null)
 
@@ -49,6 +54,19 @@ export function TicketInProgressForm({
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
     }
   }
+
+  async function handleClear() {
+    setError(null)
+    try {
+      await clearInProgress.mutateAsync(ticketId)
+      onSuccess('Zuständigkeit freigegeben – wieder offen.')
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Freigeben fehlgeschlagen')
+    }
+  }
+
+  const saving = setInProgress.isPending || clearInProgress.isPending
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
@@ -82,21 +100,35 @@ export function TicketInProgressForm({
 
         {error && <p className="text-kwd-danger mt-3 text-sm font-medium">{error}</p>}
 
-        <div className="mt-5 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="bg-kwd-surface-light min-h-[52px] flex-1 rounded-xl font-semibold"
-          >
-            Abbrechen
-          </button>
-          <button
-            type="submit"
-            disabled={setInProgress.isPending || !assignedTo}
-            className="bg-kwd-primary text-kwd-bg min-h-[52px] flex-1 rounded-xl font-bold disabled:opacity-50"
-          >
-            {setInProgress.isPending ? 'Speichern…' : 'Übernehmen'}
-          </button>
+        <div className="mt-5 flex flex-col gap-2">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="bg-kwd-surface-light min-h-[52px] flex-1 rounded-xl font-semibold"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !assignedTo}
+              className="bg-kwd-primary text-kwd-bg min-h-[52px] flex-1 rounded-xl font-bold disabled:opacity-50"
+            >
+              {setInProgress.isPending ? 'Speichern…' : 'Übernehmen'}
+            </button>
+          </div>
+          {canClear && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleClear()}
+              className="border-kwd-border text-kwd-muted min-h-[48px] w-full rounded-xl border text-sm font-semibold disabled:opacity-50"
+            >
+              {clearInProgress.isPending
+                ? 'Freigeben…'
+                : 'In Arbeit aufheben – wieder offen'}
+            </button>
+          )}
         </div>
       </form>
     </div>

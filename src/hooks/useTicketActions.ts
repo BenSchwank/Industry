@@ -114,6 +114,22 @@ export function useSetTicketInProgress() {
   })
 }
 
+/** „In Arbeit“ aufheben – Status Offen, keine Zuständigkeit. */
+export function useClearTicketInProgress() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      await updateTicketRow(ticketId, {
+        status: 'open',
+        resolved_at: null,
+        assigned_to: null,
+      })
+    },
+    onSuccess: () => invalidateTicketQueries(queryClient),
+  })
+}
+
 /** Schnell: aktuelle Person übernimmt die Störung. */
 export function useClaimTicket() {
   const setInProgress = useSetTicketInProgress()

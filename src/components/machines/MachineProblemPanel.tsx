@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   TICKET_STATUS_LABEL,
+  useClearTicketInProgress,
   useDeleteTicket,
   useResolveTicket,
 } from '../../hooks/useTicketActions'
@@ -53,6 +54,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const queryClient = useQueryClient()
   const resolveTicket = useResolveTicket()
   const deleteTicket = useDeleteTicket()
+  const clearInProgress = useClearTicketInProgress()
   const uploadPhotos = useUploadTicketPhotos()
   const { data: allTicketPhotos = [] } = useTicketPhotosForMachine(machineId)
   const [description, setDescription] = useState('')
@@ -202,6 +204,20 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
     void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
     void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
     onLogged?.()
+  }
+
+  async function handleClearInProgress(id: string) {
+    setBusyId(id)
+    setError(null)
+    try {
+      await clearInProgress.mutateAsync(id)
+      setMessage('Zuständigkeit freigegeben – wieder offen.')
+      void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Freigeben fehlgeschlagen')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function handleResolve(id: string) {
@@ -375,6 +391,16 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
                     >
                       {inProgress ? 'Zuständig' : 'In Arbeit'}
                     </button>
+                    {inProgress && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleClearInProgress(t.id)}
+                        className="bg-kwd-bg border-kwd-border text-kwd-muted min-h-[40px] rounded-lg border px-3 text-sm font-semibold disabled:opacity-50"
+                      >
+                        Freigeben
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}
@@ -415,6 +441,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
           ticketId={inProgressTicket.id}
           ticketLabel={machineName}
           initialAssigneeId={inProgressTicket.assigned_to}
+          canClear={inProgressTicket.status === 'in_progress'}
           onClose={() => setInProgressTicket(null)}
           onSuccess={(msg) => {
             setMessage(msg)

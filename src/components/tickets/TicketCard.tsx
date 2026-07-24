@@ -20,6 +20,7 @@ interface TicketCardProps {
   assigneeName?: string | null
   onEdit: (target: TicketEditTarget) => void
   onSetInProgress: (ticket: TicketListItem) => void
+  onClearInProgress: (id: string) => void
   onResolve: (id: string) => void
   onDelete: (id: string) => void
 }
@@ -31,6 +32,7 @@ export function TicketCard({
   assigneeName,
   onEdit,
   onSetInProgress,
+  onClearInProgress,
   onResolve,
   onDelete,
 }: TicketCardProps) {
@@ -110,6 +112,17 @@ export function TicketCard({
             className="border-kwd-primary text-kwd-primary min-h-[44px] rounded-lg border px-4 text-sm font-bold disabled:opacity-50"
           >
             {inProgress ? 'Zuständig ändern' : 'In Arbeit'}
+          </button>
+        )}
+        {inProgress && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onClearInProgress(ticket.id)}
+            className="bg-kwd-bg border-kwd-border text-kwd-muted min-h-[44px] rounded-lg border px-4 text-sm font-semibold disabled:opacity-50"
+            title="Status Offen, ohne Zuständigen"
+          >
+            Freigeben
           </button>
         )}
         {isOpen && (
