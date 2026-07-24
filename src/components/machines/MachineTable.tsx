@@ -357,6 +357,8 @@ function MachineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  spacerBefore,
+  onToggleSpacer,
 }: {
   machine: MachineWithStats
   selected: boolean
@@ -374,6 +376,8 @@ function MachineRow({
   onDragOver: (id: string) => void
   onDrop: (id: string, e: DragEvent) => void
   onDragEnd: () => void
+  spacerBefore?: boolean
+  onToggleSpacer?: () => void
 }) {
   const problemHit = searchQuery ? matchProblemSnippet(m, searchQuery) : null
   const dueTone = maintenanceDueTone(m.next_maintenance_at)
@@ -383,6 +387,15 @@ function MachineRow({
     (dueTone === 'overdue' || dueTone === 'soon' || Boolean(m.next_maintenance_at))
 
   return (
+    <>
+      {spacerBefore && (
+        <tr className="pointer-events-none" aria-hidden>
+          <td
+            colSpan={17}
+            className="border-kwd-border/40 h-3 border-b border-dashed bg-transparent p-0"
+          />
+        </tr>
+      )}
     <tr
       draggable
       className={`cursor-pointer transition-colors ${
@@ -417,7 +430,16 @@ function MachineRow({
       }}
       onDragEnd={onDragEnd}
     >
-      <td className="w-12 px-1" onClick={(e) => e.stopPropagation()}>
+      <td
+        className={`w-12 px-1 ${spacerBefore ? 'bg-kwd-primary/5' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          e.preventDefault()
+          onToggleSpacer?.()
+        }}
+        title="Doppelklick: Leerstand davor ein-/ausblenden"
+      >
         <div className="flex items-center gap-1">
           <input
             type="checkbox"
@@ -553,6 +575,7 @@ function MachineRow({
         </button>
       </td>
     </tr>
+    </>
   )
 }
 
@@ -580,6 +603,9 @@ export function MachineTable({
     rows: ParsedMachinePaste[]
   } | null>(null)
   const machineOrder = usePreferencesStore((s) => s.machineOrder)
+  const machineSpacersBefore = usePreferencesStore((s) => s.machineSpacersBefore)
+  const toggleMachineSpacerBefore = usePreferencesStore((s) => s.toggleMachineSpacerBefore)
+  const spacerSet = useMemo(() => new Set(machineSpacersBefore), [machineSpacersBefore])
   const setMachineOrder = usePreferencesStore((s) => s.setMachineOrder)
 
   /** Eingabezeile pro Kategorie-Ordner */
@@ -1729,6 +1755,8 @@ export function MachineTable({
                           dragOver={dragOverId === m.id && dragId !== m.id}
                           completing={completingId === m.id}
                           categorySuggestions={categorySuggestions}
+                          spacerBefore={spacerSet.has(m.id)}
+                          onToggleSpacer={() => toggleMachineSpacerBefore(m.id)}
                           onSelect={onSelect}
                           onToggleCheck={toggleCheck}
                           onOpenFullscreen={onOpenFullscreen}

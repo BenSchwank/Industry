@@ -6,6 +6,7 @@ const SIDEBAR_COLLAPSED_KEY = 'kwd-sidebar-collapsed'
 const TABLE_ZOOM_KEY = 'kwd-table-zoom'
 const TABLE_LIST_MODE_KEY = 'kwd-table-list-mode'
 const MACHINE_ORDER_KEY = 'kwd-machine-order'
+const MACHINE_SPACERS_KEY = 'kwd-machine-spacers'
 
 export type NavLayout = 'sidebar' | 'top'
 /** infinite = viele Leerzeilen; continuous = nur nach der letzten Zeile */
@@ -64,6 +65,20 @@ function readMachineOrder(): string[] {
   return []
 }
 
+function readMachineSpacers(): string[] {
+  try {
+    const raw = localStorage.getItem(MACHINE_SPACERS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+      return [...new Set(parsed)]
+    }
+  } catch {
+    /* ignore */
+  }
+  return []
+}
+
 interface PreferencesState {
   showTips: boolean
   setShowTips: (show: boolean) => void
@@ -78,6 +93,9 @@ interface PreferencesState {
   setTableListMode: (mode: TableListMode) => void
   machineOrder: string[]
   setMachineOrder: (ids: string[]) => void
+  /** Maschinen-IDs mit Leerstand davor (Doppelklick links in der Tabelle) */
+  machineSpacersBefore: string[]
+  toggleMachineSpacerBefore: (id: string) => void
 }
 
 export const usePreferencesStore = create<PreferencesState>((set, get) => ({
@@ -116,5 +134,12 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   setMachineOrder: (ids) => {
     localStorage.setItem(MACHINE_ORDER_KEY, JSON.stringify(ids))
     set({ machineOrder: ids })
+  },
+  machineSpacersBefore: readMachineSpacers(),
+  toggleMachineSpacerBefore: (id) => {
+    const cur = get().machineSpacersBefore
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    localStorage.setItem(MACHINE_SPACERS_KEY, JSON.stringify(next))
+    set({ machineSpacersBefore: next })
   },
 }))
