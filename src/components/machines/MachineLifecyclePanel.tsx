@@ -217,6 +217,7 @@ export function MachineLifecyclePanel({
           setTitle('')
           setDescription('')
           setPendingPhotos([])
+          setRepairDueAt('')
           setShowForm(false)
           setFormPreviewOpen(false)
           return
