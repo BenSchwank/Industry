@@ -80,6 +80,7 @@ export async function syncPendingTickets(): Promise<number> {
     await queryClient.invalidateQueries({ queryKey: ['machine-health'] })
     await queryClient.invalidateQueries({ queryKey: ['overview-stats'] })
     await queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+    await queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
   }
 
   return synced
@@ -117,7 +118,7 @@ export async function createTicketOptimistic(
     return { mode: 'queued', localId }
   }
 
-  const { data, error } = await insertTicketRow({
+  const result = await insertTicketRow({
     machine_id: ticket.machine_id,
     reference_label:
       ticket.reference_label ??
@@ -128,6 +129,12 @@ export async function createTicketOptimistic(
     created_by: currentUserId(),
     lifecycle_entry_id: ticket.lifecycle_entry_id ?? null,
   })
+
+  const { data, error } = result
+  const linkWarning =
+    result && typeof result === 'object' && 'warning' in result
+      ? String((result as { warning?: string }).warning ?? '')
+      : ''
 
   if (error) {
     if (error.message.toLowerCase().includes('fetch') || !navigator.onLine) {
@@ -158,5 +165,6 @@ export async function createTicketOptimistic(
     mode: 'synced',
     localId,
     ticketId: data && typeof data === 'object' && 'id' in data ? String(data.id) : undefined,
+    message: linkWarning || undefined,
   }
 }

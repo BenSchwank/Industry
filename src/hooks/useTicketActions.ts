@@ -16,7 +16,12 @@ function invalidateTicketQueries(queryClient: ReturnType<typeof useQueryClient>)
   void queryClient.invalidateQueries({ queryKey: ['machine-health'] })
   void queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
   void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+  void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+  void queryClient.invalidateQueries({ queryKey: ['lifecycle-pick'] })
 }
+
+export const TICKET_LIFECYCLE_SQL_HINT =
+  'Bitte in Supabase SQL ausführen: supabase/FIX_TICKET_LIFECYCLE_LINK.sql'
 
 type TicketUpdatePayload = {
   description?: string
@@ -25,6 +30,7 @@ type TicketUpdatePayload = {
   resolved_at?: string | null
   assigned_to?: string | null
   reference_label?: string | null
+  lifecycle_entry_id?: string | null
 }
 
 async function updateTicketRow(id: string, payload: TicketUpdatePayload): Promise<void> {
@@ -41,6 +47,13 @@ async function updateTicketRow(id: string, payload: TicketUpdatePayload): Promis
     }
     throw retry.error
   }
+
+  if (/lifecycle_entry_id|schema cache/i.test(error.message) && 'lifecycle_entry_id' in payload) {
+    throw new Error(
+      `Reparatur-Verknüpfung fehlt in der Datenbank. ${TICKET_LIFECYCLE_SQL_HINT}`,
+    )
+  }
+
   throw error
 }
 
@@ -140,6 +153,96 @@ export function useClaimTicket() {
       const userId = useAuthStore.getState().user?.id
       if (!userId) throw new Error('Bitte anmelden, um die Störung zu übernehmen')
       await setInProgress.mutateAsync({ id: ticketId, assigned_to: userId })
+    },
+  })
+}
+
+/** Störung als geplante Reparatur auf den Reparaturen-Tab übernehmen (optional mit Termin). */
+export function usePromoteTicketToRepair() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      ticketId: string
+      machineId: string
+      title: string
+      description?: string | null
+      next_due_date?: string | null
+    }) => {
+      const machineId = input.machineId.trim()
+      if (!machineId) {
+        throw new Error('Nur Störungen mit Maschine können nach Reparaturen verschoben werden.')
+      }
+
+      const title = input.title.trim() || 'Geplante Reparatur'
+      const dueRaw = input.next_due_date?.trim() || null
+      const occurred = new Date().toISOString()
+      const nextDue = dueRaw
+        ? dueRaw.includes('T')
+          ? dueRaw.slice(0, 10)
+          : dueRaw.slice(0, 10)
+        : null
+
+      let durationDays: number | null = null
+      if (nextDue) {
+        const a = new Date(`${occurred.slice(0, 10)}T12:00:00`)
+        const b = new Date(`${nextDue}T12:00:00`)
+        durationDays = Math.max(1, Math.round((b.getTime() - a.getTime()) / 86_400_000))
+      }
+
+      const { insertLifecycleEntry } = await import('../lib/insertLifecycleEntry')
+      const userId = useAuthStore.getState().user?.id ?? null
+      const { data: entry, error: lifeErr } = await insertLifecycleEntry({
+        machine_id: machineId,
+        entry_type: 'repair',
+        title,
+        description: input.description?.trim() || null,
+        occurred_at: occurred,
+        created_by: userId,
+        duration_days: durationDays,
+        next_due_date: nextDue,
+      })
+      if (lifeErr) throw lifeErr
+      if (!entry?.id) throw new Error('Reparatur-Eintrag konnte nicht angelegt werden')
+
+      // Mit oder ohne Datum: Termin-Aufgabe anlegen, damit sie oben unter Reparaturen steht
+      const taskDue = nextDue ?? occurred.slice(0, 10)
+      const taskDays = durationDays ?? 30
+      const taskTitle = title
+      const { data: existing } = await supabase
+        .from('maintenance_tasks')
+        .select('id')
+        .eq('machine_id', machineId)
+        .eq('title', taskTitle)
+        .limit(1)
+
+      if (existing?.[0]?.id) {
+        const { error } = await supabase
+          .from('maintenance_tasks')
+          .update({
+            frequency_days: taskDays,
+            next_due_date: taskDue,
+            title: taskTitle,
+          })
+          .eq('id', existing[0].id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('maintenance_tasks').insert({
+          machine_id: machineId,
+          title: taskTitle,
+          frequency_days: taskDays,
+          next_due_date: taskDue,
+        })
+        if (error) throw error
+      }
+
+      await updateTicketRow(input.ticketId, { lifecycle_entry_id: entry.id })
+      return entry.id as string
+    },
+    onSuccess: (_id, vars) => {
+      invalidateTicketQueries(queryClient)
+      void queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machineId] })
+      void queryClient.invalidateQueries({ queryKey: ['lifecycle-pick', vars.machineId] })
     },
   })
 }

@@ -173,6 +173,13 @@ export interface Database {
             referencedRelation: 'machines'
             referencedColumns: ['id']
           },
+          {
+            foreignKeyName: 'tickets_lifecycle_entry_id_fkey'
+            columns: ['lifecycle_entry_id']
+            isOneToOne: false
+            referencedRelation: 'machine_lifecycle_entries'
+            referencedColumns: ['id']
+          },
         ]
       }
       chat_conversations: {

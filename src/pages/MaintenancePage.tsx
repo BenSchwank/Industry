@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
+import { TicketEditForm } from '../components/tickets/TicketEditForm'
 import { TICKET_STATUS_LABEL, useResolveTicket } from '../hooks/useTicketActions'
 import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
 import { useQuickCompleteMaintenance } from '../hooks/useQuickCompleteMaintenance'
@@ -26,6 +27,8 @@ interface LinkedTicketRow {
   created_at: string
   machine_id: string | null
   lifecycle_entry_id: string | null
+  assigned_to?: string | null
+  reference_label?: string | null
   machines: { name: string; barcode: string } | null
   machine_lifecycle_entries: {
     id: string
@@ -43,10 +46,16 @@ const ENTRY_TYPE_LABEL: Record<string, string> = {
   note: 'Notiz',
 }
 
+const LINK_SQL_HINT =
+  'Verknüpfte Störungen brauchen: supabase/FIX_TICKET_LIFECYCLE_LINK.sql in Supabase ausführen.'
+
 export default function MaintenancePage() {
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [editTicket, setEditTicket] = useState<import('../components/tickets/TicketEditForm').TicketEditTarget | null>(
+    null,
+  )
   const quickComplete = useQuickCompleteMaintenance()
   const deleteTasks = useDeleteMaintenanceTasks()
   const resolveTicket = useResolveTicket()
@@ -66,29 +75,123 @@ export default function MaintenancePage() {
   })
 
   /** Offene Störungen, die mit Wartung / geplanter Reparatur verknüpft sind */
-  const { data: linkedTickets = [] } = useQuery({
+  const { data: linkedData } = useQuery({
     queryKey: ['maintenance-linked-tickets'],
-    queryFn: async () => {
+    queryFn: async (): Promise<{ tickets: LinkedTicketRow[]; hint: string | null }> => {
+      // Zuerst ohne Lifecycle-Embed (PostgREST-Join scheitert sonst still → leere Liste)
       const full = await supabase
         .from('tickets')
         .select(
-          'id, description, status, priority, created_at, machine_id, lifecycle_entry_id, machines(name, barcode), machine_lifecycle_entries(id, entry_type, title, next_due_date, occurred_at)',
+          'id, description, status, priority, created_at, machine_id, lifecycle_entry_id, assigned_to, reference_label, machines(name, barcode)',
         )
         .in('status', ['open', 'in_progress'])
         .not('lifecycle_entry_id', 'is', null)
         .order('created_at', { ascending: false })
 
+      let rows: Array<{
+        id: string
+        description: string
+        status: string
+        priority: string
+        created_at: string
+        machine_id: string | null
+        lifecycle_entry_id: string | null
+        assigned_to?: string | null
+        reference_label?: string | null
+        machines: { name: string; barcode: string } | null
+      }> = []
+
       if (!full.error) {
-        return (full.data ?? []) as unknown as LinkedTicketRow[]
+        rows = (full.data ?? []) as typeof rows
+      } else if (/lifecycle_entry_id|schema cache/i.test(full.error.message)) {
+        return { tickets: [], hint: LINK_SQL_HINT }
+      } else if (/machines|schema cache/i.test(full.error.message)) {
+        const bare = await supabase
+          .from('tickets')
+          .select(
+            'id, description, status, priority, created_at, machine_id, lifecycle_entry_id, assigned_to, reference_label',
+          )
+          .in('status', ['open', 'in_progress'])
+          .not('lifecycle_entry_id', 'is', null)
+          .order('created_at', { ascending: false })
+        if (bare.error) {
+          if (/lifecycle_entry_id|schema cache/i.test(bare.error.message)) {
+            return { tickets: [], hint: LINK_SQL_HINT }
+          }
+          throw bare.error
+        }
+        rows = (bare.data ?? []).map((r) => ({
+          ...r,
+          machines: null,
+        })) as typeof rows
+      } else {
+        throw full.error
       }
 
-      // Spalte / Join fehlt → leere Liste, Seite bleibt nutzbar
-      if (/lifecycle_entry_id|machine_lifecycle_entries|schema cache/i.test(full.error.message)) {
-        return [] as LinkedTicketRow[]
+      const entryIds = [
+        ...new Set(rows.map((r) => r.lifecycle_entry_id).filter((id): id is string => Boolean(id))),
+      ]
+
+      const entryMap = new Map<
+        string,
+        {
+          id: string
+          entry_type: string
+          title: string
+          next_due_date: string | null
+          occurred_at: string
+        }
+      >()
+
+      if (entryIds.length > 0) {
+        const entriesRes = await supabase
+          .from('machine_lifecycle_entries')
+          .select('id, entry_type, title, next_due_date, occurred_at')
+          .in('id', entryIds)
+
+        if (!entriesRes.error) {
+          for (const e of entriesRes.data ?? []) {
+            entryMap.set(e.id, {
+              id: e.id,
+              entry_type: e.entry_type,
+              title: e.title,
+              next_due_date: (e as { next_due_date?: string | null }).next_due_date ?? null,
+              occurred_at: e.occurred_at,
+            })
+          }
+        } else if (/next_due_date|schema cache/i.test(entriesRes.error.message)) {
+          const basic = await supabase
+            .from('machine_lifecycle_entries')
+            .select('id, entry_type, title, occurred_at')
+            .in('id', entryIds)
+          if (!basic.error) {
+            for (const e of basic.data ?? []) {
+              entryMap.set(e.id, {
+                id: e.id,
+                entry_type: e.entry_type,
+                title: e.title,
+                next_due_date: null,
+                occurred_at: e.occurred_at,
+              })
+            }
+          }
+        }
       }
-      throw full.error
+
+      return {
+        hint: null,
+        tickets: rows.map((r) => ({
+          ...r,
+          machine_lifecycle_entries: r.lifecycle_entry_id
+            ? (entryMap.get(r.lifecycle_entry_id) ?? null)
+            : null,
+        })),
+      }
     },
   })
+
+  const linkedTickets = linkedData?.tickets ?? []
+  const linkHint = linkedData?.hint ?? null
 
   function flash(msg: string) {
     setToast(msg)
@@ -298,14 +401,21 @@ export default function MaintenancePage() {
               Störungen zu Wartung / Reparatur
             </h3>
             <p className="text-kwd-muted mt-1 text-xs">
-              Offene Meldungen, die bei der Erstellung mit einem Lebenszyklus-Eintrag verknüpft
-              wurden.
+              Offene Meldungen, die mit Wartung oder geplanter Reparatur verknüpft sind – auch ohne
+              festen Monteur-Termin.
             </p>
           </header>
 
-          {linkedTickets.length === 0 && (
+          {linkHint && (
+            <p className="text-kwd-warning rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-medium">
+              {linkHint}
+            </p>
+          )}
+
+          {linkedTickets.length === 0 && !linkHint && (
             <p className="text-kwd-muted bg-kwd-surface rounded-xl px-4 py-5 text-center text-sm">
-              Keine verknüpften Störungen. Beim Melden „Wartung / Reparatur“ wählen.
+              Keine verknüpften Störungen. Beim Melden „Wartung / Reparatur“ wählen oder unter
+              Störungen „Nach Reparaturen“ nutzen.
             </p>
           )}
 
@@ -346,11 +456,32 @@ export default function MaintenancePage() {
                     Verknüpft: {typeLabel} · {entry.title}
                     {due
                       ? ` · Monteur/Fällig ${new Date(due).toLocaleDateString('de-DE')}`
-                      : ` · ${new Date(entry.occurred_at).toLocaleDateString('de-DE')}`}
+                      : ' · ohne festen Termin'}
                   </p>
                 )}
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="kwd-btn min-h-[44px] px-3 text-sm font-semibold"
+                    disabled={busy}
+                    onClick={() =>
+                      setEditTicket({
+                        id: t.id,
+                        description: t.description,
+                        priority: t.priority as import('../types/database').TicketPriority,
+                        status: t.status as import('../types/database').TicketStatus,
+                        assigned_to: t.assigned_to ?? null,
+                        machine_id: t.machine_id,
+                        reference_label: t.reference_label ?? null,
+                        machine_label: machine
+                          ? `${machine.barcode} – ${machine.name}`
+                          : undefined,
+                      })
+                    }
+                  >
+                    Bearbeiten
+                  </button>
                   <button
                     type="button"
                     className="kwd-btn min-h-[44px] flex-1 text-sm font-semibold"
@@ -387,6 +518,14 @@ export default function MaintenancePage() {
             setActiveTask(null)
             flash('Aufgabe entfernt')
           }}
+        />
+      )}
+
+      {editTicket && (
+        <TicketEditForm
+          ticket={editTicket}
+          onClose={() => setEditTicket(null)}
+          onSuccess={(msg) => flash(msg)}
         />
       )}
     </>

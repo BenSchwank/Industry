@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TicketForm } from '../components/tickets/TicketForm'
 import { TicketEditForm, type TicketEditTarget } from '../components/tickets/TicketEditForm'
+import {
+  TicketPromoteRepairForm,
+  type TicketPromoteTarget,
+} from '../components/tickets/TicketPromoteRepairForm'
 import { TicketInProgressForm } from '../components/tickets/TicketInProgressForm'
 import { TicketCard } from '../components/tickets/TicketCard'
 import { useTicketSync, useTicketsRealtime } from '../hooks/useTicketSync'
@@ -48,6 +52,7 @@ const filterInputCls =
 export default function TicketsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
+  const [promoteTicket, setPromoteTicket] = useState<TicketPromoteTarget | null>(null)
   const [inProgressTicket, setInProgressTicket] = useState<TicketListItem | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>('open')
@@ -233,6 +238,17 @@ export default function TicketsPage() {
         assigneeName={ticket.assigned_to ? nameMap?.get(ticket.assigned_to) : null}
         photos={photosByTicket.get(ticket.id) ?? []}
         onEdit={setEditTicket}
+        onPromoteToRepair={(t) => {
+          if (!t.machine_id) return
+          setPromoteTicket({
+            id: t.id,
+            description: t.description,
+            machine_id: t.machine_id,
+            machine_label: t.machines
+              ? `${t.machines.barcode} – ${t.machines.name}`
+              : undefined,
+          })
+        }}
         onSetInProgress={setInProgressTicket}
         onClearInProgress={(id) => void handleClearInProgress(id)}
         onResolve={(id) => void handleResolve(id)}
@@ -438,6 +454,17 @@ export default function TicketsPage() {
           onSuccess={(msg) => {
             setToast(msg)
             setTimeout(() => setToast(null), 4000)
+          }}
+        />
+      )}
+
+      {promoteTicket && (
+        <TicketPromoteRepairForm
+          ticket={promoteTicket}
+          onClose={() => setPromoteTicket(null)}
+          onSuccess={(msg) => {
+            setToast(msg)
+            setTimeout(() => setToast(null), 4500)
           }}
         />
       )}

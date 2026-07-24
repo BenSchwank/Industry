@@ -13,6 +13,10 @@ import {
   useUploadTicketPhotos,
 } from '../../hooks/useTicketPhotos'
 import { TicketEditForm, type TicketEditTarget } from '../tickets/TicketEditForm'
+import {
+  TicketPromoteRepairForm,
+  type TicketPromoteTarget,
+} from '../tickets/TicketPromoteRepairForm'
 import { TicketInProgressForm } from '../tickets/TicketInProgressForm'
 import { createTicketOptimistic } from '../../lib/syncTickets'
 import { resolveUsernames } from '../../lib/resolveUsernames'
@@ -66,6 +70,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editTicket, setEditTicket] = useState<TicketEditTarget | null>(null)
+  const [promoteTicket, setPromoteTicket] = useState<TicketPromoteTarget | null>(null)
   const [inProgressTicket, setInProgressTicket] = useState<MachineOpenTicket | null>(null)
 
   const photosByTicket = useMemo(() => {
@@ -195,14 +200,20 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
     setSubmitting(false)
     setDescription('')
     setPendingPhotos([])
+    const linked = Boolean(lifecycleEntryId)
     setLifecycleEntryId('')
     setMessage(
-      result.mode === 'queued'
-        ? 'Problem offline gespeichert – wird synchronisiert.'
-        : 'Problem erfasst – erscheint sofort in der Historie.',
+      result.message
+        ? result.message
+        : result.mode === 'queued'
+          ? 'Problem offline gespeichert – wird synchronisiert.'
+          : linked
+            ? 'Problem erfasst – erscheint unter Reparaturen bei „Störungen zu Wartung / Reparatur“.'
+            : 'Problem erfasst – erscheint sofort in der Historie.',
     )
     void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
     void queryClient.invalidateQueries({ queryKey: ['ticket-photos', machineId] })
+    void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
     onLogged?.()
   }
 
@@ -386,6 +397,21 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
                     <button
                       type="button"
                       disabled={busy}
+                      onClick={() =>
+                        setPromoteTicket({
+                          id: t.id,
+                          description: t.description,
+                          machine_id: machineId,
+                          machine_label: machineName,
+                        })
+                      }
+                      className="border-kwd-primary text-kwd-primary min-h-[40px] rounded-lg border px-3 text-sm font-bold disabled:opacity-50"
+                    >
+                      Nach Reparaturen
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
                       onClick={() => setInProgressTicket(t)}
                       className="border-kwd-primary text-kwd-primary min-h-[40px] rounded-lg border px-3 text-sm font-bold disabled:opacity-50"
                     >
@@ -432,6 +458,19 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
           onSuccess={(msg) => {
             setMessage(msg)
             void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+          }}
+        />
+      )}
+
+      {promoteTicket && (
+        <TicketPromoteRepairForm
+          ticket={promoteTicket}
+          onClose={() => setPromoteTicket(null)}
+          onSuccess={(msg) => {
+            setMessage(msg)
+            void queryClient.invalidateQueries({ queryKey: ['machine-open-tickets', machineId] })
+            void queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+            void queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
           }}
         />
       )}

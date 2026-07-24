@@ -145,11 +145,13 @@ export function TicketForm({
 
     setSubmitting(false)
     onSuccess(
-      pendingPhotos.length > 0
-        ? 'Störung mit Fotos gemeldet.'
-        : lifecycleEntryId
-          ? 'Störung gemeldet und mit Lebenszyklus verknüpft.'
-          : 'Störung erfolgreich gemeldet.',
+      result.message
+        ? result.message
+        : pendingPhotos.length > 0
+          ? 'Störung mit Fotos gemeldet.'
+          : lifecycleEntryId
+            ? 'Störung gemeldet – erscheint unter Reparaturen bei „Störungen zu Wartung / Reparatur“.'
+            : 'Störung erfolgreich gemeldet.',
     )
     onClose()
   }

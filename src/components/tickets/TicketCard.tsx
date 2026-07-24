@@ -22,6 +22,7 @@ interface TicketCardProps {
   assigneeName?: string | null
   photos?: TicketPhoto[]
   onEdit: (target: TicketEditTarget) => void
+  onPromoteToRepair?: (ticket: TicketListItem) => void
   onSetInProgress: (ticket: TicketListItem) => void
   onClearInProgress: (id: string) => void
   onResolve: (id: string) => void
@@ -35,6 +36,7 @@ export function TicketCard({
   assigneeName,
   photos = [],
   onEdit,
+  onPromoteToRepair,
   onSetInProgress,
   onClearInProgress,
   onResolve,
@@ -45,6 +47,7 @@ export function TicketCard({
   const isFreeReference = !machine && Boolean(referenceLabel?.trim())
   const isOpen = ticket.status === 'open' || ticket.status === 'in_progress'
   const inProgress = ticket.status === 'in_progress'
+  const canPromote = Boolean(onPromoteToRepair && ticket.machine_id && isOpen)
 
   return (
     <article className="bg-kwd-surface border-kwd-border rounded-xl border p-4">
@@ -116,6 +119,17 @@ export function TicketCard({
         >
           Bearbeiten
         </button>
+        {canPromote && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onPromoteToRepair?.(ticket)}
+            className="border-kwd-primary text-kwd-primary min-h-[44px] rounded-lg border px-4 text-sm font-bold disabled:opacity-50"
+            title="Als längere Reparatur unter Reparaturen führen (Termin optional)"
+          >
+            Nach Reparaturen
+          </button>
+        )}
         {isOpen && (
           <button
             type="button"

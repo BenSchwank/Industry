@@ -21,6 +21,8 @@ export function useTicketsRealtime() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
         import('../lib/queryClient').then(({ queryClient }) => {
           queryClient.invalidateQueries({ queryKey: ['tickets'] })
+          queryClient.invalidateQueries({ queryKey: ['maintenance-linked-tickets'] })
+          queryClient.invalidateQueries({ queryKey: ['machine-open-tickets'] })
         })
       })
       .subscribe()
