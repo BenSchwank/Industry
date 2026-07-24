@@ -17,11 +17,11 @@ export const DESKTOP_NAV: { view: AppView; label: string }[] = [
   { view: 'overview', label: 'Übersicht' },
   { view: 'scanner', label: 'Scanner' },
   { view: 'machines', label: 'Maschinen' },
-  { view: 'inventory', label: 'Lager' },
+  { view: 'notes', label: 'Notizen' },
   { view: 'tickets', label: 'Störungen' },
   { view: 'maintenance', label: 'Reparaturen' },
   { view: 'chat', label: 'Team-Chat' },
-  { view: 'notes', label: 'Notizen' },
+  { view: 'inventory', label: 'Lager' },
   { view: 'messages', label: 'Hinweise / Fälligkeiten' },
   { view: 'import', label: 'QS1 Import' },
 ]

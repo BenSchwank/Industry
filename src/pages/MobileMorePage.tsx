@@ -5,9 +5,9 @@ import { NavCount } from '../components/ui/NavCount'
 
 const LINKS = [
   { view: 'overview' as const, label: 'Übersicht', desc: 'Dashboard & KPIs', icon: '◉' },
-  { view: 'chat' as const, label: 'Team-Chat', desc: 'Mit Kollegen schreiben & Bilder', icon: '💬' },
-  { view: 'notes' as const, label: 'Notizen', desc: 'Persönlich oder öffentlich teilen', icon: '📝' },
   { view: 'machines' as const, label: 'Maschinen', desc: 'Akte, QR-Labels', icon: '⚙' },
+  { view: 'notes' as const, label: 'Notizen', desc: 'Persönlich oder öffentlich teilen', icon: '📝' },
+  { view: 'chat' as const, label: 'Team-Chat', desc: 'Mit Kollegen schreiben & Bilder', icon: '💬' },
   { view: 'messages' as const, label: 'Hinweise / Fälligkeiten', desc: 'HU, Docs, Störungen', icon: '✉' },
   { view: 'inventory' as const, label: 'Lager', desc: 'FIFO, Bestände', icon: '📦' },
   { view: 'tickets' as const, label: 'Störungen', desc: 'Alle Meldungen', icon: '⚠' },

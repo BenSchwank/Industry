@@ -7,11 +7,12 @@ import { NavCount } from '../components/ui/NavCount'
 const QUICK_LINKS: { view: AppView; label: string; desc: string }[] = [
   { view: 'scanner', label: 'Scanner', desc: 'Code erfassen' },
   { view: 'machines', label: 'Maschinen', desc: 'Liste & Akte' },
-  { view: 'chat', label: 'Team-Chat', desc: 'Mit Kollegen schreiben' },
   { view: 'notes', label: 'Notizen', desc: 'Persönlich oder teilen' },
+  { view: 'chat', label: 'Team-Chat', desc: 'Mit Kollegen schreiben' },
   { view: 'messages', label: 'Hinweise / Fälligkeiten', desc: 'Wartung & Docs' },
   { view: 'tickets', label: 'Störungen', desc: 'Meldungen' },
   { view: 'maintenance', label: 'Reparaturen', desc: 'HU & Termine' },
+  { view: 'inventory', label: 'Lager', desc: 'FIFO & Bestände' },
 ]
 
 export default function OverviewPage() {
