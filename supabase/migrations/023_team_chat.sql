@@ -231,3 +231,16 @@ CREATE POLICY "Chat media update" ON storage.objects
 CREATE POLICY "Chat media delete" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'chat-media');
+
+-- Realtime für live Nachrichten
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_members;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
