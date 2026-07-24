@@ -35,11 +35,11 @@ export function isImageAttachment(att: Pick<MachineAttachment, 'mime_type' | 'fi
 }
 
 /** Selbst angelegtes Text-Dokument (Unterlagen) */
-export function isTextNoteAttachment(
-  att: Pick<MachineAttachment, 'mime_type' | 'filename'> & {
-    analysis_metadata?: Record<string, unknown> | null
-  },
-) {
+export function isTextNoteAttachment(att: {
+  mime_type: string
+  filename: string
+  analysis_metadata?: Record<string, unknown> | null
+}) {
   const meta = att.analysis_metadata ?? {}
   if (meta.kind === 'textnote') return true
   if (att.mime_type === 'text/plain' || att.mime_type === 'text/markdown') return true
@@ -47,11 +47,12 @@ export function isTextNoteAttachment(
 }
 
 /** Bilder liegen im Lifecycle-Bucket (akzeptiert image/*), PDFs/Text im Dokumenten-Bucket. */
-export function storageBucketForAttachment(
-  att: Pick<MachineAttachment, 'mime_type' | 'filename' | 'storage_path'> & {
-    analysis_metadata?: Record<string, unknown> | null
-  },
-) {
+export function storageBucketForAttachment(att: {
+  mime_type: string
+  filename: string
+  storage_path: string
+  analysis_metadata?: Record<string, unknown> | null
+}) {
   if (att.storage_path.startsWith('attachments/')) return LIFECYCLE_MEDIA_BUCKET
   if (att.storage_path.startsWith('textnotes/')) return DOCS_BUCKET
   if (isTextNoteAttachment(att)) return DOCS_BUCKET
