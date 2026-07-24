@@ -34,25 +34,45 @@ export function isImageAttachment(att: Pick<MachineAttachment, 'mime_type' | 'fi
   return /\.(jpe?g|png|webp|gif)$/i.test(att.filename)
 }
 
-/** Bilder liegen im Lifecycle-Bucket (akzeptiert image/*), PDFs im Dokumenten-Bucket. */
+/** Selbst angelegtes Text-Dokument (Unterlagen) */
+export function isTextNoteAttachment(
+  att: Pick<MachineAttachment, 'mime_type' | 'filename'> & {
+    analysis_metadata?: Record<string, unknown> | null
+  },
+) {
+  const meta = att.analysis_metadata ?? {}
+  if (meta.kind === 'textnote') return true
+  if (att.mime_type === 'text/plain' || att.mime_type === 'text/markdown') return true
+  return /\.(txt|md)$/i.test(att.filename)
+}
+
+/** Bilder liegen im Lifecycle-Bucket (akzeptiert image/*), PDFs/Text im Dokumenten-Bucket. */
 export function storageBucketForAttachment(
-  att: Pick<MachineAttachment, 'mime_type' | 'filename' | 'storage_path'>,
+  att: Pick<MachineAttachment, 'mime_type' | 'filename' | 'storage_path'> & {
+    analysis_metadata?: Record<string, unknown> | null
+  },
 ) {
   if (att.storage_path.startsWith('attachments/')) return LIFECYCLE_MEDIA_BUCKET
+  if (att.storage_path.startsWith('textnotes/')) return DOCS_BUCKET
+  if (isTextNoteAttachment(att)) return DOCS_BUCKET
   if (isImageAttachment(att)) return LIFECYCLE_MEDIA_BUCKET
   return DOCS_BUCKET
 }
 
 function extForFile(file: File, mime: string) {
   if (mime === 'application/pdf') return 'pdf'
+  if (mime === 'text/plain') return 'txt'
+  if (mime === 'text/markdown') return 'md'
   if (mime === 'image/png') return 'png'
   if (mime === 'image/webp') return 'webp'
   if (mime === 'image/gif') return 'gif'
   const fromName = file.name.split('.').pop()?.toLowerCase()
-  if (fromName && ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fromName)) {
+  if (fromName && ['pdf', 'txt', 'md', 'jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fromName)) {
     return fromName === 'jpeg' ? 'jpg' : fromName
   }
-  return mime.startsWith('image/') ? 'jpg' : 'pdf'
+  if (mime.startsWith('image/')) return 'jpg'
+  if (mime.startsWith('text/')) return 'txt'
+  return 'pdf'
 }
 
 function resolveUploadMime(file: File): string {
@@ -60,12 +80,18 @@ function resolveUploadMime(file: File): string {
   if (raw === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
     return 'application/pdf'
   }
+  if (raw === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
+    return 'text/plain'
+  }
+  if (raw === 'text/markdown' || file.name.toLowerCase().endsWith('.md')) {
+    return 'text/markdown'
+  }
   if (IMAGE_TYPES.has(raw)) return raw
   if (/\.png$/i.test(file.name)) return 'image/png'
   if (/\.webp$/i.test(file.name)) return 'image/webp'
   if (/\.gif$/i.test(file.name)) return 'image/gif'
   if (/\.jpe?g$/i.test(file.name)) return 'image/jpeg'
-  throw new Error('Nur PDF oder Bilder (JPEG, PNG, WebP, GIF) sind erlaubt.')
+  throw new Error('Nur PDF, Text oder Bilder (JPEG, PNG, WebP, GIF) sind erlaubt.')
 }
 
 export function useMachineAttachments(machineId: string | null) {
@@ -110,10 +136,13 @@ export function useUploadMachineAttachment() {
       const attachmentId = crypto.randomUUID()
       const ext = extForFile(file, mime)
       const isImage = mime.startsWith('image/')
+      const isText = mime.startsWith('text/')
       const bucket = isImage ? LIFECYCLE_MEDIA_BUCKET : DOCS_BUCKET
       const storagePath = isImage
         ? `attachments/${machineId}/${attachmentId}.${ext}`
-        : `${machineId}/${attachmentId}.pdf`
+        : isText
+          ? `textnotes/${machineId}/${attachmentId}.${ext}`
+          : `${machineId}/${attachmentId}.pdf`
 
       const { error: uploadError } = await supabase.storage
         .from(bucket)
@@ -137,10 +166,15 @@ export function useUploadMachineAttachment() {
       let analysis_summary: string | null = null
       let analysis_metadata: Record<string, unknown> = isImage
         ? { kind: 'image' }
-        : {}
+        : isText
+          ? { kind: 'textnote' }
+          : {}
       let analyzed_at: string | null = null
 
-      if (!isImage && runAnalysis) {
+      if (isText) {
+        analysis_summary = await file.text()
+        analyzed_at = new Date().toISOString()
+      } else if (!isImage && runAnalysis) {
         try {
           const analysis = await analyzePdfFile(file)
           analysis_summary = analysis.summary
@@ -162,7 +196,7 @@ export function useUploadMachineAttachment() {
 
       const baseTitle =
         title?.trim() ||
-        file.name.replace(/\.(pdf|jpe?g|png|webp|gif)$/i, '')
+        file.name.replace(/\.(pdf|txt|md|jpe?g|png|webp|gif)$/i, '')
 
       const { data, error } = await supabase
         .from('machine_attachments')
@@ -173,7 +207,7 @@ export function useUploadMachineAttachment() {
           filename: file.name,
           mime_type: mime,
           file_size_bytes: file.size,
-          title: baseTitle,
+          title: baseTitle || (isText ? 'Neues Dokument' : file.name),
           analysis_summary,
           analysis_metadata,
           analyzed_at,
@@ -192,6 +226,129 @@ export function useUploadMachineAttachment() {
       queryClient.invalidateQueries({ queryKey: ['machine-attachments', vars.machineId] })
       queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
+    },
+  })
+}
+
+/** Leeres Text-Dokument in Unterlagen anlegen */
+export function useCreateBlankTextDocument() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      machineId,
+      title,
+    }: {
+      machineId: string
+      title?: string
+    }) => {
+      const attachmentId = crypto.randomUUID()
+      const name = (title?.trim() || 'Neues Dokument').slice(0, 120)
+      const storagePath = `textnotes/${machineId}/${attachmentId}.txt`
+      const empty = new Blob([''], { type: 'text/plain' })
+
+      const { error: uploadError } = await supabase.storage
+        .from(DOCS_BUCKET)
+        .upload(storagePath, empty, { contentType: 'text/plain', upsert: false })
+
+      if (uploadError) {
+        const msg = [uploadError.message, (uploadError as { error?: string }).error]
+          .filter(Boolean)
+          .join(' ')
+        if (/invalid_mime_type|not supported/i.test(msg)) {
+          // Bucket noch ohne text/plain – Inhalt nur in der DB (analysis_summary)
+        } else if (!/already exists/i.test(msg)) {
+          throw new Error(
+            `${formatSupabaseError(uploadError)} – ggf. supabase/FIX_MACHINE_DOCUMENTS_IMAGES.sql ausführen.`,
+          )
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('machine_attachments')
+        .insert({
+          id: attachmentId,
+          machine_id: machineId,
+          storage_path: storagePath,
+          filename: `${name}.txt`,
+          mime_type: 'text/plain',
+          file_size_bytes: 0,
+          title: name,
+          analysis_summary: '',
+          analysis_metadata: { kind: 'textnote' },
+          analyzed_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        await supabase.storage.from(DOCS_BUCKET).remove([storagePath])
+        throw new Error(formatSupabaseError(error))
+      }
+
+      return data as MachineAttachment
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['machine-attachments', data.machine_id] })
+    },
+  })
+}
+
+/** Text-Dokument (Titel + Inhalt) speichern */
+export function useUpdateTextDocument() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      attachment,
+      title,
+      body,
+    }: {
+      attachment: MachineAttachment
+      title: string
+      body: string
+    }) => {
+      if (!isTextNoteAttachment(attachment)) {
+        throw new Error('Nur Text-Dokumente können so bearbeitet werden.')
+      }
+      const nextTitle = title.trim() || 'Neues Dokument'
+      const blob = new Blob([body], { type: 'text/plain' })
+      const bucket = storageBucketForAttachment(attachment)
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(attachment.storage_path, blob, {
+          contentType: 'text/plain',
+          upsert: true,
+        })
+
+      if (uploadError) {
+        // Fallback: nur DB speichern, falls Storage text/plain noch sperrt
+        if (!/invalid_mime_type|not supported/i.test(uploadError.message)) {
+          throw new Error(formatSupabaseError(uploadError))
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('machine_attachments')
+        .update({
+          title: nextTitle,
+          filename: `${nextTitle}.txt`,
+          mime_type: 'text/plain',
+          file_size_bytes: new TextEncoder().encode(body).length,
+          analysis_summary: body,
+          analysis_metadata: { kind: 'textnote' },
+          analyzed_at: new Date().toISOString(),
+        })
+        .eq('id', attachment.id)
+        .select()
+        .single()
+
+      if (error) throw new Error(formatSupabaseError(error))
+      return data as MachineAttachment
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['machine-attachments', data.machine_id] })
     },
   })
 }

@@ -247,13 +247,11 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- 12) Unterlagen: Bilder im Dokumenten-Bucket (optional)
--- Unterlagen: PDF, Bilder und Text-Dokumente im Dokumenten-Bucket
+-- Unterlagen: auch Bilder im Dokumenten-Bucket erlauben (optional, falls genutzt)
 UPDATE storage.buckets
 SET
   allowed_mime_types = ARRAY[
     'application/pdf',
-    'text/plain',
-    'text/markdown',
     'image/jpeg',
     'image/png',
     'image/webp',

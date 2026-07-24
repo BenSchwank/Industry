@@ -1,13 +1,16 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { enqueueAiAnalysis, getAiQueueStatus } from '../../lib/aiAnalysisQueue'
 import { formatFileSize } from '../../lib/pdfAnalysis'
 import {
   isImageAttachment,
   isPdfAttachment,
+  isTextNoteAttachment,
   useAnalyzeMachineAttachment,
   useAttachmentSignedUrl,
+  useCreateBlankTextDocument,
   useDeleteMachineAttachment,
   useMachineAttachments,
+  useUpdateTextDocument,
   useUploadMachineAttachment,
   type MachineAttachment,
 } from '../../hooks/useMachineAttachments'
@@ -34,10 +37,27 @@ export function MachineAttachmentsPanel({
 
   const { data: attachments = [], isLoading } = useMachineAttachments(machineId)
   const upload = useUploadMachineAttachment()
+  const createBlank = useCreateBlankTextDocument()
+  const updateText = useUpdateTextDocument()
   const analyze = useAnalyzeMachineAttachment()
   const remove = useDeleteMachineAttachment()
 
   const selected = attachments.find((a) => a.id === selectedId) ?? attachments[0] ?? null
+  const selectedIsImage = selected ? isImageAttachment(selected) : false
+  const selectedIsPdf = selected ? isPdfAttachment(selected) : false
+  const selectedIsText = selected ? isTextNoteAttachment(selected) : false
+
+  async function handleNewBlankDocument() {
+    setUploadError(null)
+    setInfo(null)
+    try {
+      const saved = await createBlank.mutateAsync({ machineId, title: 'Neues Dokument' })
+      setSelectedId(saved.id)
+      setInfo('Leeres Dokument angelegt – Titel und Text eingeben, wird automatisch gespeichert.')
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Anlegen fehlgeschlagen')
+    }
+  }
 
   async function uploadFiles(files: FileList | File[] | null) {
     if (!files || (files instanceof FileList ? files.length === 0 : files.length === 0)) return
@@ -108,8 +128,6 @@ export function MachineAttachmentsPanel({
       : []
   const pageCount = selected?.analysis_metadata?.pageCount
   const wordCount = selected?.analysis_metadata?.wordCount
-  const selectedIsImage = selected ? isImageAttachment(selected) : false
-  const selectedIsPdf = selected ? isPdfAttachment(selected) : false
 
   return (
     <section className="kwd-panel">
@@ -133,6 +151,15 @@ export function MachineAttachmentsPanel({
             className="hidden"
             onChange={(e) => void uploadFiles(e.target.files)}
           />
+          <button
+            type="button"
+            onClick={() => void handleNewBlankDocument()}
+            disabled={createBlank.isPending}
+            className="kwd-btn kwd-btn-primary"
+            title="Leeres Dokument zum Selbstausfüllen"
+          >
+            {createBlank.isPending ? '…' : '+ Leeres Dokument'}
+          </button>
           <button
             type="button"
             onClick={() => pdfRef.current?.click()}
@@ -162,8 +189,8 @@ export function MachineAttachmentsPanel({
         </div>
 
         <p className="text-kwd-muted text-xs">
-          Unterlagen in der Software ansehen. Bilder können heruntergeladen werden; PDFs bleiben
-          nur zur Ansicht.
+          Leeres Dokument = eigene Infos tippen · PDF hochladen · Bilder anhängen. PDFs nur
+          Ansicht; Text und Bilder bleiben bearbeitbar/speicherbar.
         </p>
         {queueStatus.length > 0 && (
           <p className="bg-kwd-primary/10 text-kwd-primary border-kwd-primary/30 border px-3 py-2 text-sm font-medium">
@@ -187,7 +214,7 @@ export function MachineAttachmentsPanel({
 
         {!isLoading && attachments.length === 0 && (
           <p className="text-kwd-muted border-kwd-border border border-dashed px-4 py-10 text-center text-sm">
-            Noch keine Unterlagen – PDF oder Bilder hochladen.
+            Noch keine Unterlagen – „+ Leeres Dokument“, PDF oder Bilder.
           </p>
         )}
 
@@ -207,10 +234,15 @@ export function MachineAttachmentsPanel({
                   >
                     <p className="font-semibold">{att.title ?? att.filename}</p>
                     <p className="text-kwd-muted mt-0.5 text-xs">
-                      {isImageAttachment(att) ? 'Bild' : 'PDF'} ·{' '}
-                      {formatFileSize(att.file_size_bytes)} ·{' '}
+                      {isTextNoteAttachment(att)
+                        ? 'Text'
+                        : isImageAttachment(att)
+                          ? 'Bild'
+                          : 'PDF'}{' '}
+                      · {formatFileSize(att.file_size_bytes)} ·{' '}
                       {new Date(att.created_at).toLocaleDateString('de-DE')}
-                      {att.analyzed_at ? ' · analysiert' : ' · roh'}
+                      {!isTextNoteAttachment(att) &&
+                        (att.analyzed_at ? ' · analysiert' : ' · roh')}
                     </p>
                   </button>
                 </li>
@@ -221,7 +253,7 @@ export function MachineAttachmentsPanel({
               <div className="flex min-w-0 flex-col gap-3">
                 <div className="border-kwd-border bg-kwd-surface relative z-10 flex flex-wrap gap-2 border p-2">
                   <p className="mr-auto self-center truncate text-sm font-semibold">
-                    {selected.filename}
+                    {selected.title ?? selected.filename}
                   </p>
                   {selectedIsPdf && (
                     <>
@@ -257,7 +289,24 @@ export function MachineAttachmentsPanel({
                 </div>
 
                 <div className="border-kwd-border bg-kwd-bg relative z-0 overflow-hidden border">
-                  {selectedIsImage ? (
+                  {selectedIsText ? (
+                    <TextDocumentEditor
+                      key={selected.id}
+                      attachment={selected}
+                      saving={updateText.isPending}
+                      onSave={async (title, body) => {
+                        setUploadError(null)
+                        try {
+                          await updateText.mutateAsync({ attachment: selected, title, body })
+                          setInfo('Dokument gespeichert.')
+                        } catch (err) {
+                          setUploadError(
+                            err instanceof Error ? err.message : 'Speichern fehlgeschlagen',
+                          )
+                        }
+                      }}
+                    />
+                  ) : selectedIsImage ? (
                     <AttachmentImageViewer attachment={selected} />
                   ) : (
                     <SecurePdfViewer
@@ -321,6 +370,121 @@ export function MachineAttachmentsPanel({
         )}
       </div>
     </section>
+  )
+}
+
+function TextDocumentEditor({
+  attachment,
+  saving,
+  onSave,
+}: {
+  attachment: MachineAttachment
+  saving: boolean
+  onSave: (title: string, body: string) => Promise<void>
+}) {
+  const [title, setTitle] = useState(attachment.title ?? 'Neues Dokument')
+  const [body, setBody] = useState(attachment.analysis_summary ?? '')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const timerRef = useRef<number | null>(null)
+  const draftRef = useRef({ title, body, attachmentId: attachment.id })
+  const onSaveRef = useRef(onSave)
+  onSaveRef.current = onSave
+  draftRef.current = { title, body, attachmentId: attachment.id }
+
+  useEffect(() => {
+    setTitle(attachment.title ?? 'Neues Dokument')
+    setBody(attachment.analysis_summary ?? '')
+    setSaveState('idle')
+  }, [attachment.id, attachment.title, attachment.analysis_summary])
+
+  function queueSave(nextTitle: string, nextBody: string) {
+    setSaveState('saving')
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => {
+      void onSaveRef
+        .current(nextTitle, nextBody)
+        .then(() => setSaveState('saved'))
+        .catch(() => setSaveState('error'))
+    }, 500)
+  }
+
+  // Beim Schließen / Tab-Wechsel: ausstehenden Speichern-Stand flushen
+  useEffect(() => {
+    function flush() {
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      const d = draftRef.current
+      const baselineTitle = attachment.title ?? 'Neues Dokument'
+      const baselineBody = attachment.analysis_summary ?? ''
+      if (d.title === baselineTitle && d.body === baselineBody) return
+      void onSaveRef.current(d.title, d.body)
+    }
+
+    function onHide() {
+      if (document.visibilityState === 'hidden') flush()
+    }
+
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      flush()
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachment.id])
+
+  return (
+    <div className="flex min-h-[280px] flex-col gap-2 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={title}
+          onChange={(e) => {
+            const next = e.target.value
+            setTitle(next)
+            queueSave(next, body)
+          }}
+          placeholder="Dokumenttitel…"
+          className="border-kwd-border bg-kwd-paper min-h-[36px] min-w-[10rem] flex-1 border px-2 text-sm font-semibold"
+          aria-label="Dokument umbenennen"
+        />
+        <button
+          type="button"
+          className="kwd-btn kwd-btn-primary text-xs"
+          disabled={saving || saveState === 'saving'}
+          onClick={() => {
+            if (timerRef.current) window.clearTimeout(timerRef.current)
+            setSaveState('saving')
+            void onSave(title, body)
+              .then(() => setSaveState('saved'))
+              .catch(() => setSaveState('error'))
+          }}
+        >
+          Speichern
+        </button>
+        <span className="text-kwd-muted text-[11px]">
+          {saveState === 'saving' && 'Speichern…'}
+          {saveState === 'saved' && 'Gespeichert'}
+          {saveState === 'error' && 'Fehler'}
+          {saveState === 'idle' && 'Autosave aktiv'}
+        </span>
+      </div>
+      <textarea
+        value={body}
+        onChange={(e) => {
+          const next = e.target.value
+          setBody(next)
+          queueSave(title, next)
+        }}
+        placeholder="Eigene Infos, Hinweise, Checklisten…"
+        className="border-kwd-border bg-kwd-paper text-kwd-text min-h-[220px] w-full flex-1 resize-y border px-3 py-2 text-sm leading-relaxed"
+        aria-label="Dokumenttext"
+      />
+    </div>
   )
 }
 

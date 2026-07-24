@@ -1,8 +1,10 @@
--- Unterlagen: auch Bilder im Dokumenten-Bucket erlauben (optional, falls genutzt)
+-- Unterlagen: PDF, Bilder und Text-Dokumente im Dokumenten-Bucket
 UPDATE storage.buckets
 SET
   allowed_mime_types = ARRAY[
     'application/pdf',
+    'text/plain',
+    'text/markdown',
     'image/jpeg',
     'image/png',
     'image/webp',

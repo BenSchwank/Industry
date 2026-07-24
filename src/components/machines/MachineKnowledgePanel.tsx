@@ -66,6 +66,16 @@ export function MachineKnowledgePanel({
   const saveTimerRef = useRef<number | null>(null)
   const titleTimerRef = useRef<number | null>(null)
   const lastLoadedId = useRef<string | null>(null)
+  const draftRef = useRef({
+    id: null as string | null,
+    machineId,
+    title: '',
+    body: '',
+    baselineTitle: '',
+    baselineBody: '',
+  })
+  const updateMutateRef = useRef(updatePage.mutateAsync)
+  updateMutateRef.current = updatePage.mutateAsync
 
   const selected = useMemo(
     () => pages.find((p) => p.id === selectedId) ?? null,
@@ -73,6 +83,36 @@ export function MachineKnowledgePanel({
   )
 
   const createMutate = createPage.mutateAsync
+
+  draftRef.current = {
+    id: selected?.id ?? null,
+    machineId,
+    title: titleDraft,
+    body: bodyDraft,
+    baselineTitle: selected?.title ?? '',
+    baselineBody: selected?.body ?? '',
+  }
+
+  function flushPendingSave() {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    if (titleTimerRef.current) {
+      window.clearTimeout(titleTimerRef.current)
+      titleTimerRef.current = null
+    }
+    const d = draftRef.current
+    if (!d.id) return
+    if (d.title === d.baselineTitle && d.body === d.baselineBody) return
+    // Sofort speichern – auch beim Schließen / Tab-Wechsel / Vollbild verlassen
+    void updateMutateRef.current({
+      id: d.id,
+      machineId: d.machineId,
+      title: d.title,
+      body: d.body,
+    })
+  }
 
   // Mindestens eine Seite; Legacy-localStorage einmalig übernehmen
   useEffect(() => {
@@ -115,32 +155,44 @@ export function MachineKnowledgePanel({
   useEffect(() => {
     if (!selected) return
     if (lastLoadedId.current === selected.id) return
+    // Vor Seitenwechsel offenen Entwurf speichern
+    flushPendingSave()
     lastLoadedId.current = selected.id
     setTitleDraft(selected.title)
     setBodyDraft(selected.body)
     setSaveState('idle')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected])
 
   useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
-      if (titleTimerRef.current) window.clearTimeout(titleTimerRef.current)
+    function onHide() {
+      if (document.visibilityState === 'hidden') flushPendingSave()
     }
-  }, [])
+    window.addEventListener('pagehide', flushPendingSave)
+    window.addEventListener('beforeunload', flushPendingSave)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      flushPendingSave()
+      window.removeEventListener('pagehide', flushPendingSave)
+      window.removeEventListener('beforeunload', flushPendingSave)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineId])
 
   function queueBodySave(nextBody: string) {
     if (!selected) return
     setSaveState('saving')
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = window.setTimeout(() => {
-      void updatePage
-        .mutateAsync({ id: selected.id, machineId, body: nextBody })
+      void updateMutateRef
+        .current({ id: selected.id, machineId, body: nextBody })
         .then(() => setSaveState('saved'))
         .catch((err: Error) => {
           setSaveState('error')
           setActionError(err.message)
         })
-    }, 450)
+    }, 400)
   }
 
   function queueTitleSave(nextTitle: string) {
@@ -148,17 +200,18 @@ export function MachineKnowledgePanel({
     setSaveState('saving')
     if (titleTimerRef.current) window.clearTimeout(titleTimerRef.current)
     titleTimerRef.current = window.setTimeout(() => {
-      void updatePage
-        .mutateAsync({ id: selected.id, machineId, title: nextTitle })
+      void updateMutateRef
+        .current({ id: selected.id, machineId, title: nextTitle })
         .then(() => setSaveState('saved'))
         .catch((err: Error) => {
           setSaveState('error')
           setActionError(err.message)
         })
-    }, 350)
+    }, 300)
   }
 
   async function handleNewPage() {
+    flushPendingSave()
     setActionError(null)
     try {
       const row = await createPage.mutateAsync({
@@ -176,6 +229,8 @@ export function MachineKnowledgePanel({
 
   async function handleSaveNow() {
     if (!selected) return
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    if (titleTimerRef.current) window.clearTimeout(titleTimerRef.current)
     setActionError(null)
     setSaveState('saving')
     try {
@@ -335,8 +390,8 @@ export function MachineKnowledgePanel({
                     </p>
                   )}
                   <p className="text-kwd-muted border-kwd-border border-t px-3 py-1.5 text-[10px]">
-                    Mehrere Seiten möglich · Titel umbenennen · Speichern in der Cloud (auch
-                    Vollbild / andere Geräte)
+                    Mehrere Seiten · Autosave · beim Schließen/Vollbild-Wechsel wird mitgespeichert
+                    (Cloud)
                   </p>
                 </>
               ) : (
