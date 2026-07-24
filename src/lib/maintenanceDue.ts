@@ -5,9 +5,11 @@ const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000
 
 export function maintenanceDueTone(date: string | null | undefined): MaintenanceDueTone {
   if (!date) return 'none'
-  const due = new Date(date)
+  const dueDay = date.includes('T') ? date.slice(0, 10) : date.slice(0, 10)
+  const due = new Date(`${dueDay}T12:00:00`)
   if (Number.isNaN(due.getTime())) return 'none'
   const now = new Date()
+  now.setHours(12, 0, 0, 0)
   const diff = due.getTime() - now.getTime()
   if (diff < 0) return 'overdue'
   if (diff <= THREE_MONTHS_MS) return 'soon'
@@ -25,6 +27,24 @@ export function addDaysIso(dateStr: string, days: number): string {
   const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`)
   d.setDate(d.getDate() + days)
   return d.toISOString().slice(0, 10)
+}
+
+/** Lokales Kalenderdatum YYYY-MM-DD (nicht UTC von toISOString). */
+export function localTodayIso(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function addLocalDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** Kalenderjahr ≈ 365 Tage (für Speicherung als duration_days / frequency_days) */

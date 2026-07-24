@@ -2,6 +2,8 @@ import { useAppStore } from '../../stores/appStore'
 import { usePreferencesStore } from '../../stores/preferencesStore'
 import { useAuthStore } from '../../stores/authStore'
 import { ADMIN_NAV, DESKTOP_NAV } from '../../lib/navItems'
+import { useNavBadges } from '../../hooks/useNavBadges'
+import { NavCount } from '../ui/NavCount'
 
 const SHORT: Record<string, string> = {
   overview: 'Üb.',
@@ -26,6 +28,7 @@ export function SideNav() {
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin' && profile.status === 'active'
   const navItems = isAdmin ? [...DESKTOP_NAV, ...ADMIN_NAV] : DESKTOP_NAV
+  const badges = useNavBadges()
 
   if (navLayout !== 'sidebar') return null
 
@@ -52,6 +55,8 @@ export function SideNav() {
         <ul className="flex flex-col gap-0.5">
           {navItems.map(({ view, label }) => {
             const isActive = activeView === view
+            const badge =
+              view === 'messages' ? badges.messages : view === 'chat' ? badges.chat : 0
             return (
               <li key={view}>
                 <button
@@ -62,7 +67,19 @@ export function SideNav() {
                     isActive ? 'kwd-nav-item-active' : ''
                   }`}
                 >
-                  {collapsed ? SHORT[view] ?? label.slice(0, 1) : label}
+                  {collapsed ? (
+                    <span className="relative">
+                      {SHORT[view] ?? label.slice(0, 1)}
+                      {badge > 0 && (
+                        <span className="bg-kwd-danger absolute -top-1 -right-2 h-2 w-2 rounded-full" />
+                      )}
+                    </span>
+                  ) : (
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span>{label}</span>
+                      <NavCount value={badge} />
+                    </span>
+                  )}
                 </button>
               </li>
             )

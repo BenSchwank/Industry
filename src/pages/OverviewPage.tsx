@@ -1,19 +1,22 @@
 import { useOverviewStats } from '../hooks/useOverviewStats'
+import { useNavBadges } from '../hooks/useNavBadges'
 import { useAppStore, type AppView } from '../stores/appStore'
 import { Tip } from '../components/ui/Tip'
+import { NavCount } from '../components/ui/NavCount'
 
 const QUICK_LINKS: { view: AppView; label: string; desc: string }[] = [
   { view: 'scanner', label: 'Scanner', desc: 'Code erfassen' },
   { view: 'machines', label: 'Maschinen', desc: 'Liste & Akte' },
   { view: 'messages', label: 'Nachrichten', desc: 'Wartung & Docs' },
-  { view: 'inventory', label: 'Lager', desc: 'Bestand & FIFO' },
+  { view: 'chat', label: 'Chat', desc: 'Team schreiben' },
   { view: 'tickets', label: 'Störungen', desc: 'Meldungen' },
-  { view: 'maintenance', label: 'Reparaturen', desc: 'Größere Arbeiten' },
+  { view: 'maintenance', label: 'Reparaturen', desc: 'HU & Termine' },
 ]
 
 export default function OverviewPage() {
   const setActiveView = useAppStore((s) => s.setActiveView)
   const { data: stats, isLoading } = useOverviewStats()
+  const badges = useNavBadges()
 
   return (
     <div className="flex flex-col gap-3 p-3 lg:gap-4 lg:p-4">
@@ -41,15 +44,15 @@ export default function OverviewPage() {
           />
           <Kpi
             label="HU überfällig"
-            value={isLoading ? '…' : stats?.overdueMaintenance}
-            alert={(stats?.overdueMaintenance ?? 0) > 0}
+            value={isLoading ? '…' : stats?.overdueHu}
+            alert={(stats?.overdueHu ?? 0) > 0}
             onClick={() => setActiveView('maintenance')}
           />
           <Kpi
-            label="Mindestbestand"
-            value={isLoading ? '…' : stats?.lowStockItems}
-            alert={(stats?.lowStockItems ?? 0) > 0}
-            onClick={() => setActiveView('inventory')}
+            label="Bald fällig"
+            value={isLoading ? '…' : stats?.dueSoon}
+            alert={(stats?.dueSoon ?? 0) > 0}
+            onClick={() => setActiveView('maintenance')}
           />
         </div>
       </div>
@@ -57,19 +60,30 @@ export default function OverviewPage() {
       <div className="kwd-panel">
         <div className="kwd-panel-head">Schnellzugriff</div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {QUICK_LINKS.map(({ view, label, desc }) => (
-            <button
-              key={view}
-              type="button"
-              onClick={() => setActiveView(view)}
-              className="border-kwd-border hover:bg-kwd-surface-light flex min-h-[64px] flex-col items-start justify-center border-b px-4 py-3 text-left sm:border-r"
-            >
-              <span className="font-semibold">{label}</span>
-              <Tip>
-                <span className="text-kwd-muted text-sm">{desc}</span>
-              </Tip>
-            </button>
-          ))}
+          {QUICK_LINKS.map(({ view, label, desc }) => {
+            const badge =
+              view === 'messages'
+                ? badges.messages
+                : view === 'chat'
+                  ? badges.chat
+                  : 0
+            return (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setActiveView(view)}
+                className="border-kwd-border hover:bg-kwd-surface-light flex min-h-[64px] flex-col items-start justify-center border-b px-4 py-3 text-left sm:border-r"
+              >
+                <span className="flex items-center gap-2 font-semibold">
+                  {label}
+                  {badge > 0 && <NavCount value={badge} />}
+                </span>
+                <Tip>
+                  <span className="text-kwd-muted text-sm">{desc}</span>
+                </Tip>
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>

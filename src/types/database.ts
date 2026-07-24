@@ -211,16 +211,19 @@ export interface Database {
           conversation_id: string
           user_id: string
           joined_at: string
+          last_read_at: string | null
         }
         Insert: {
           conversation_id: string
           user_id: string
           joined_at?: string
+          last_read_at?: string | null
         }
         Update: {
           conversation_id?: string
           user_id?: string
           joined_at?: string
+          last_read_at?: string | null
         }
         Relationships: []
       }
@@ -776,6 +779,14 @@ export interface Database {
       leave_chat_conversation: {
         Args: { p_conversation_id: string }
         Returns: undefined
+      }
+      mark_chat_conversation_read: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
+      count_unread_chat_messages: {
+        Args: Record<string, never>
+        Returns: number
       }
       is_chat_member: {
         Args: { conv_id: string }

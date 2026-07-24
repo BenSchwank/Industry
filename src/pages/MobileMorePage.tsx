@@ -1,5 +1,7 @@
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import { useNavBadges } from '../hooks/useNavBadges'
+import { NavCount } from '../components/ui/NavCount'
 
 const LINKS = [
   { view: 'overview' as const, label: 'Übersicht', desc: 'Dashboard & KPIs', icon: '◉' },
@@ -15,6 +17,7 @@ export default function MobileMorePage() {
   const setActiveView = useAppStore((s) => s.setActiveView)
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin' && profile.status === 'active'
+  const badges = useNavBadges()
 
   const links = isAdmin
     ? [
@@ -37,22 +40,29 @@ export default function MobileMorePage() {
           QS1-Import und erweiterte Verwaltung nur am Windows-Desktop.
         </p>
       </header>
-      {links.map(({ view, label, desc, icon }) => (
-        <button
-          key={view}
-          type="button"
-          onClick={() => setActiveView(view)}
-          className="bg-kwd-surface flex min-h-[72px] items-center gap-4 rounded-xl p-4 text-left"
-        >
-          <span className="text-2xl" aria-hidden>
-            {icon}
-          </span>
-          <div>
-            <p className="font-bold">{label}</p>
-            <p className="text-kwd-muted text-sm">{desc}</p>
-          </div>
-        </button>
-      ))}
+      {links.map(({ view, label, desc, icon }) => {
+        const badge =
+          view === 'messages' ? badges.messages : view === 'chat' ? badges.chat : 0
+        return (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setActiveView(view)}
+            className="bg-kwd-surface flex min-h-[72px] items-center gap-4 rounded-xl p-4 text-left"
+          >
+            <span className="text-2xl" aria-hidden>
+              {icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 font-bold">
+                {label}
+                <NavCount value={badge} />
+              </p>
+              <p className="text-kwd-muted text-sm">{desc}</p>
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -5,6 +5,8 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { usePlatform } from '../../hooks/usePlatform'
 import { useAuthStore } from '../../stores/authStore'
 import { useOfflineTicketStore } from '../../stores/offlineTicketStore'
+import { useNavBadges } from '../../hooks/useNavBadges'
+import { NavCount } from '../ui/NavCount'
 
 export function Header() {
   const platform = usePlatform()
@@ -20,10 +22,10 @@ export function Header() {
   const topNav = navLayout === 'top'
   const isAdmin = profile?.role === 'admin' && profile.status === 'active'
   const navItems = isAdmin ? [...DESKTOP_NAV, ...ADMIN_NAV] : DESKTOP_NAV
+  const badges = useNavBadges()
 
   return (
     <header className="bg-kwd-surface border-kwd-border sticky top-0 z-20 border-b">
-      {/* Eine Zeile: Marke | Menü (oben) | Status – wie im Bild */}
       <div
         className={`flex w-full items-center gap-3 px-3 py-2 lg:px-4 ${
           topNav ? 'lg:gap-4' : 'justify-between px-4 py-2.5 lg:px-5'
@@ -48,6 +50,8 @@ export function Header() {
           >
             {navItems.map(({ view, label }) => {
               const isActive = activeView === view
+              const badge =
+                view === 'messages' ? badges.messages : view === 'chat' ? badges.chat : 0
               return (
                 <button
                   key={view}
@@ -57,7 +61,10 @@ export function Header() {
                     isActive ? 'kwd-nav-item-active' : ''
                   }`}
                 >
-                  {label}
+                  <span className="inline-flex items-center gap-1.5">
+                    {label}
+                    <NavCount value={badge} />
+                  </span>
                 </button>
               )
             })}

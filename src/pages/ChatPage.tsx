@@ -14,6 +14,7 @@ import {
   type ChatAttachment,
   type ChatConversation,
 } from '../hooks/useTeamChat'
+import { useMarkChatRead } from '../hooks/useNavBadges'
 import { resolveUsernames } from '../lib/resolveUsernames'
 import { useAuthStore } from '../stores/authStore'
 import { useQuery } from '@tanstack/react-query'
@@ -120,6 +121,15 @@ export default function ChatPage() {
   const deleteChat = useDeleteChat()
   const leaveChat = useLeaveChat()
   useChatRealtime(activeId)
+
+  const markRead = useMarkChatRead()
+
+  useEffect(() => {
+    if (!activeId) return
+    markRead.mutate(activeId)
+    // nur bei Chat-Wechsel markieren
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- markRead stabil genug
+  }, [activeId])
 
   const allUserIds = useMemo(() => {
     const ids = new Set<string>()

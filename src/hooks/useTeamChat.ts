@@ -228,6 +228,7 @@ export function useChatRealtime(conversationId: string | null) {
         { event: '*', schema: 'public', table: 'chat_messages' },
         () => {
           void queryClient.invalidateQueries({ queryKey: ['chat-conversations', userId] })
+          void queryClient.invalidateQueries({ queryKey: ['chat-unread-count', userId] })
           if (conversationId) {
             void queryClient.invalidateQueries({ queryKey: ['chat-messages', conversationId] })
           }
