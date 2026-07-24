@@ -762,6 +762,14 @@ export interface Database {
         Args: { p_kind: string; p_title: string | null; p_member_ids: string[] }
         Returns: string
       }
+      delete_chat_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
+      leave_chat_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
       is_chat_member: {
         Args: { conv_id: string }
         Returns: boolean

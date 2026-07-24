@@ -9,6 +9,8 @@ import { assertLifecycleImage } from './useLifecyclePhotos'
 export const CHAT_MEDIA_BUCKET = 'chat-media'
 export const CHAT_SQL_HINT =
   'Team-Chat braucht einmalig: in Supabase → SQL → supabase/FIX_TEAM_CHAT.sql ausführen.'
+export const CHAT_DELETE_SQL_HINT =
+  'Chat löschen fehlt in der Datenbank. Bitte supabase/FIX_CHAT_DELETE.sql in Supabase ausführen.'
 
 export type ChatKind = 'dm' | 'group'
 
@@ -40,6 +42,12 @@ export interface ChatMessage {
 
 function isChatSchemaMissing(message: string) {
   return /chat_conversations|chat_messages|chat_members|create_chat_conversation|schema cache|could not find/i.test(
+    message,
+  )
+}
+
+function isChatDeleteMissing(message: string) {
+  return /delete_chat_conversation|leave_chat_conversation|schema cache|could not find.*function/i.test(
     message,
   )
 }
@@ -324,6 +332,52 @@ export function useSendChatMessage() {
     onSuccess: (_id, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['chat-messages', vars.conversationId] })
       void queryClient.invalidateQueries({ queryKey: ['chat-conversations', userId] })
+    },
+  })
+}
+
+export function useDeleteChat() {
+  const queryClient = useQueryClient()
+  const userId = useAuthStore((s) => s.user?.id)
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { error } = await supabase.rpc('delete_chat_conversation', {
+        p_conversation_id: conversationId,
+      })
+      if (error) {
+        if (isChatDeleteMissing(error.message) || isChatSchemaMissing(error.message)) {
+          throw new Error(CHAT_DELETE_SQL_HINT)
+        }
+        throw new Error(formatSupabaseError(error))
+      }
+    },
+    onSuccess: (_void, conversationId) => {
+      void queryClient.invalidateQueries({ queryKey: ['chat-conversations', userId] })
+      void queryClient.removeQueries({ queryKey: ['chat-messages', conversationId] })
+    },
+  })
+}
+
+export function useLeaveChat() {
+  const queryClient = useQueryClient()
+  const userId = useAuthStore((s) => s.user?.id)
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { error } = await supabase.rpc('leave_chat_conversation', {
+        p_conversation_id: conversationId,
+      })
+      if (error) {
+        if (isChatDeleteMissing(error.message) || isChatSchemaMissing(error.message)) {
+          throw new Error(CHAT_DELETE_SQL_HINT)
+        }
+        throw new Error(formatSupabaseError(error))
+      }
+    },
+    onSuccess: (_void, conversationId) => {
+      void queryClient.invalidateQueries({ queryKey: ['chat-conversations', userId] })
+      void queryClient.removeQueries({ queryKey: ['chat-messages', conversationId] })
     },
   })
 }

@@ -8,6 +8,8 @@ import {
   useChatMessages,
   useChatRealtime,
   useCreateChat,
+  useDeleteChat,
+  useLeaveChat,
   useSendChatMessage,
   type ChatAttachment,
   type ChatConversation,
@@ -115,6 +117,8 @@ export default function ChatPage() {
   const { data: colleagues = [] } = useChatColleagues()
   const createChat = useCreateChat()
   const sendMessage = useSendChatMessage()
+  const deleteChat = useDeleteChat()
+  const leaveChat = useLeaveChat()
   useChatRealtime(activeId)
 
   const allUserIds = useMemo(() => {
@@ -185,8 +189,44 @@ export default function ChatPage() {
     }
   }
 
+  async function handleDeleteChat(conversationId: string, label: string) {
+    if (
+      !window.confirm(
+        `Chat „${label}“ wirklich löschen? Nachrichten und Bilder werden für alle entfernt.`,
+      )
+    ) {
+      return
+    }
+    setError(null)
+    try {
+      await deleteChat.mutateAsync(conversationId)
+      if (activeId === conversationId) {
+        setActiveId(null)
+        setComposer('')
+        setPendingFiles([])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')
+    }
+  }
+
+  async function handleLeaveChat(conversationId: string, label: string) {
+    if (!window.confirm(`Gruppe „${label}“ wirklich verlassen?`)) return
+    setError(null)
+    try {
+      await leaveChat.mutateAsync(conversationId)
+      if (activeId === conversationId) {
+        setActiveId(null)
+        setComposer('')
+        setPendingFiles([])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verlassen fehlgeschlagen')
+    }
+  }
+
   const schemaHint =
-    listError instanceof Error && /FIX_TEAM_CHAT/i.test(listError.message)
+    listError instanceof Error && /FIX_TEAM_CHAT|FIX_CHAT_DELETE/i.test(listError.message)
       ? listError.message
       : null
 
@@ -222,6 +262,11 @@ export default function ChatPage() {
             {schemaHint}
           </p>
         )}
+        {error && (
+          <p className="text-kwd-danger mx-3 mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs font-medium">
+            {error}
+          </p>
+        )}
 
         <div className="flex-1 overflow-y-auto">
           {isLoading && <p className="text-kwd-muted p-4 text-sm">Lade Chats…</p>}
@@ -236,25 +281,39 @@ export default function ChatPage() {
               const activeRow = c.id === activeId
               return (
                 <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveId(c.id)}
-                    className={`hover:bg-kwd-primary/10 w-full border-b border-kwd-border/60 px-4 py-3 text-left ${
+                  <div
+                    className={`hover:bg-kwd-primary/10 flex w-full items-stretch border-b border-kwd-border/60 ${
                       activeRow ? 'bg-kwd-primary/15' : ''
                     }`}
                   >
-                    <span className="flex items-center gap-2">
-                      <span className="font-semibold">{label}</span>
-                      {c.kind === 'group' && (
-                        <span className="text-kwd-muted text-[10px] font-bold uppercase">
-                          Gruppe
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-kwd-muted mt-0.5 line-clamp-1 block text-xs">
-                      {c.lastMessage || 'Noch keine Nachrichten'}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveId(c.id)}
+                      className="min-w-0 flex-1 px-4 py-3 text-left"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="font-semibold">{label}</span>
+                        {c.kind === 'group' && (
+                          <span className="text-kwd-muted text-[10px] font-bold uppercase">
+                            Gruppe
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-kwd-muted mt-0.5 line-clamp-1 block text-xs">
+                        {c.lastMessage || 'Noch keine Nachrichten'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      title="Chat löschen"
+                      aria-label={`Chat ${label} löschen`}
+                      disabled={deleteChat.isPending}
+                      onClick={() => void handleDeleteChat(c.id, label)}
+                      className="text-kwd-danger hover:bg-kwd-danger/10 px-3 text-xs font-bold"
+                    >
+                      Löschen
+                    </button>
+                  </div>
                 </li>
               )
             })}
@@ -294,6 +353,38 @@ export default function ChatPage() {
                   </p>
                 )}
               </div>
+              {active && (
+                <div className="flex shrink-0 gap-1">
+                  {active.kind === 'group' && (
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[40px] px-3 text-sm"
+                      disabled={leaveChat.isPending || deleteChat.isPending}
+                      onClick={() =>
+                        void handleLeaveChat(
+                          active.id,
+                          conversationLabel(active, selfId, names),
+                        )
+                      }
+                    >
+                      Verlassen
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="text-kwd-danger border-kwd-danger/40 hover:bg-kwd-danger/10 min-h-[40px] rounded-xl border px-3 text-sm font-bold"
+                    disabled={deleteChat.isPending || leaveChat.isPending}
+                    onClick={() =>
+                      void handleDeleteChat(
+                        active.id,
+                        conversationLabel(active, selfId, names),
+                      )
+                    }
+                  >
+                    Löschen
+                  </button>
+                </div>
+              )}
             </header>
 
             <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
