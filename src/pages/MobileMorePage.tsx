@@ -7,7 +7,7 @@ const LINKS = [
   { view: 'overview' as const, label: 'Übersicht', desc: 'Dashboard & KPIs', icon: '◉' },
   { view: 'chat' as const, label: 'Team-Chat', desc: 'Mit Kollegen schreiben & Bilder', icon: '💬' },
   { view: 'machines' as const, label: 'Maschinen', desc: 'Akte, QR-Labels', icon: '⚙' },
-  { view: 'messages' as const, label: 'Nachrichten', desc: 'HU, Docs, Störungen', icon: '✉' },
+  { view: 'messages' as const, label: 'Hinweise / Fälligkeiten', desc: 'HU, Docs, Störungen', icon: '✉' },
   { view: 'inventory' as const, label: 'Lager', desc: 'FIFO, Bestände', icon: '📦' },
   { view: 'tickets' as const, label: 'Störungen', desc: 'Alle Meldungen', icon: '⚠' },
   { view: 'settings' as const, label: 'Einstellungen', desc: 'Hell/Dunkel & mehr', icon: '⚙' },

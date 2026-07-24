@@ -32,6 +32,7 @@ type TicketUpdatePayload = {
   assigned_to?: string | null
   reference_label?: string | null
   lifecycle_entry_id?: string | null
+  kind?: import('../types/database').TicketKind
 }
 
 async function updateTicketRow(id: string, payload: TicketUpdatePayload): Promise<void> {
@@ -53,6 +54,17 @@ async function updateTicketRow(id: string, payload: TicketUpdatePayload): Promis
     throw new Error(
       `Reparatur-Verknüpfung fehlt in der Datenbank. ${TICKET_LIFECYCLE_SQL_HINT}`,
     )
+  }
+
+  if (/\bkind\b|schema cache/i.test(error.message) && 'kind' in payload) {
+    const { kind: _k, ...withoutKind } = payload
+    const { withPlannedRepairMarker } = await import('../lib/plannedRepairTicket')
+    if (payload.kind === 'planned_repair' && withoutKind.description) {
+      withoutKind.description = withPlannedRepairMarker(withoutKind.description)
+    }
+    const retry = await supabase.from('tickets').update(withoutKind).eq('id', id)
+    if (!retry.error) return
+    throw retry.error
   }
 
   throw error
@@ -79,6 +91,7 @@ export function useUpdateTicket() {
       status?: TicketStatus
       assigned_to?: string | null
       reference_label?: string | null
+      kind?: import('../types/database').TicketKind
     }) => {
       const payload: {
         description?: string
@@ -87,6 +100,7 @@ export function useUpdateTicket() {
         resolved_at?: string | null
         assigned_to?: string | null
         reference_label?: string | null
+        kind?: import('../types/database').TicketKind
       } = {}
       if (input.description !== undefined) payload.description = input.description.trim()
       if (input.priority !== undefined) payload.priority = input.priority
@@ -103,6 +117,7 @@ export function useUpdateTicket() {
       if (input.reference_label !== undefined) {
         payload.reference_label = input.reference_label?.trim() || null
       }
+      if (input.kind !== undefined) payload.kind = input.kind
 
       await updateTicketRow(input.id, payload)
     },
@@ -248,6 +263,12 @@ export function usePromoteTicketToRepair() {
         await updateTicketRow(input.ticketId, {
           lifecycle_entry_id: entry.id,
         })
+        // Als geplante Reparatur markieren (ohne Termin = offen unter Reparaturen)
+        try {
+          await updateTicketRow(input.ticketId, { kind: 'planned_repair' })
+        } catch {
+          /* Spalte kind optional */
+        }
       }
       return entry.id as string
     },
@@ -273,12 +294,22 @@ export function usePromoteFreeTicketToRepair() {
       next_due_date?: string | null
     }) => {
       const { withPlannedRepairMarker } = await import('../lib/plannedRepairTicket')
-      let body = withPlannedRepairMarker(input.description)
+      let body = input.description.trim()
       const due = input.next_due_date?.trim()
       if (due && !body.includes('Geplanter Termin:')) {
         body = `${body}\nGeplanter Termin: ${new Date(`${due}T12:00:00`).toLocaleDateString('de-DE')}`
       }
-      await updateTicketRow(input.ticketId, { description: body })
+      try {
+        await updateTicketRow(input.ticketId, {
+          description: body,
+          kind: 'planned_repair',
+        })
+      } catch {
+        await updateTicketRow(input.ticketId, {
+          description: withPlannedRepairMarker(body),
+          kind: 'planned_repair',
+        })
+      }
     },
     onSuccess: () => invalidateTicketQueries(queryClient),
   })

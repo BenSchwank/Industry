@@ -14,6 +14,8 @@ export interface TicketCreateInput {
   priority: TicketPriority
   /** Optional: bestehender Lebenszyklus-Eintrag (Reparatur) */
   lifecycle_entry_id?: string | null
+  /** issue = Störung · planned_repair = geplante Reparatur */
+  kind?: import('../types/database').TicketKind
 }
 
 function addOptimisticTimelineEntry(
@@ -63,6 +65,7 @@ export async function syncPendingTickets(): Promise<number> {
       status: 'open',
       created_by: createdBy,
       lifecycle_entry_id: ticket.lifecycle_entry_id ?? null,
+      kind: ticket.kind ?? 'issue',
     })
 
     if (error) {
@@ -128,6 +131,7 @@ export async function createTicketOptimistic(
     status: 'open',
     created_by: currentUserId(),
     lifecycle_entry_id: ticket.lifecycle_entry_id ?? null,
+    kind: ticket.kind ?? 'issue',
   })
 
   const { data, error } = result

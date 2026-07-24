@@ -8,7 +8,6 @@ import {
 import {
   isPlannedRepairTicket,
   stripPlannedRepairMarker,
-  withPlannedRepairMarker,
 } from '../../lib/plannedRepairTicket'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
@@ -23,9 +22,9 @@ export interface TicketEditTarget {
   machine_id?: string | null
   reference_label?: string | null
   machine_label?: string
-  /** Verknüpfte geplante Reparatur – Termin bearbeiten */
   lifecycle_entry_id?: string | null
   planned_due_date?: string | null
+  kind?: import('../../types/database').TicketKind | string | null
 }
 
 interface TicketEditFormProps {
@@ -55,7 +54,11 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
   const { data: assignees = [], isLoading: loadingAssignees } = useActiveAssignees()
   const isFreeReference = !ticket.machine_id
   const isPlanned =
-    isPlannedRepairTicket(ticket.description) || Boolean(ticket.lifecycle_entry_id)
+    isPlannedRepairTicket({
+      kind: ticket.kind,
+      description: ticket.description,
+      lifecycle_entry_id: ticket.lifecycle_entry_id,
+    }) || Boolean(ticket.lifecycle_entry_id)
 
   const initialDesc = isPlanned
     ? stripPlannedDueLine(stripPlannedRepairMarker(ticket.description))
@@ -107,9 +110,7 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
             `Geplanter Termin: ${new Date(`${due}T12:00:00`).toLocaleDateString('de-DE')}`,
           )
         }
-        nextDescription = isFreeReference
-          ? withPlannedRepairMarker(parts.join('\n'))
-          : parts.join('\n')
+        nextDescription = parts.join('\n')
       }
 
       await updateTicket.mutateAsync({
@@ -119,6 +120,7 @@ export function TicketEditForm({ ticket, onClose, onSuccess }: TicketEditFormPro
         status,
         assigned_to: nextAssigned,
         ...(isFreeReference ? { reference_label: referenceLabel.trim() } : {}),
+        ...(isPlanned ? { kind: 'planned_repair' as const } : {}),
       })
 
       if (ticket.lifecycle_entry_id) {

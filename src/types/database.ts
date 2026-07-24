@@ -1,6 +1,8 @@
 export type MachineStatus = 'active' | 'maintenance' | 'offline' | 'decommissioned'
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical'
+/** issue = Störung · planned_repair = geplante Reparatur (Reparaturen-Tab) */
+export type TicketKind = 'issue' | 'planned_repair'
 export type LifecycleEntryType = 'maintenance' | 'repair' | 'inspection' | 'note'
 export type ProfileStatus = 'pending' | 'active' | 'rejected'
 export type ProfileRole = 'user' | 'admin'
@@ -138,6 +140,7 @@ export interface Database {
           created_by: string | null
           assigned_to: string | null
           lifecycle_entry_id: string | null
+          kind: TicketKind
         }
         Insert: {
           id?: string
@@ -151,6 +154,7 @@ export interface Database {
           created_by?: string | null
           assigned_to?: string | null
           lifecycle_entry_id?: string | null
+          kind?: TicketKind
         }
         Update: {
           id?: string
@@ -164,6 +168,7 @@ export interface Database {
           created_by?: string | null
           assigned_to?: string | null
           lifecycle_entry_id?: string | null
+          kind?: TicketKind
         }
         Relationships: [
           {

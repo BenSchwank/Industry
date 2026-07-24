@@ -178,6 +178,7 @@ export function MachineProblemPanel({ machineId, machineName, onLogged }: Machin
               : desc,
           priority,
           lifecycle_entry_id: lifecycleEntryId,
+          kind: isPlanned ? 'planned_repair' : 'issue',
         },
         isOnline,
         queryClient,

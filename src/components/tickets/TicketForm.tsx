@@ -12,7 +12,6 @@ import {
   useUploadTicketPhotos,
 } from '../../hooks/useTicketPhotos'
 import { createTicket } from '../../lib/syncTickets'
-import { withPlannedRepairMarker } from '../../lib/plannedRepairTicket'
 import { supabase } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
 import type { TicketPriority } from '../../types/database'
@@ -149,6 +148,7 @@ export function TicketForm({
                 : desc,
               priority,
               lifecycle_entry_id: entryId,
+              kind: 'planned_repair',
             },
             isOnline,
           )
@@ -203,9 +203,10 @@ export function TicketForm({
             machine_id: null,
             machine_name: freeLabel,
             reference_label: freeLabel,
-            description: withPlannedRepairMarker(bodyParts.join('\n')),
+            description: bodyParts.join('\n'),
             priority,
             lifecycle_entry_id: null,
+            kind: 'planned_repair',
           },
           isOnline,
         )
@@ -246,6 +247,7 @@ export function TicketForm({
               description: desc,
               priority,
               lifecycle_entry_id: null,
+              kind: 'issue',
             }
           : {
               machine_id: null,
@@ -254,6 +256,7 @@ export function TicketForm({
               description: desc,
               priority,
               lifecycle_entry_id: null,
+              kind: 'issue',
             },
         isOnline,
       )

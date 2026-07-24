@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
-import type { TicketPriority } from '../types/database'
+import { TICKET_KIND_SQL_HINT, withPlannedRepairMarker } from './plannedRepairTicket'
+import type { TicketKind, TicketPriority } from '../types/database'
 
-/** Ticket anlegen – mit created_by / lifecycle_entry_id, Fallback wenn Spalten fehlen. */
+/** Ticket anlegen – mit created_by / lifecycle_entry_id / kind, Fallback wenn Spalten fehlen. */
 export async function insertTicketRow(input: {
   machine_id?: string | null
   reference_label?: string | null
@@ -10,10 +11,12 @@ export async function insertTicketRow(input: {
   status?: 'open' | 'in_progress' | 'resolved' | 'closed'
   created_by?: string | null
   lifecycle_entry_id?: string | null
+  kind?: TicketKind
 }) {
   const machineId = input.machine_id?.trim() || null
   const referenceLabel = input.reference_label?.trim() || null
   const lifecycleEntryId = input.lifecycle_entry_id?.trim() || null
+  const kind: TicketKind = input.kind ?? 'issue'
 
   if (!machineId && !referenceLabel) {
     return {
@@ -22,12 +25,19 @@ export async function insertTicketRow(input: {
     }
   }
 
+  let description = input.description
+  if (kind === 'planned_repair') {
+    description =
+      input.description.replace(/^\[Geplante Reparatur\]\n?/, '').trim() || input.description
+  }
+
   const base: Record<string, unknown> = {
     machine_id: machineId,
     reference_label: referenceLabel,
-    description: input.description,
+    description,
     priority: input.priority,
     status: input.status ?? ('open' as const),
+    kind,
   }
 
   if (lifecycleEntryId) base.lifecycle_entry_id = lifecycleEntryId
@@ -38,9 +48,25 @@ export async function insertTicketRow(input: {
   }
 
   let result = await supabase.from('tickets').insert(withAuthor as never).select('id').single()
+  let kindMissing = false
 
   if (result.error && /created_by/i.test(result.error.message)) {
     result = await supabase.from('tickets').insert(base as never).select('id').single()
+  }
+
+  if (result.error && /\bkind\b|schema cache/i.test(result.error.message)) {
+    kindMissing = true
+    const { kind: _k, ...withoutKind } = withAuthor as Record<string, unknown> & { kind?: string }
+    if (kind === 'planned_repair') {
+      withoutKind.description = withPlannedRepairMarker(String(withoutKind.description ?? ''))
+    }
+    result = await supabase.from('tickets').insert(withoutKind as never).select('id').single()
+    if (result.error && /created_by/i.test(result.error.message)) {
+      const { created_by: _c, ...bare } = withoutKind as Record<string, unknown> & {
+        created_by?: string | null
+      }
+      result = await supabase.from('tickets').insert(bare as never).select('id').single()
+    }
   }
 
   if (result.error && /lifecycle_entry_id|schema cache/i.test(result.error.message)) {
@@ -49,12 +75,19 @@ export async function insertTicketRow(input: {
     }
     result = await supabase.from('tickets').insert(withoutLife as never).select('id').single()
     if (!result.error && lifecycleEntryId) {
-      // Spalte fehlt – Ticket ohne Link speichern, Hinweis optional über Caller
       return {
         ...result,
         warning:
           'Störung gespeichert, Reparatur-Verknüpfung fehlt in der DB. Bitte supabase/FIX_TICKET_LIFECYCLE_LINK.sql ausführen.',
       }
+    }
+    if (result.error && /\bkind\b|schema cache/i.test(result.error.message)) {
+      kindMissing = true
+      const { kind: _k, ...withoutKind } = withoutLife as Record<string, unknown> & { kind?: string }
+      if (kind === 'planned_repair') {
+        withoutKind.description = withPlannedRepairMarker(String(withoutKind.description ?? ''))
+      }
+      result = await supabase.from('tickets').insert(withoutKind as never).select('id').single()
     }
     if (result.error && /created_by/i.test(result.error.message)) {
       const { created_by: _c, lifecycle_entry_id: _l2, ...bare } = withoutLife as Record<
@@ -108,6 +141,13 @@ export async function insertTicketRow(input: {
         message:
           'Störungen ohne Maschine brauchen eine DB-Migration. Bitte supabase/FIX_TICKET_REFERENCE.sql ausführen.',
       },
+    }
+  }
+
+  if (!result.error && kindMissing && kind === 'planned_repair') {
+    return {
+      ...result,
+      warning: `Geplante Reparatur gespeichert (Legacy-Marker). ${TICKET_KIND_SQL_HINT}`,
     }
   }
 

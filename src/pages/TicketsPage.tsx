@@ -78,11 +78,11 @@ export default function TicketsPage() {
       const { data, error } = await supabase
         .from('tickets')
         .select(
-          'id, description, status, priority, created_at, created_by, assigned_to, reference_label, machine_id, lifecycle_entry_id, machines(name, barcode)',
+          'id, description, status, priority, created_at, created_by, assigned_to, reference_label, machine_id, lifecycle_entry_id, kind, machines(name, barcode)',
         )
         .order('created_at', { ascending: false })
       if (error) {
-        if (/assigned_to|created_by|reference_label|lifecycle_entry_id|schema cache/i.test(error.message)) {
+        if (/assigned_to|created_by|reference_label|lifecycle_entry_id|\bkind\b|schema cache/i.test(error.message)) {
           const fb = await supabase
             .from('tickets')
             .select(
@@ -94,6 +94,7 @@ export default function TicketsPage() {
               ...t,
               assigned_to: null as string | null,
               lifecycle_entry_id: null as string | null,
+              kind: null as string | null,
             })) as TicketListItem[]
           }
           const bare = await supabase
@@ -107,6 +108,7 @@ export default function TicketsPage() {
             assigned_to: null as string | null,
             reference_label: null as string | null,
             lifecycle_entry_id: null as string | null,
+            kind: null as string | null,
           })) as TicketListItem[]
         }
         throw error

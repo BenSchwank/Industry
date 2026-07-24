@@ -39,10 +39,11 @@ export default function MessagesPage() {
   return (
     <div className="flex flex-col gap-3 p-3 lg:p-4">
       <header>
-        <h2 className="text-xl font-semibold tracking-tight">Nachrichtencenter</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Hinweise / Fälligkeiten</h2>
         <Tip>
           <p className="text-kwd-muted text-sm">
-            Wartungen, Störungen und Dokument-Analysen an einem Ort
+            Überfällige HU, bald fällige Termine, offene Störungen und Dokument-Analysen – getrennt vom
+            Team-Chat.
           </p>
         </Tip>
       </header>
@@ -58,7 +59,7 @@ export default function MessagesPage() {
 
       <div className="kwd-panel">
         <div className="kwd-panel-head">
-          {isLoading ? 'Laden…' : `${messages.length} Nachricht${messages.length === 1 ? '' : 'en'}`}
+          {isLoading ? 'Laden…' : `${messages.length} Hinweis${messages.length === 1 ? '' : 'e'}`}
         </div>
 
         {!isLoading && messages.length === 0 && (

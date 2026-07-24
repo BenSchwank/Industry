@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChecklistPanel } from '../components/maintenance/ChecklistPanel'
+import { MaintenanceTaskCard } from '../components/maintenance/MaintenanceTaskCard'
 import { PlannedRepairForm } from '../components/maintenance/PlannedRepairForm'
 import {
   RepairTaskEditForm,
@@ -10,14 +11,11 @@ import { TicketEditForm } from '../components/tickets/TicketEditForm'
 import { TICKET_STATUS_LABEL, useResolveTicket } from '../hooks/useTicketActions'
 import { useDeleteMaintenanceTasks } from '../hooks/useDeleteMaintenanceTasks'
 import { useQuickCompleteMaintenance } from '../hooks/useQuickCompleteMaintenance'
-import { formatDurationDays, maintenanceDueTone } from '../lib/maintenanceDue'
+import { maintenanceDueTone } from '../lib/maintenanceDue'
+import { isHuTaskTitle, type MaintenanceSectionFilter } from '../lib/maintenanceTaskType'
 import { isPlannedRepairTicket, stripPlannedRepairMarker } from '../lib/plannedRepairTicket'
 import { supabase } from '../lib/supabase'
 import { useAppStore } from '../stores/appStore'
-
-function isHuTaskTitle(title: string | null | undefined) {
-  return /hauptuntersuchung|^hu\b/i.test(title ?? '')
-}
 
 interface ActiveTask {
   id: string
@@ -67,12 +65,22 @@ interface FreeRepairRow {
   created_at: string
   assigned_to?: string | null
   reference_label?: string | null
+  kind?: string | null
 }
+
+const SECTION_FILTERS: { id: MaintenanceSectionFilter; label: string }[] = [
+  { id: 'all', label: 'Alles' },
+  { id: 'hu', label: 'Wartung / HU' },
+  { id: 'repair', label: 'Mit Termin' },
+  { id: 'open', label: 'Ohne Termin' },
+  { id: 'linked', label: 'Verknüpft' },
+]
 
 export default function MaintenancePage() {
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [sectionFilter, setSectionFilter] = useState<MaintenanceSectionFilter>('all')
   const [showPlannedRepair, setShowPlannedRepair] = useState(false)
   const [editTask, setEditTask] = useState<RepairTaskEditTarget | null>(null)
   const [editTicket, setEditTicket] = useState<import('../components/tickets/TicketEditForm').TicketEditTarget | null>(
@@ -219,18 +227,65 @@ export default function MaintenancePage() {
   const { data: freeRepairs = [] } = useQuery({
     queryKey: ['maintenance-free-repairs'],
     queryFn: async (): Promise<FreeRepairRow[]> => {
-      const { data, error } = await supabase
+      const full = await supabase
         .from('tickets')
-        .select('id, description, status, priority, created_at, assigned_to, reference_label')
+        .select('id, description, status, priority, created_at, assigned_to, reference_label, kind')
         .is('machine_id', null)
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
-      if (error) throw error
-      return ((data ?? []) as FreeRepairRow[]).filter((t) =>
-        isPlannedRepairTicket(t.description),
-      )
+
+      if (!full.error) {
+        return ((full.data ?? []) as FreeRepairRow[]).filter((t) =>
+          isPlannedRepairTicket({ kind: t.kind, description: t.description }),
+        )
+      }
+
+      if (/\bkind\b|schema cache/i.test(full.error.message)) {
+        const fb = await supabase
+          .from('tickets')
+          .select('id, description, status, priority, created_at, assigned_to, reference_label')
+          .is('machine_id', null)
+          .in('status', ['open', 'in_progress'])
+          .order('created_at', { ascending: false })
+        if (fb.error) throw fb.error
+        return ((fb.data ?? []) as FreeRepairRow[]).filter((t) =>
+          isPlannedRepairTicket({ description: t.description }),
+        )
+      }
+      throw full.error
     },
   })
+
+  const taskList = useMemo(() => {
+    const rows = (tasks ?? []).map((t) => ({
+      ...t,
+      machines: t.machines as { name: string; barcode: string } | null,
+    }))
+    return {
+      hu: rows.filter((t) => isHuTaskTitle(t.title)),
+      repair: rows.filter((t) => !isHuTaskTitle(t.title)),
+    }
+  }, [tasks])
+
+  const openEndedLinked = useMemo(
+    () =>
+      linkedTickets.filter((t) => {
+        const due = t.machine_lifecycle_entries?.next_due_date
+        return !due
+      }),
+    [linkedTickets],
+  )
+
+  const linkedWithDue = useMemo(
+    () =>
+      linkedTickets.filter((t) => Boolean(t.machine_lifecycle_entries?.next_due_date)),
+    [linkedTickets],
+  )
+
+  const showHu = sectionFilter === 'all' || sectionFilter === 'hu'
+  const showRepairDated = sectionFilter === 'all' || sectionFilter === 'repair'
+  const showOpen = sectionFilter === 'all' || sectionFilter === 'open'
+  const showLinked = sectionFilter === 'all' || sectionFilter === 'linked'
 
   function flash(msg: string) {
     setToast(msg)
@@ -319,8 +374,8 @@ export default function MaintenancePage() {
           <div>
             <h2 className="text-xl font-bold">Reparaturen</h2>
             <p className="text-kwd-muted mt-1 text-sm">
-              Monteur-Termine und geplante Arbeiten · darunter Störungen, die mit Wartung oder geplanter
-              Reparatur verknüpft sind.
+              Getrennt: Wartung/HU · geplante Reparaturen mit Termin · ohne Termin · verknüpfte
+              Meldungen.
             </p>
           </div>
           <button
@@ -332,155 +387,162 @@ export default function MaintenancePage() {
           </button>
         </header>
 
+        <div className="flex flex-wrap gap-2">
+          {SECTION_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setSectionFilter(f.id)}
+              className={`min-h-[40px] rounded-xl border px-3 text-sm font-semibold ${
+                sectionFilter === f.id
+                  ? 'border-kwd-primary bg-kwd-primary/15 text-kwd-primary'
+                  : 'border-kwd-border bg-kwd-surface text-kwd-muted'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         {toast && (
           <p className="bg-kwd-success/15 text-kwd-success border-kwd-success/30 border px-3 py-2 text-sm font-medium">
             {toast}
           </p>
         )}
 
-        {tasks?.length === 0 && freeRepairs.length === 0 && (
+        {tasks?.length === 0 && freeRepairs.length === 0 && linkedTickets.length === 0 && (
           <div className="bg-kwd-surface rounded-xl p-6 text-center">
             <p className="text-kwd-muted">Keine Reparatur- oder Wartungs-Termine geplant.</p>
             <p className="text-kwd-muted mt-2 text-sm">
-              Mit „+ Geplante Reparatur“ einen Termin für eine Maschine oder einen eigenen Bezugspunkt
-              anlegen – oder in der Maschinenakte unter Lebenszyklus eintragen.
+              Mit „+ Geplante Reparatur“ anlegen oder unter Störungen „Nach Reparaturen“ nutzen.
             </p>
           </div>
         )}
 
-        {tasks?.map((task) => {
-          const machine = task.machines as { name: string; barcode: string } | null
-          const tone = maintenanceDueTone(task.next_due_date)
-          const dueDate = new Date(task.next_due_date)
-          const busy = busyId === task.id
-          const isHu = isHuTaskTitle(task.title)
+        {showHu && taskList.hu.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <header>
+              <h3 className="text-sm font-bold tracking-wide uppercase">Wartung / HU</h3>
+              <p className="text-kwd-muted text-xs">Hauptuntersuchungen mit Intervall und Fälligkeit.</p>
+            </header>
+            {taskList.hu.map((task) => (
+              <MaintenanceTaskCard
+                key={task.id}
+                task={task}
+                busy={busyId === task.id}
+                deletePending={deleteTasks.isPending}
+                completePending={quickComplete.isPending}
+                onComplete={() =>
+                  void handleQuickDone({
+                    id: task.id,
+                    machine_id: task.machine_id,
+                    title: task.title,
+                    frequency_days: task.frequency_days,
+                    machines: task.machines,
+                  })
+                }
+                onEdit={() =>
+                  setEditTask({
+                    id: task.id,
+                    machineId: task.machine_id,
+                    title: task.title,
+                    next_due_date: task.next_due_date,
+                    isHu: true,
+                    machineLabel: task.machines
+                      ? `${task.machines.barcode} – ${task.machines.name}`
+                      : undefined,
+                  })
+                }
+                onDetails={() =>
+                  setActiveTask({
+                    id: task.id,
+                    machineId: task.machine_id,
+                    title: task.title,
+                    frequency_days: task.frequency_days,
+                    next_due_date: task.next_due_date,
+                    machineName: task.machines?.name ?? 'Unbekannt',
+                    machineBarcode: task.machines?.barcode ?? '',
+                  })
+                }
+                onDelete={() =>
+                  void handleDelete({
+                    id: task.id,
+                    title: task.title,
+                    machines: task.machines,
+                  })
+                }
+              />
+            ))}
+          </section>
+        )}
 
-          return (
-            <article
-              key={task.id}
-              className={`rounded-xl p-4 ${
-                tone === 'overdue'
-                  ? 'border-kwd-danger bg-kwd-danger/10 border-2'
-                  : tone === 'soon'
-                    ? 'border-kwd-warning bg-kwd-warning/10 border-2'
-                    : 'bg-kwd-surface border-kwd-border border'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-kwd-primary text-xs font-bold">
-                    {machine?.barcode}
-                    {!isHu && ' · Geplante Reparatur'}
-                    {isHu && ' · Wartung'}
-                  </p>
-                  <h3 className="font-bold">{task.title}</h3>
-                  <p className="text-kwd-muted text-sm">{machine?.name}</p>
-                </div>
-                <button
-                  type="button"
-                  disabled={busy || deleteTasks.isPending}
-                  onClick={() =>
-                    void handleDelete({
-                      id: task.id,
-                      title: task.title,
-                      machines: machine,
-                    })
-                  }
-                  className="kwd-btn kwd-btn-danger shrink-0 px-2 text-xs"
-                  title="Aufgabe entfernen (ohne Abschluss)"
-                >
-                  Entfernen
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span
-                  className={
-                    tone === 'overdue'
-                      ? 'text-kwd-danger font-semibold'
-                      : tone === 'soon'
-                        ? 'text-kwd-warning font-semibold'
-                        : ''
-                  }
-                >
-                  {isHu ? 'Nächste HU: ' : 'Geplant: '}
-                  {dueDate.toLocaleDateString('de-DE')}
-                  {tone === 'overdue' && ' · überfällig'}
-                  {tone === 'soon' && ' · bald'}
-                </span>
-                {isHu && (
-                  <span className="text-kwd-muted">
-                    Dauer: {formatDurationDays(task.frequency_days)}
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy || quickComplete.isPending}
-                  onClick={() =>
-                    void handleQuickDone({
-                      id: task.id,
-                      machine_id: task.machine_id,
-                      title: task.title,
-                      frequency_days: task.frequency_days,
-                      machines: machine,
-                    })
-                  }
-                  className="kwd-btn kwd-btn-primary min-h-[44px] flex-1"
-                >
-                  {busy ? 'Speichern…' : 'Erledigt'}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    setEditTask({
-                      id: task.id,
-                      machineId: task.machine_id,
-                      title: task.title,
-                      next_due_date: task.next_due_date,
-                      isHu,
-                      machineLabel: machine
-                        ? `${machine.barcode} – ${machine.name}`
-                        : undefined,
-                    })
-                  }
-                  className="kwd-btn min-h-[44px] flex-1"
-                >
-                  Bearbeiten
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveTask({
-                      id: task.id,
-                      machineId: task.machine_id,
-                      title: task.title,
-                      frequency_days: task.frequency_days,
-                      next_due_date: task.next_due_date,
-                      machineName: machine?.name ?? 'Unbekannt',
-                      machineBarcode: machine?.barcode ?? '',
-                    })
-                  }
-                  className="kwd-btn min-h-[44px] flex-1"
-                >
-                  Details
-                </button>
-              </div>
-            </article>
-          )
-        })}
+        {showRepairDated && taskList.repair.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <header className={sectionFilter === 'all' ? 'border-kwd-border border-t pt-4' : undefined}>
+              <h3 className="text-sm font-bold tracking-wide uppercase">
+                Geplante Reparaturen (mit Termin)
+              </h3>
+              <p className="text-kwd-muted text-xs">Nur das geplante Datum – kein Wartungsintervall.</p>
+            </header>
+            {taskList.repair.map((task) => (
+              <MaintenanceTaskCard
+                key={task.id}
+                task={task}
+                busy={busyId === task.id}
+                deletePending={deleteTasks.isPending}
+                completePending={quickComplete.isPending}
+                onComplete={() =>
+                  void handleQuickDone({
+                    id: task.id,
+                    machine_id: task.machine_id,
+                    title: task.title,
+                    frequency_days: task.frequency_days,
+                    machines: task.machines,
+                  })
+                }
+                onEdit={() =>
+                  setEditTask({
+                    id: task.id,
+                    machineId: task.machine_id,
+                    title: task.title,
+                    next_due_date: task.next_due_date,
+                    isHu: false,
+                    machineLabel: task.machines
+                      ? `${task.machines.barcode} – ${task.machines.name}`
+                      : undefined,
+                  })
+                }
+                onDetails={() =>
+                  setActiveTask({
+                    id: task.id,
+                    machineId: task.machine_id,
+                    title: task.title,
+                    frequency_days: task.frequency_days,
+                    next_due_date: task.next_due_date,
+                    machineName: task.machines?.name ?? 'Unbekannt',
+                    machineBarcode: task.machines?.barcode ?? '',
+                  })
+                }
+                onDelete={() =>
+                  void handleDelete({
+                    id: task.id,
+                    title: task.title,
+                    machines: task.machines,
+                  })
+                }
+              />
+            ))}
+          </section>
+        )}
 
-        {/* Bezugspunkte ohne Maschine */}
-        {freeRepairs.length > 0 && (
+        {showOpen && (freeRepairs.length > 0 || openEndedLinked.length > 0) && (
           <section className="mt-2 flex flex-col gap-3">
             <header className="border-kwd-border border-t pt-4">
               <h3 className="text-sm font-bold tracking-wide uppercase">
-                Geplante Reparaturen (Bezugspunkt)
+                Geplante Reparaturen (ohne Termin)
               </h3>
               <p className="text-kwd-muted mt-1 text-xs">
-                Nur wenn ausdrücklich als geplante Reparatur angelegt – normale Störungen mit
-                Bezugspunkt bleiben unter Störungen.
+                Offen ohne Anlauffrist – Bezugspunkt oder Maschine.
               </p>
             </header>
 
@@ -520,6 +582,7 @@ export default function MaintenancePage() {
                           machine_id: null,
                           reference_label: t.reference_label ?? null,
                           machine_label: label,
+                          kind: t.kind ?? 'planned_repair',
                         })
                       }
                     >
@@ -537,119 +600,187 @@ export default function MaintenancePage() {
                 </article>
               )
             })}
+
+            {openEndedLinked.map((t) => {
+              const machine = t.machines
+              const entry = t.machine_lifecycle_entries
+              const busy = busyId === t.id
+              const typeLabel = entry
+                ? (ENTRY_TYPE_LABEL[entry.entry_type] ?? entry.entry_type)
+                : 'Lebenszyklus'
+              return (
+                <article
+                  key={`open-${t.id}`}
+                  className="border-kwd-border bg-kwd-surface rounded-xl border p-4"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-kwd-primary text-xs font-bold">
+                        {machine?.barcode ?? '–'} · ohne Termin
+                      </p>
+                      <h3 className="font-bold">{machine?.name ?? 'Bezug ohne Maschine'}</h3>
+                      <p className="text-kwd-muted mt-1 line-clamp-3 text-sm">{t.description}</p>
+                      {entry && (
+                        <p className="text-kwd-primary mt-2 text-xs font-semibold">
+                          Verknüpft: {typeLabel} · {entry.title} · ohne festen Termin
+                        </p>
+                      )}
+                    </div>
+                    <span className="bg-kwd-bg shrink-0 rounded px-2 py-1 text-xs font-medium">
+                      {TICKET_STATUS_LABEL[t.status] ?? t.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[44px] px-3 text-sm font-semibold"
+                      disabled={busy}
+                      onClick={() =>
+                        setEditTicket({
+                          id: t.id,
+                          description: t.description,
+                          priority: t.priority as import('../types/database').TicketPriority,
+                          status: t.status as import('../types/database').TicketStatus,
+                          assigned_to: t.assigned_to ?? null,
+                          machine_id: t.machine_id,
+                          reference_label: t.reference_label ?? null,
+                          machine_label: machine
+                            ? `${machine.barcode} – ${machine.name}`
+                            : undefined,
+                          lifecycle_entry_id: t.lifecycle_entry_id,
+                          planned_due_date: null,
+                          kind: 'planned_repair',
+                        })
+                      }
+                    >
+                      Bearbeiten
+                    </button>
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[44px] flex-1 text-sm font-semibold"
+                      onClick={() => openMachine(t.machine_id)}
+                    >
+                      {t.machine_id ? 'Zur Maschine' : 'Zu Störungen'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="bg-kwd-success min-h-[44px] flex-1 rounded-lg px-3 text-sm font-bold text-white disabled:opacity-50"
+                      onClick={() => void handleResolveLinked(t.id)}
+                    >
+                      {busy ? '…' : 'Erledigt'}
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
           </section>
         )}
 
-        {/* Unten: Störungen mit Verknüpfung Wartung / geplante Reparatur */}
-        <section className="mt-2 flex flex-col gap-3">
-          <header className="border-kwd-border border-t pt-4">
-            <h3 className="text-sm font-bold tracking-wide uppercase">
-              Störungen zu Wartung / Reparatur
-            </h3>
-            <p className="text-kwd-muted mt-1 text-xs">
-              Offene Meldungen, die mit Wartung oder geplanter Reparatur verknüpft sind – auch ohne
-              festen Monteur-Termin.
-            </p>
-          </header>
+        {showLinked && (linkedWithDue.length > 0 || linkHint) && (
+          <section className="mt-2 flex flex-col gap-3">
+            <header className="border-kwd-border border-t pt-4">
+              <h3 className="text-sm font-bold tracking-wide uppercase">
+                Verknüpfte Meldungen
+              </h3>
+              <p className="text-kwd-muted mt-1 text-xs">
+                Offene Meldungen mit Bezug zu Wartung oder geplanter Reparatur.
+              </p>
+            </header>
 
-          {linkHint && (
-            <p className="text-kwd-warning rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-medium">
-              {linkHint}
-            </p>
-          )}
+            {linkHint && (
+              <p className="text-kwd-warning rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-medium">
+                {linkHint}
+              </p>
+            )}
 
-          {linkedTickets.length === 0 && !linkHint && (
-            <p className="text-kwd-muted bg-kwd-surface rounded-xl px-4 py-5 text-center text-sm">
-              Keine verknüpften Störungen. Beim Melden „Wartung / Reparatur“ wählen oder unter
-              Störungen „Nach Reparaturen“ nutzen.
-            </p>
-          )}
+            {linkedWithDue.map((t) => {
+              const machine = t.machines
+              const entry = t.machine_lifecycle_entries
+              const busy = busyId === t.id
+              const due = entry?.next_due_date
+              const tone = due ? maintenanceDueTone(due) : 'ok'
+              const typeLabel = entry
+                ? (ENTRY_TYPE_LABEL[entry.entry_type] ?? entry.entry_type)
+                : 'Lebenszyklus'
 
-          {linkedTickets.map((t) => {
-            const machine = t.machines
-            const entry = t.machine_lifecycle_entries
-            const busy = busyId === t.id
-            const due = entry?.next_due_date
-            const tone = due ? maintenanceDueTone(due) : 'ok'
-            const typeLabel = entry
-              ? (ENTRY_TYPE_LABEL[entry.entry_type] ?? entry.entry_type)
-              : 'Lebenszyklus'
-
-            return (
-              <article
-                key={t.id}
-                className={`rounded-xl border p-4 ${
-                  tone === 'overdue'
-                    ? 'border-kwd-danger/40 bg-kwd-danger/5'
-                    : 'border-kwd-border bg-kwd-surface'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-kwd-primary text-xs font-bold">
-                      {machine?.barcode ?? '–'} · Störung
-                    </p>
-                    <h3 className="font-bold">{machine?.name ?? 'Bezug ohne Maschine'}</h3>
-                    <p className="text-kwd-muted mt-1 line-clamp-3 text-sm">{t.description}</p>
+              return (
+                <article
+                  key={t.id}
+                  className={`rounded-xl border p-4 ${
+                    tone === 'overdue'
+                      ? 'border-kwd-danger/40 bg-kwd-danger/5'
+                      : 'border-kwd-border bg-kwd-surface'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-kwd-primary text-xs font-bold">
+                        {machine?.barcode ?? '–'} · verknüpft
+                      </p>
+                      <h3 className="font-bold">{machine?.name ?? 'Bezug ohne Maschine'}</h3>
+                      <p className="text-kwd-muted mt-1 line-clamp-3 text-sm">{t.description}</p>
+                    </div>
+                    <span className="bg-kwd-bg shrink-0 rounded px-2 py-1 text-xs font-medium">
+                      {TICKET_STATUS_LABEL[t.status] ?? t.status}
+                    </span>
                   </div>
-                  <span className="bg-kwd-bg shrink-0 rounded px-2 py-1 text-xs font-medium">
-                    {TICKET_STATUS_LABEL[t.status] ?? t.status}
-                  </span>
-                </div>
 
-                {entry && (
-                  <p className="text-kwd-primary mt-2 text-xs font-semibold">
-                    Verknüpft: {typeLabel} · {entry.title}
-                    {due
-                      ? ` · Monteur/Fällig ${new Date(due).toLocaleDateString('de-DE')}`
-                      : ' · ohne festen Termin'}
-                  </p>
-                )}
+                  {entry && (
+                    <p className="text-kwd-primary mt-2 text-xs font-semibold">
+                      Verknüpft: {typeLabel} · {entry.title}
+                      {due
+                        ? ` · Termin ${new Date(due).toLocaleDateString('de-DE')}`
+                        : ' · ohne festen Termin'}
+                    </p>
+                  )}
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="kwd-btn min-h-[44px] px-3 text-sm font-semibold"
-                    disabled={busy}
-                    onClick={() =>
-                      setEditTicket({
-                        id: t.id,
-                        description: t.description,
-                        priority: t.priority as import('../types/database').TicketPriority,
-                        status: t.status as import('../types/database').TicketStatus,
-                        assigned_to: t.assigned_to ?? null,
-                        machine_id: t.machine_id,
-                        reference_label: t.reference_label ?? null,
-                        machine_label: machine
-                          ? `${machine.barcode} – ${machine.name}`
-                          : undefined,
-                        lifecycle_entry_id: t.lifecycle_entry_id,
-                        planned_due_date: entry?.next_due_date ?? null,
-                      })
-                    }
-                  >
-                    Bearbeiten
-                  </button>
-                  <button
-                    type="button"
-                    className="kwd-btn min-h-[44px] flex-1 text-sm font-semibold"
-                    onClick={() => openMachine(t.machine_id)}
-                  >
-                    {t.machine_id ? 'Zur Maschine' : 'Zu Störungen'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="bg-kwd-success min-h-[44px] flex-1 rounded-lg px-3 text-sm font-bold text-white disabled:opacity-50"
-                    onClick={() => void handleResolveLinked(t.id)}
-                  >
-                    {busy ? '…' : 'Erledigt'}
-                  </button>
-                </div>
-              </article>
-            )
-          })}
-        </section>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[44px] px-3 text-sm font-semibold"
+                      disabled={busy}
+                      onClick={() =>
+                        setEditTicket({
+                          id: t.id,
+                          description: t.description,
+                          priority: t.priority as import('../types/database').TicketPriority,
+                          status: t.status as import('../types/database').TicketStatus,
+                          assigned_to: t.assigned_to ?? null,
+                          machine_id: t.machine_id,
+                          reference_label: t.reference_label ?? null,
+                          machine_label: machine
+                            ? `${machine.barcode} – ${machine.name}`
+                            : undefined,
+                          lifecycle_entry_id: t.lifecycle_entry_id,
+                          planned_due_date: entry?.next_due_date ?? null,
+                          kind: 'planned_repair',
+                        })
+                      }
+                    >
+                      Bearbeiten
+                    </button>
+                    <button
+                      type="button"
+                      className="kwd-btn min-h-[44px] flex-1 text-sm font-semibold"
+                      onClick={() => openMachine(t.machine_id)}
+                    >
+                      {t.machine_id ? 'Zur Maschine' : 'Zu Störungen'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="bg-kwd-success min-h-[44px] flex-1 rounded-lg px-3 text-sm font-bold text-white disabled:opacity-50"
+                      onClick={() => void handleResolveLinked(t.id)}
+                    >
+                      {busy ? '…' : 'Erledigt'}
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+          </section>
+        )}
       </div>
 
       {activeTask && (

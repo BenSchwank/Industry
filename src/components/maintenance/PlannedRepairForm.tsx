@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { MachineSearchSelect } from '../machines/MachineSearchSelect'
 import { useAddLifecycleEntry } from '../../hooks/useMachineLifecycle'
 import { createTicket } from '../../lib/syncTickets'
-import { withPlannedRepairMarker } from '../../lib/plannedRepairTicket'
 import { useAppStore } from '../../stores/appStore'
 
 interface PlannedRepairFormProps {
@@ -71,6 +70,7 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
               description: body,
               priority: 'medium',
               lifecycle_entry_id: entryId,
+              kind: 'planned_repair',
             },
             isOnline,
           )
@@ -108,9 +108,10 @@ export function PlannedRepairForm({ onClose, onSuccess }: PlannedRepairFormProps
           machine_id: null,
           machine_name: freeLabel.trim(),
           reference_label: freeLabel.trim(),
-          description: withPlannedRepairMarker(bodyParts.join('\n')),
+          description: bodyParts.join('\n'),
           priority: 'medium',
           lifecycle_entry_id: null,
+          kind: 'planned_repair',
         },
         isOnline,
       )

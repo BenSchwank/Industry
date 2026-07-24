@@ -19,6 +19,15 @@ import type { MachineStatus } from '../../types/database'
 import { LoadingFallback } from '../ui/LoadingFallback'
 import { MachineLifecyclePanel } from './MachineLifecyclePanel'
 import { MachineProblemPanel } from './MachineProblemPanel'
+import {
+  MACHINE_DETAIL_FIELD_CLS as fieldCls,
+  MACHINE_DETAIL_TABS as BASE_TABS,
+  MACHINE_STATUS_OPTIONS as STATUS_OPTIONS,
+  filterMachineTimeline as filterTimeline,
+  formatMachineDetailDate as formatDate,
+  toMachineDateInput as toDateInput,
+  type MachineDetailTab as DetailTab,
+} from './machineDetailShared'
 
 const MachineAttachmentsPanel = lazy(() =>
   import('./MachineAttachmentsPanel').then((m) => ({ default: m.MachineAttachmentsPanel })),
@@ -29,46 +38,6 @@ const MachineKnowledgePanel = lazy(() =>
 const MachinePlansPanel = lazy(() =>
   import('./MachinePlansPanel').then((m) => ({ default: m.MachinePlansPanel })),
 )
-
-type DetailTab = 'overview' | 'problems' | 'history' | 'documents' | 'plans' | 'knowledge'
-
-const BASE_TABS: { id: DetailTab; label: string; short: string }[] = [
-  { id: 'overview', label: 'Stammdaten', short: 'Daten' },
-  { id: 'problems', label: 'Störungen', short: 'Stör.' },
-  { id: 'history', label: 'Lebenszyklus', short: 'Zykl.' },
-  { id: 'documents', label: 'Unterlagen', short: 'Docs' },
-  { id: 'knowledge', label: 'Wissen', short: 'Wiss.' },
-]
-
-const STATUS_OPTIONS: { value: MachineStatus; label: string }[] = [
-  { value: 'active', label: 'Aktiv' },
-  { value: 'maintenance', label: 'In Wartung' },
-  { value: 'offline', label: 'Offline' },
-  { value: 'decommissioned', label: 'Außer Betrieb' },
-]
-
-const fieldCls =
-  'border-kwd-border bg-kwd-paper text-kwd-text mt-1 min-h-[40px] w-full border px-3 text-sm'
-
-function formatDate(d: string | null) {
-  if (!d) return '–'
-  return new Date(d).toLocaleDateString('de-DE')
-}
-
-function toDateInput(d: string | null) {
-  if (!d) return ''
-  return d.slice(0, 10)
-}
-
-function filterTimeline(timeline: TimelineItem[], query: string): TimelineItem[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return timeline
-  const terms = q.split(/\s+/).filter(Boolean)
-  return timeline.filter((item) => {
-    const haystack = `${item.title} ${item.description ?? ''}`.toLowerCase()
-    return terms.every((term) => haystack.includes(term))
-  })
-}
 
 interface MachineDetailPanelProps {
   machine: MachineWithStats

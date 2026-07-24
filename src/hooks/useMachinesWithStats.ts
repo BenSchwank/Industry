@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { addDaysIso } from '../lib/maintenanceDue'
+import { isHuTaskTitle } from '../lib/maintenanceTaskType'
 import { parseLocation } from '../lib/machineLocationGroups'
 import { machineLocationSuggestions } from '../lib/machineLocations'
 import {
@@ -53,10 +54,6 @@ export interface MachineWithStats {
 function earliestDate(dates: string[]): string | null {
   if (dates.length === 0) return null
   return dates.slice().sort()[0] ?? null
-}
-
-function isHuTaskTitle(title: string | null | undefined) {
-  return /hauptuntersuchung|^hu\b/i.test(title ?? '')
 }
 
 function pushDueFromLifecycle(

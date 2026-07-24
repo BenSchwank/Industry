@@ -10,6 +10,7 @@ export interface PendingTicket {
   description: string
   priority: TicketPriority
   lifecycle_entry_id?: string | null
+  kind?: import('../types/database').TicketKind
   created_at: string
   syncError?: string
 }

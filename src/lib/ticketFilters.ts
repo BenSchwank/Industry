@@ -19,6 +19,7 @@ export interface TicketListItem {
   reference_label?: string | null
   machine_id?: string | null
   lifecycle_entry_id?: string | null
+  kind?: import('../types/database').TicketKind | string | null
   machines: { name: string; barcode: string } | null
 }
 
@@ -78,8 +79,16 @@ export function filterTickets(
   const names = opts.nameById
 
   return tickets.filter((t) => {
-    // Geplante Reparaturen gehören zum Reparaturen-Tab (Marker oder verknüpft)
-    if (isPlannedRepairTicket(t.description)) return false
+    // Geplante Reparaturen gehören zum Reparaturen-Tab
+    if (
+      isPlannedRepairTicket({
+        kind: t.kind,
+        description: t.description,
+        lifecycle_entry_id: t.lifecycle_entry_id,
+      })
+    ) {
+      return false
+    }
     if (t.lifecycle_entry_id) return false
 
     if (opts.statusFilter === 'open') {

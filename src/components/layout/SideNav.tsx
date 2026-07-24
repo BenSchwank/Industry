@@ -12,7 +12,7 @@ const SHORT: Record<string, string> = {
   inventory: 'Lager',
   tickets: 'Stör.',
   maintenance: 'Rep.',
-  messages: 'Nachr.',
+  messages: 'Hinw.',
   chat: 'Chat',
   import: 'QS1',
   users: 'Verw.',
