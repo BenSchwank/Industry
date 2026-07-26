@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { insertLifecycleEntry } from '../lib/insertLifecycleEntry'
 import { addDaysIso } from '../lib/maintenanceDue'
+import { isHuTaskTitle } from '../lib/maintenanceTaskType'
 import { resolveUsernames } from '../lib/resolveUsernames'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
@@ -250,16 +251,18 @@ export function useMachineTimeline(machineId: string | null) {
 
       for (const c of completions) {
         const task = c.maintenance_tasks
+        const taskTitle = task?.title ?? ''
+        const isHu = isHuTaskTitle(taskTitle)
         items.push({
           id: c.id,
           source: 'completion',
-          entry_type: 'maintenance',
-          title: task?.title ?? 'Hauptuntersuchung abgeschlossen',
+          entry_type: isHu ? 'maintenance' : 'repair',
+          title: taskTitle || (isHu ? 'Hauptuntersuchung abgeschlossen' : 'Reparatur abgeschlossen'),
           description: c.notes,
           occurred_at: c.completed_at,
           created_by_username: c.completed_by ? (names.get(c.completed_by) ?? null) : null,
-          duration_days: task?.frequency_days ?? null,
-          next_due_date: task?.next_due_date ?? null,
+          duration_days: isHu ? (task?.frequency_days ?? null) : null,
+          next_due_date: isHu ? (task?.next_due_date ?? null) : null,
         })
       }
 
@@ -345,6 +348,115 @@ export function useAddLifecycleEntry() {
       queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['maintenance-free-repairs'] })
       queryClient.invalidateQueries({ queryKey: ['lifecycle-pick', vars.machine_id] })
+    },
+  })
+}
+
+/** Lebenszyklus-Eintrag nachträglich bearbeiten (Titel, Text, Datum, Typ, Termin) */
+export function useUpdateLifecycleEntry() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      machine_id: string
+      title?: string
+      description?: string | null
+      occurred_at?: string
+      entry_type?: LifecycleEntryType
+      duration_days?: number | null
+      next_due_date?: string | null
+    }) => {
+      const { data, error } = await supabase
+        .from('machine_lifecycle_entries')
+        .update({
+          ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+          ...(input.description !== undefined
+            ? { description: input.description?.trim() || null }
+            : {}),
+          ...(input.occurred_at !== undefined ? { occurred_at: input.occurred_at } : {}),
+          ...(input.entry_type !== undefined ? { entry_type: input.entry_type } : {}),
+          ...(input.duration_days !== undefined ? { duration_days: input.duration_days } : {}),
+          ...(input.next_due_date !== undefined ? { next_due_date: input.next_due_date } : {}),
+        })
+        .eq('id', input.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machine_id] })
+      queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['maintenance-tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['message-inbox'] })
+    },
+  })
+}
+
+/** Checklisten-Abschluss (Notizen / Datum) nachträglich bearbeiten */
+export function useUpdateCompletionEntry() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      machineId: string
+      notes?: string | null
+      completed_at?: string
+    }) => {
+      const { data, error } = await supabase
+        .from('maintenance_completions')
+        .update({
+          ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
+          ...(input.completed_at !== undefined ? { completed_at: input.completed_at } : {}),
+        })
+        .eq('id', input.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machineId] })
+      queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['maintenance-completions'] })
+    },
+  })
+}
+
+/** Störung in der Timeline nachträglich bearbeiten */
+export function useUpdateTimelineTicket() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      machineId: string
+      description?: string
+      status?: 'open' | 'in_progress' | 'resolved' | 'closed'
+      priority?: 'low' | 'medium' | 'high' | 'critical'
+    }) => {
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({
+          ...(input.description !== undefined ? { description: input.description.trim() } : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+        })
+        .eq('id', input.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['machine-timeline', vars.machineId] })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['machines-with-stats'] })
     },
   })
 }

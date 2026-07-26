@@ -322,7 +322,7 @@ export function useMachinesWithStats() {
 
       const { data: allTasks } = await supabase
         .from('maintenance_tasks')
-        .select('id, machine_id')
+        .select('id, machine_id, title')
         .in('machine_id', ids)
 
       const allTaskIds = (allTasks ?? []).map((t) => t.id)
@@ -336,6 +336,9 @@ export function useMachinesWithStats() {
       }
 
       const taskToMachine = new Map((allTasks ?? []).map((t) => [t.id, t.machine_id]))
+      const taskIsHu = new Map(
+        (allTasks ?? []).map((t) => [t.id, isHuTaskTitle((t as { title?: string }).title)]),
+      )
 
       return machinesReady.map((m) => {
         const machineTasks = taskRows.filter((t) => t.machine_id === m.id)
@@ -367,15 +370,27 @@ export function useMachinesWithStats() {
           (e) => e.machine_id === m.id && e.entry_type === 'repair',
         )
 
-        const completionDates = completions
-          .filter((c) => taskToMachine.get(c.task_id) === m.id)
+        const completionDatesHu = completions
+          .filter(
+            (c) => taskToMachine.get(c.task_id) === m.id && taskIsHu.get(c.task_id) !== false,
+          )
+          .map((c) => c.completed_at)
+
+        const completionDatesRepair = completions
+          .filter(
+            (c) => taskToMachine.get(c.task_id) === m.id && taskIsHu.get(c.task_id) === false,
+          )
           .map((c) => c.completed_at)
 
         const allMaint = [
-          ...completionDates,
+          ...completionDatesHu,
           ...lifecycleMaint.map((e) => e.occurred_at),
         ]
-        const allRepair = [...ticketDates, ...lifecycleRepairOccurred]
+        const allRepair = [
+          ...ticketDates,
+          ...lifecycleRepairOccurred,
+          ...completionDatesRepair,
+        ]
 
         const maxDate = (dates: string[]) => {
           if (dates.length === 0) return null

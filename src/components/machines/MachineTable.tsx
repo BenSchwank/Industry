@@ -752,7 +752,13 @@ export function MachineTable({
     try {
       const result = await quickComplete.mutateAsync({ machineId: m.id })
       flash(
-        `HU erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+        result.entryType === 'repair'
+          ? 'Reparatur erledigt · als letzte Reparatur gespeichert'
+          : `HU erledigt · nächste: ${
+              result.nextDueDate
+                ? new Date(result.nextDueDate).toLocaleDateString('de-DE')
+                : '—'
+            }`,
       )
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')

@@ -1,6 +1,8 @@
 import { addDaysIso } from './maintenanceDue'
 import { insertLifecycleEntry } from './insertLifecycleEntry'
+import { isHuTaskTitle } from './maintenanceTaskType'
 import { supabase } from './supabase'
+import type { LifecycleEntryType } from '../types/database'
 
 export interface QuickCompleteInput {
   machineId: string
@@ -14,14 +16,16 @@ export interface QuickCompleteInput {
 }
 
 export interface QuickCompleteResult {
-  nextDueDate: string
-  durationDays: number
+  nextDueDate: string | null
+  durationDays: number | null
   title: string
+  entryType: LifecycleEntryType
 }
 
 /**
- * Hauptuntersuchung in einem Schritt abschließen:
- * Completion + Task-Update (falls vorhanden) + Lebenszyklus-Eintrag.
+ * HU oder geplante Reparatur abschließen.
+ * Reparaturen werden als entry_type „repair“ gespeichert (nicht als Wartung)
+ * und erzeugen keine neue „nächste Wartung“.
  */
 export async function completeMaintenanceQuick(
   input: QuickCompleteInput,
@@ -45,7 +49,6 @@ export async function completeMaintenanceQuick(
       title = task.title || title
       frequencyDays = task.frequency_days || frequencyDays
     } else {
-      // Keine Task → Dauer aus letztem Lebenszyklus-HU-Eintrag
       const { data: life } = await supabase
         .from('machine_lifecycle_entries')
         .select('duration_days, title')
@@ -59,11 +62,22 @@ export async function completeMaintenanceQuick(
       }
       if (life?.title) title = life.title
     }
+  } else if (!input.taskTitle?.trim()) {
+    const { data: task } = await supabase
+      .from('maintenance_tasks')
+      .select('title, frequency_days')
+      .eq('id', taskId)
+      .maybeSingle()
+    if (task?.title) title = task.title
+    if (task?.frequency_days) frequencyDays = task.frequency_days
   }
 
+  const isHu = isHuTaskTitle(title)
+  const entryType: LifecycleEntryType = isHu ? 'maintenance' : 'repair'
   const days = Math.max(1, Math.round(frequencyDays))
-  const nextDueDate = addDaysIso(new Date().toISOString(), days)
+  const nextDueDate = isHu ? addDaysIso(new Date().toISOString(), days) : null
   const notes = input.notes?.trim() || null
+  const occurredAt = new Date().toISOString()
 
   if (taskId) {
     const { data: completion, error: completionError } = await supabase
@@ -80,7 +94,6 @@ export async function completeMaintenanceQuick(
       throw new Error(completionError?.message ?? 'Abschluss konnte nicht gespeichert werden')
     }
 
-    // Checklisten-Punkte falls vorhanden automatisch abhaken
     const { data: items } = await supabase
       .from('maintenance_checklist_items')
       .select('id, label')
@@ -97,29 +110,52 @@ export async function completeMaintenanceQuick(
       if (itemsError) throw new Error(itemsError.message)
     }
 
-    const { error: taskErr } = await supabase
-      .from('maintenance_tasks')
-      .update({
-        frequency_days: days,
-        next_due_date: nextDueDate,
-      })
-      .eq('id', taskId)
-    if (taskErr) throw new Error(taskErr.message)
+    if (isHu) {
+      const { error: taskErr } = await supabase
+        .from('maintenance_tasks')
+        .update({
+          frequency_days: days,
+          next_due_date: nextDueDate,
+        })
+        .eq('id', taskId)
+      if (taskErr) throw new Error(taskErr.message)
+    } else {
+      // Geplante Reparatur erledigt → kein neuer Wartungs-/Reparatur-Termin
+      const { error: taskErr } = await supabase
+        .from('maintenance_tasks')
+        .update({ next_due_date: null })
+        .eq('id', taskId)
+      if (taskErr) throw new Error(taskErr.message)
+
+      // Offene geplante Reparatur-Einträge mit gleichem Titel: Termin entfernen
+      await supabase
+        .from('machine_lifecycle_entries')
+        .update({ next_due_date: null })
+        .eq('machine_id', input.machineId)
+        .eq('entry_type', 'repair')
+        .eq('title', title)
+        .not('next_due_date', 'is', null)
+    }
   }
 
   const life = await insertLifecycleEntry({
     machine_id: input.machineId,
-    entry_type: 'maintenance',
+    entry_type: entryType,
     title,
     description: notes,
-    occurred_at: new Date().toISOString(),
+    occurred_at: occurredAt,
     created_by: input.completedBy ?? null,
-    duration_days: days,
+    duration_days: isHu ? days : null,
     next_due_date: nextDueDate,
   })
   if (life.error) {
     console.warn('[KWD] Lebenszyklus nach Schnellabschluss:', life.error.message)
   }
 
-  return { nextDueDate, durationDays: days, title }
+  return {
+    nextDueDate,
+    durationDays: isHu ? days : null,
+    title,
+    entryType,
+  }
 }

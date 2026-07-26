@@ -9,6 +9,7 @@ import {
   type DurationUnit,
 } from '../../lib/maintenanceDue'
 import { insertLifecycleEntry } from '../../lib/insertLifecycleEntry'
+import { isHuTaskTitle } from '../../lib/maintenanceTaskType'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { useDeleteMaintenanceTasks } from '../../hooks/useDeleteMaintenanceTasks'
@@ -79,10 +80,11 @@ export function ChecklistPanel({
 
   const hasSteps = Boolean(items && items.length > 0)
   const allChecked = hasSteps ? items!.every((i) => checked[i.id]) : true
+  const isHu = isHuTaskTitle(taskTitle)
   const parsed = parseDurationInput(durationValue, durationUnit)
   const days = parsed.ok ? parsed.days : Math.max(1, Math.round(frequencyDays || 90))
   const previewNext = addDaysIso(new Date().toISOString(), days)
-  const canComplete = allChecked && !submitting && parsed.ok
+  const canComplete = allChecked && !submitting && (isHu ? parsed.ok : true)
 
   async function handleComplete() {
     if (!canComplete || !parsed.ok) return
@@ -116,25 +118,43 @@ export function ChecklistPanel({
         if (itemsError) throw new Error(itemsError.message)
       }
 
-      const nextDue = previewNext
-      const { error: taskErr } = await supabase
-        .from('maintenance_tasks')
-        .update({
-          frequency_days: days,
-          next_due_date: nextDue,
-        })
-        .eq('id', taskId)
-      if (taskErr) throw new Error(taskErr.message)
+      const isHu = isHuTaskTitle(taskTitle)
+      const nextDue = isHu ? previewNext : null
 
-      // Auch im Lebenszyklus sichtbar machen
+      if (isHu) {
+        const { error: taskErr } = await supabase
+          .from('maintenance_tasks')
+          .update({
+            frequency_days: days,
+            next_due_date: nextDue,
+          })
+          .eq('id', taskId)
+        if (taskErr) throw new Error(taskErr.message)
+      } else {
+        const { error: taskErr } = await supabase
+          .from('maintenance_tasks')
+          .update({ next_due_date: null })
+          .eq('id', taskId)
+        if (taskErr) throw new Error(taskErr.message)
+
+        await supabase
+          .from('machine_lifecycle_entries')
+          .update({ next_due_date: null })
+          .eq('machine_id', machineId)
+          .eq('entry_type', 'repair')
+          .eq('title', taskTitle)
+          .not('next_due_date', 'is', null)
+      }
+
+      // HU → Wartung · geplante Reparatur → Reparatur (nicht als letzte Wartung)
       const life = await insertLifecycleEntry({
         machine_id: machineId,
-        entry_type: 'maintenance',
-        title: taskTitle || 'Reparatur',
+        entry_type: isHu ? 'maintenance' : 'repair',
+        title: taskTitle || (isHu ? 'Hauptuntersuchung' : 'Reparatur'),
         description: notes.trim() || null,
         occurred_at: new Date().toISOString(),
         created_by: user?.id ?? null,
-        duration_days: days,
+        duration_days: isHu ? days : null,
         next_due_date: nextDue,
       })
       if (life.error) {
@@ -218,8 +238,9 @@ export function ChecklistPanel({
 
         {!isLoading && !hasSteps && (
           <p className="bg-kwd-surface-light text-kwd-muted mb-4 rounded-xl px-3 py-3 text-sm">
-            Keine Checklisten-Schritte – du kannst die Reparatur trotzdem mit Notizen und Dauer
-            abschließen.
+            {isHu
+              ? 'Keine Checklisten-Schritte – HU mit Dauer und Notizen abschließen.'
+              : 'Keine Checklisten-Schritte – Reparatur mit Notizen abschließen (zählt als letzte Reparatur, nicht als Wartung).'}
           </p>
         )}
 
@@ -248,22 +269,28 @@ export function ChecklistPanel({
           ))}
         </ul>
 
-        <DurationUnitField
-          label="Dauer bis zur nächsten Fälligkeit"
-          value={durationValue}
-          unit={durationUnit}
-          onValueChange={setDurationValue}
-          onUnitChange={setDurationUnit}
-          className="mt-6 block"
-          hint={
-            <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
-              Nächste Fälligkeit nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
-              {parsed.ok && durationUnit === 'years' && (
-                <span> · gespeichert als {formatDurationDays(days)}</span>
-              )}
-            </p>
-          }
-        />
+        {isHu ? (
+          <DurationUnitField
+            label="Dauer bis zur nächsten Fälligkeit"
+            value={durationValue}
+            unit={durationUnit}
+            onValueChange={setDurationValue}
+            onUnitChange={setDurationUnit}
+            className="mt-6 block"
+            hint={
+              <p className={`mt-1 text-xs ${maintenanceDueClass(previewNext) || 'text-kwd-muted'}`}>
+                Nächste HU nach Abschluss: {new Date(previewNext).toLocaleDateString('de-DE')}
+                {parsed.ok && durationUnit === 'years' && (
+                  <span> · gespeichert als {formatDurationDays(days)}</span>
+                )}
+              </p>
+            }
+          />
+        ) : (
+          <p className="bg-kwd-primary/10 text-kwd-primary border-kwd-primary/30 mt-6 border px-3 py-2 text-sm">
+            Abschluss speichert als <strong>Reparatur</strong> (nicht als letzte Wartung / HU).
+          </p>
+        )}
 
         <label className="mt-4 block">
           <span className="text-kwd-muted text-sm font-medium">Notizen (optional)</span>
@@ -286,7 +313,11 @@ export function ChecklistPanel({
           onClick={() => void handleComplete()}
           className="bg-kwd-primary min-h-[56px] w-full rounded-xl text-lg font-bold text-white disabled:opacity-40"
         >
-          {submitting ? 'Speichern…' : 'Reparatur abschließen'}
+          {submitting
+            ? 'Speichern…'
+            : isHu
+              ? 'HU abschließen'
+              : 'Reparatur abschließen'}
         </button>
         <button
           type="button"

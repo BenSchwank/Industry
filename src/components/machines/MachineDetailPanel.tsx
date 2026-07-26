@@ -629,7 +629,13 @@ function MachineStammdatenForm({
     try {
       const result = await quickComplete.mutateAsync({ machineId: machine.id })
       setMessage(
-        `HU erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+        result.entryType === 'repair'
+          ? 'Reparatur erledigt · als letzte Reparatur gespeichert'
+          : `HU erledigt · nächste: ${
+              result.nextDueDate
+                ? new Date(result.nextDueDate).toLocaleDateString('de-DE')
+                : '—'
+            }`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')

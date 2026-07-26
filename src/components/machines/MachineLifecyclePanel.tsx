@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom'
 import {
   useAddLifecycleEntry,
   useDeleteTimelineEntries,
+  useUpdateCompletionEntry,
+  useUpdateLifecycleEntry,
+  useUpdateTimelineTicket,
   type TimelineItem,
 } from '../../hooks/useMachineLifecycle'
 import {
@@ -85,6 +88,7 @@ export function MachineLifecyclePanel({
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [maximized, setMaximized] = useState<TimelineItem | null>(null)
+  const [editing, setEditing] = useState<TimelineItem | null>(null)
   const [formPreviewOpen, setFormPreviewOpen] = useState(false)
   const [photosSchemaMissing, setPhotosSchemaMissing] = useState(false)
   const lastClickedIndex = useRef<number | null>(null)
@@ -627,6 +631,14 @@ export function MachineLifecyclePanel({
                         </button>
                         <button
                           type="button"
+                          onClick={() => setEditing(item)}
+                          className="kwd-btn min-h-[40px]"
+                          title="Nachträglich bearbeiten"
+                        >
+                          Bearbeiten
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void deleteOne(item)}
                           disabled={deleteEntries.isPending}
                           className="kwd-btn kwd-btn-danger"
@@ -658,6 +670,13 @@ export function MachineLifecyclePanel({
           }
           machineId={machineId}
           onClose={() => setMaximized(null)}
+          onEdit={() => {
+            const item =
+              timeline.find((t) => t.id === maximized.id && t.source === maximized.source) ??
+              maximized
+            setMaximized(null)
+            setEditing(item)
+          }}
           onDelete={() => {
             const item =
               timeline.find((t) => t.id === maximized.id && t.source === maximized.source) ??
@@ -666,6 +685,17 @@ export function MachineLifecyclePanel({
             void deleteOne(item)
           }}
           deleting={deleteEntries.isPending}
+        />
+      )}
+
+      {editing && (
+        <TimelineEditModal
+          item={
+            timeline.find((t) => t.id === editing.id && t.source === editing.source) ?? editing
+          }
+          machineId={machineId}
+          onClose={() => setEditing(null)}
+          onSaved={() => setEditing(null)}
         />
       )}
 
@@ -693,6 +723,7 @@ function LifecycleEntryMaximizeModal({
   ticketPhotos,
   machineId,
   onClose,
+  onEdit,
   onDelete,
   deleting,
 }: {
@@ -701,6 +732,7 @@ function LifecycleEntryMaximizeModal({
   ticketPhotos: import('../../hooks/useTicketPhotos').TicketPhoto[]
   machineId: string
   onClose: () => void
+  onEdit: () => void
   onDelete: () => void
   deleting: boolean
 }) {
@@ -816,8 +848,11 @@ function LifecycleEntryMaximizeModal({
         </div>
 
         <footer className="border-kwd-border flex flex-wrap gap-2 border-t px-4 py-3">
-          <button type="button" onClick={onClose} className="kwd-btn kwd-btn-primary min-h-[44px]">
+          <button type="button" onClick={onClose} className="kwd-btn min-h-[44px]">
             Schließen
+          </button>
+          <button type="button" onClick={onEdit} className="kwd-btn kwd-btn-primary min-h-[44px]">
+            Bearbeiten
           </button>
           <button
             type="button"
@@ -922,3 +957,229 @@ function LifecycleFormPreviewModal({
     document.body,
   )
 }
+
+/** Nachträgliches Bearbeiten von Wartung / Reparatur / Störung / Abschluss */
+function TimelineEditModal({
+  item,
+  machineId,
+  onClose,
+  onSaved,
+}: {
+  item: TimelineItem
+  machineId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const updateLife = useUpdateLifecycleEntry()
+  const updateCompletion = useUpdateCompletionEntry()
+  const updateTicket = useUpdateTimelineTicket()
+
+  const [title, setTitle] = useState(item.title)
+  const [description, setDescription] = useState(item.description ?? '')
+  const [occurredAt, setOccurredAt] = useState(item.occurred_at.slice(0, 10))
+  const [entryType, setEntryType] = useState<LifecycleEntryType>(
+    item.entry_type === 'ticket'
+      ? 'repair'
+      : item.source === 'completion'
+        ? item.entry_type === 'maintenance'
+          ? 'maintenance'
+          : 'repair'
+        : (item.entry_type as LifecycleEntryType),
+  )
+  const [nextDue, setNextDue] = useState(item.next_due_date ?? '')
+  const [ticketStatus, setTicketStatus] = useState(() => {
+    const m = /–\s*(open|in_progress|resolved|closed)/i.exec(item.title)
+    return m?.[1]?.toLowerCase() ?? 'open'
+  })
+  const [error, setError] = useState<string | null>(null)
+  const saving =
+    updateLife.isPending || updateCompletion.isPending || updateTicket.isPending
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    try {
+      if (item.source === 'lifecycle') {
+        await updateLife.mutateAsync({
+          id: item.id,
+          machine_id: machineId,
+          title,
+          description,
+          occurred_at: new Date(occurredAt).toISOString(),
+          entry_type: entryType,
+          next_due_date: nextDue.trim() || null,
+          duration_days: entryType === 'maintenance' ? item.duration_days : null,
+        })
+      } else if (item.source === 'completion') {
+        await updateCompletion.mutateAsync({
+          id: item.id,
+          machineId,
+          notes: description,
+          completed_at: new Date(occurredAt).toISOString(),
+        })
+      } else if (item.source === 'ticket') {
+        await updateTicket.mutateAsync({
+          id: item.id,
+          machineId,
+          description,
+          status: ticketStatus as 'open' | 'in_progress' | 'resolved' | 'closed',
+        })
+      }
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[85] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal
+      aria-label="Eintrag bearbeiten"
+      onClick={onClose}
+    >
+      <form
+        className="bg-kwd-paper border-kwd-border flex max-h-[92svh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border shadow-xl sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => void handleSave(e)}
+      >
+        <header className="border-kwd-border flex items-center justify-between gap-2 border-b px-4 py-3">
+          <h3 className="text-base font-semibold">
+            Bearbeiten ·{' '}
+            {item.source === 'ticket'
+              ? 'Störung'
+              : item.source === 'completion'
+                ? 'Abschluss'
+                : entryTypeLabel(entryType)}
+          </h3>
+          <button type="button" className="kwd-btn px-2" onClick={onClose} aria-label="Schließen">
+            ✕
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto px-4 py-4">
+          {item.source === 'lifecycle' && (
+            <>
+              <label className="block">
+                <span className="kwd-kpi-label">Art</span>
+                <select
+                  value={entryType}
+                  onChange={(e) => setEntryType(e.target.value as LifecycleEntryType)}
+                  className="border-kwd-border bg-kwd-surface mt-1 w-full border px-3 py-2 text-sm"
+                >
+                  {ENTRY_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="kwd-kpi-label">Titel</span>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  className="border-kwd-border bg-kwd-surface mt-1 w-full border px-3 py-2 text-sm"
+                />
+              </label>
+              {(entryType === 'repair' || entryType === 'maintenance') && (
+                <label className="block">
+                  <span className="kwd-kpi-label">
+                    {entryType === 'repair' ? 'Geplantes Datum (optional)' : 'Nächste Fälligkeit'}
+                  </span>
+                  <input
+                    type="date"
+                    value={nextDue}
+                    onChange={(e) => setNextDue(e.target.value)}
+                    className="border-kwd-border bg-kwd-surface mt-1 w-full border px-3 py-2 text-sm"
+                  />
+                </label>
+              )}
+            </>
+          )}
+
+          {item.source === 'ticket' && (
+            <label className="block">
+              <span className="kwd-kpi-label">Status</span>
+              <select
+                value={ticketStatus}
+                onChange={(e) => setTicketStatus(e.target.value)}
+                className="border-kwd-border bg-kwd-surface mt-1 w-full border px-3 py-2 text-sm"
+              >
+                <option value="open">Offen</option>
+                <option value="in_progress">In Arbeit</option>
+                <option value="resolved">Erledigt</option>
+                <option value="closed">Geschlossen</option>
+              </select>
+            </label>
+          )}
+
+          {(item.source === 'lifecycle' || item.source === 'completion') && (
+            <label className="block">
+              <span className="kwd-kpi-label">Datum</span>
+              <input
+                type="date"
+                value={occurredAt}
+                onChange={(e) => setOccurredAt(e.target.value)}
+                required
+                className="border-kwd-border bg-kwd-surface mt-1 w-full border px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+
+          <label className="block">
+            <span className="kwd-kpi-label">
+              {item.source === 'ticket' ? 'Beschreibung' : 'Beschreibung / Notizen'}
+            </span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={5}
+              className="border-kwd-border bg-kwd-surface mt-1 w-full resize-y border px-3 py-2 text-sm"
+              placeholder="Vergessene Details nachtragen…"
+            />
+          </label>
+
+          {item.source === 'completion' && (
+            <p className="text-kwd-muted text-xs">
+              Titel kommt von der Aufgabe. Art (Wartung/Reparatur) richtet sich nach dem
+              Aufgabennamen (HU vs. Reparatur).
+            </p>
+          )}
+
+          {error && <p className="text-kwd-danger text-sm">{error}</p>}
+        </div>
+
+        <footer className="border-kwd-border flex flex-wrap gap-2 border-t px-4 py-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="kwd-btn kwd-btn-primary min-h-[44px]"
+          >
+            {saving ? 'Speichern…' : 'Änderungen speichern'}
+          </button>
+          <button type="button" onClick={onClose} className="kwd-btn min-h-[44px]">
+            Abbrechen
+          </button>
+        </footer>
+      </form>
+    </div>,
+    document.body,
+  )
+}
+

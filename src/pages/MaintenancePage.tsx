@@ -261,9 +261,12 @@ export default function MaintenancePage() {
       ...t,
       machines: t.machines as { name: string; barcode: string } | null,
     }))
+    type Dated = (typeof rows)[number] & { next_due_date: string }
+    const withDue = (t: (typeof rows)[number]): t is Dated => Boolean(t.next_due_date)
     return {
-      hu: rows.filter((t) => isHuTaskTitle(t.title)),
-      repair: rows.filter((t) => !isHuTaskTitle(t.title)),
+      hu: rows.filter((t): t is Dated => isHuTaskTitle(t.title) && withDue(t)),
+      // Erledigte Reparaturen ohne Termin nicht mehr in der Liste
+      repair: rows.filter((t): t is Dated => !isHuTaskTitle(t.title) && withDue(t)),
     }
   }, [tasks])
 
@@ -308,7 +311,13 @@ export default function MaintenancePage() {
         frequencyDays: task.frequency_days,
       })
       flash(
-        `Erledigt · nächste: ${new Date(result.nextDueDate).toLocaleDateString('de-DE')}`,
+        result.entryType === 'repair'
+          ? `Reparatur erledigt · als letzte Reparatur gespeichert`
+          : `HU erledigt · nächste: ${
+              result.nextDueDate
+                ? new Date(result.nextDueDate).toLocaleDateString('de-DE')
+                : '—'
+            }`,
       )
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Abschluss fehlgeschlagen')

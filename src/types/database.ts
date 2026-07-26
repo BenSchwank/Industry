@@ -357,7 +357,7 @@ export interface Database {
           machine_id: string
           title: string
           frequency_days: number
-          next_due_date: string
+          next_due_date: string | null
           external_id: string | null
           external_source: string | null
           created_at: string
@@ -367,7 +367,7 @@ export interface Database {
           machine_id: string
           title: string
           frequency_days: number
-          next_due_date: string
+          next_due_date?: string | null
           external_id?: string | null
           external_source?: string | null
           created_at?: string
@@ -377,7 +377,7 @@ export interface Database {
           machine_id?: string
           title?: string
           frequency_days?: number
-          next_due_date?: string
+          next_due_date?: string | null
           external_id?: string | null
           external_source?: string | null
           created_at?: string
